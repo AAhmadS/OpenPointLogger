@@ -1,0 +1,22 @@
+# user data — never committed
+points.json
+config.json
+attachments/
+exports/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# build artifacts
+build/
+dist/
+*.spec
+OpenPointLogger.exe
+
+# local test artifacts
+tests/_browser/
+tests/*.log
+.playwright-mcp/
