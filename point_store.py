@@ -90,6 +90,8 @@ def slugify(title):
 
 
 class Store:
+    _serializable = False
+
     def __init__(self):
         self._lock = threading.Lock()
         self._topics = self._load()

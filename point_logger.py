@@ -152,6 +152,8 @@ class Api:
 
 
 class Controller:
+    _serializable = False
+
     def __init__(self):
         self.store = Store()
         self.popup = None
@@ -263,7 +265,8 @@ class Controller:
         self.popup = webview.create_window(
             "OpenPointLogger · Quick capture", html=POPUP_HTML, js_api=self.api,
             width=POPUP_W, height=POPUP_H, frameless=True, easy_drag=True,
-            on_top=True, resizable=False, background_color="#0b0f16")
+            on_top=True, resizable=False, hidden=True, background_color="#0b0f16")
+        self.popup_visible = False
         self.full = webview.create_window(
             "OpenPointLogger", html=MAIN_HTML, js_api=self.api,
             width=MAIN_W, height=MAIN_H, min_size=(900, 620), background_color="#0b0f16")
@@ -314,11 +317,6 @@ class Controller:
 
         def startup():
             self.apply_hotkey()
-            try:
-                self.popup.hide()
-                self.popup_visible = False
-            except Exception:
-                pass
             t = threading.Thread(target=self.tray.run, daemon=True)
             t.start()
 

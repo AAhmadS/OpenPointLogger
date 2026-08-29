@@ -83,6 +83,33 @@ pyinstaller --noconfirm --clean --onefile --windowed \
 
 The binary lands in `dist/OpenPointLogger.exe`.
 
+### Windows install (from the built `.exe`)
+
+The install helper places the app in `%LOCALAPPDATA%\Programs\OpenPointLogger`, creates a **Desktop** and **Start Menu** shortcut, adds a **Startup** shortcut (so the tray icon and hotkey are available every login), and copies a **`Pin to Taskbar.cmd`** helper next to the app:
+
+```powershell
+$installDir = "$env:LOCALAPPDATA\Programs\OpenPointLogger"
+New-Item -ItemType Directory -Force $installDir | Out-Null
+Copy-Item "dist\OpenPointLogger.exe" "$installDir\OpenPointLogger.exe"
+Copy-Item "app.ico" "$installDir\app.ico"
+Copy-Item "Pin to Taskbar.cmd" "$installDir\Pin to Taskbar.cmd"
+
+$ws = New-Object -ComObject WScript.Shell
+foreach ($folder in @("$env:USERPROFILE\Desktop",
+                      "$env:APPDATA\Microsoft\Windows\Start Menu\Programs",
+                      "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup")) {
+  $lnk = $ws.CreateShortcut("$folder\OpenPointLogger.lnk")
+  $lnk.TargetPath = "$installDir\OpenPointLogger.exe"
+  $lnk.WorkingDirectory = $installDir
+  $lnk.IconLocation = "$installDir\app.ico,0"
+  $lnk.Save()
+}
+```
+
+On most Windows builds the `Pin to Taskbar.cmd` helper pins the app to the taskbar automatically (it copies the shortcut into the taskbar pin store and refreshes Explorer). On builds where Windows ignores that store, drag the Desktop shortcut onto the taskbar — the tray icon is always available either way.
+
+> Note: on this project's Windows 11 environment, the taskbar pin store was ignored, so the one-gesture fallback (drag the desktop shortcut to the taskbar) was used.
+
 ## The workflow
 
 1. **Research.** You're reading something and hit a point worth keeping. Press `Ctrl+Alt+P`.
