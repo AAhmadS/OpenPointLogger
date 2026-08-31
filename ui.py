@@ -74,7 +74,7 @@ label .input{font-weight:400}
 
 POPUP_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenPointLogger · Quick capture</title><style>
+<title>Trailmark · Quick capture</title><style>
 __BASE_CSS__
 body{user-select:none}
 .win{display:flex;flex-direction:column;height:100vh;padding:12px;gap:10px}
@@ -102,7 +102,8 @@ section{overflow-y:auto;flex:1}
 <div class="win">
   <header class="glass">
     <img src="__ICON__" alt="">
-    <div class="tt"><div class="app">OpenPointLogger</div><div class="hk" id="hkLabel"></div></div>
+    <div class="tt"><div class="app">Trailmark</div><div class="hk" id="hkLabel"></div></div>
+    <button id="openApp" class="chip accent" title="Open the main window">Open app</button>
     <div class="pulse" id="liveDot"></div>
   </header>
 
@@ -141,7 +142,7 @@ section{overflow-y:auto;flex:1}
         <button id="ptGo" class="btn primary">Log point</button>
         <button id="ptHide" class="btn ghost">Hide</button>
       </div>
-      <div class="hint">Enter logs · Esc hides · global hotkey toggles</div>
+      <div class="hint">Enter logs · Esc hides · hotkey toggles · Open app to review</div>
       <div class="recent" id="recent"></div>
     </div>
   </section>
@@ -241,6 +242,7 @@ $("#ptGo").addEventListener("click",logPoint);
 $("#ptText").addEventListener("keydown",e=>{
   if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();logPoint();}
 });
+$("#openApp").addEventListener("click",()=>api.show_full());
 $("#ptHide").addEventListener("click",()=>api.hide_popup());
 document.addEventListener("keydown",e=>{if(e.key==="Escape")api.hide_popup();});
 document.addEventListener("wheel",e=>{if(e.ctrlKey)e.preventDefault();},{passive:false});
@@ -257,14 +259,17 @@ function boot(){
     setTimeout(()=>{const el=$("#ptText");if(el)el.focus();},150);
   });
 }
-function popupShown(){renderMode();setTimeout(()=>{const el=$("#ptText");if(el)el.focus();},120);}
+function popupShown(){
+  api.get_state().then(r=>{if(r&&!r.error){state=r;renderMode();}}).catch(()=>{});
+  setTimeout(()=>{const el=$("#ptText");if(el)el.focus();},120);
+}
 if(window.pywebview){boot();}else{window.addEventListener("pywebviewready",boot);}
 </script></body></html>
 """
 
 MAIN_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenPointLogger</title><style>
+<title>Trailmark</title><style>
 __BASE_CSS__
 .app{display:grid;grid-template-columns:292px 1fr;gap:16px;height:100vh;padding:16px}
 aside{display:flex;flex-direction:column;overflow:hidden}
@@ -349,7 +354,7 @@ main{overflow-y:auto;padding:22px}
   <aside class="glass">
     <div class="brand">
       <img src="__ICON__" alt="">
-      <div><div class="bn">OpenPointLogger</div><div class="bt">Log the point. Keep the source.</div></div>
+      <div><div class="bn">Trailmark</div><div class="bt">Log the point. Keep the source.</div></div>
     </div>
     <div class="segmented" id="seg">
       <button class="seg active" data-tab="open">Open</button>
@@ -756,6 +761,10 @@ document.getElementById("seg").addEventListener("click",e=>{
 });
 document.getElementById("newBtn").addEventListener("click",()=>{tab="open";sel=null;render();});
 document.getElementById("popupBtn").addEventListener("click",()=>api.show_popup());
+
+function refreshFromBridge(){
+  api.get_state().then(r=>{if(r&&!r.error){state=r;render();}}).catch(()=>{});
+}
 
 async function init(){
   state=await api.get_state();

@@ -13,6 +13,7 @@ from point_store import Store
 from ui import MAIN_HTML, POPUP_HTML
 
 import llm
+import single
 
 POPUP_HTML = POPUP_HTML.replace("__ICON__", ICON_DATA_URI)
 MAIN_HTML = MAIN_HTML.replace("__ICON__", ICON_DATA_URI)
@@ -43,6 +44,7 @@ class Api:
         self.store.config["hotkey"] = {"modifiers": mods, "key": key}
         self.store.save_config()
         self.controller.apply_hotkey(mods, key)
+        self.controller.refresh_full()
         return self.store.state()
 
     def save_llm(self, cfg):
@@ -50,6 +52,7 @@ class Api:
         merged.update(cfg or {})
         self.store.config["llm"] = merged
         self.store.save_config()
+        self.controller.refresh_full()
         return self.store.state()
 
     def test_llm(self, cfg):
@@ -84,46 +87,74 @@ class Api:
         return {"text": res["content"].strip()}
 
     def start_topic(self, title):
-        return self.store.start_topic(title)
+        r = self.store.start_topic(title)
+        self.controller.refresh_full()
+        return r
 
     def update_topic(self, tid, title):
-        return self.store.update_topic(tid, title)
+        r = self.store.update_topic(tid, title)
+        self.controller.refresh_full()
+        return r
 
     def close_topic(self, tid):
-        return self.store.close_topic(tid)
+        r = self.store.close_topic(tid)
+        self.controller.refresh_full()
+        return r
 
     def reopen_topic(self, tid):
-        return self.store.reopen_topic(tid)
+        r = self.store.reopen_topic(tid)
+        self.controller.refresh_full()
+        return r
 
     def delete_topic(self, tid):
-        return self.store.delete_topic(tid)
+        r = self.store.delete_topic(tid)
+        self.controller.refresh_full()
+        return r
 
     def add_subtopic(self, tid, name):
-        return self.store.add_subtopic(tid, name)
+        r = self.store.add_subtopic(tid, name)
+        self.controller.refresh_full()
+        return r
 
     def rename_subtopic(self, tid, old, new):
-        return self.store.rename_subtopic(tid, old, new)
+        r = self.store.rename_subtopic(tid, old, new)
+        self.controller.refresh_full()
+        return r
 
     def delete_subtopic(self, tid, name):
-        return self.store.delete_subtopic(tid, name)
+        r = self.store.delete_subtopic(tid, name)
+        self.controller.refresh_full()
+        return r
 
     def add_entry(self, tid, subtopic, text, source_link="", source_string="", image_data=None):
-        return self.store.add_entry(tid, subtopic, text, source_link, source_string, image_data)
+        r = self.store.add_entry(tid, subtopic, text, source_link, source_string, image_data)
+        self.controller.refresh_full()
+        return r
 
     def update_entry(self, tid, eid, fields):
-        return self.store.update_entry(tid, eid, fields)
+        r = self.store.update_entry(tid, eid, fields)
+        self.controller.refresh_full()
+        return r
 
     def delete_entry(self, tid, eid):
-        return self.store.delete_entry(tid, eid)
+        r = self.store.delete_entry(tid, eid)
+        self.controller.refresh_full()
+        return r
 
     def add_source(self, tid, eid, stype, value, note=""):
-        return self.store.add_source(tid, eid, stype, value, note)
+        r = self.store.add_source(tid, eid, stype, value, note)
+        self.controller.refresh_full()
+        return r
 
     def delete_source(self, tid, eid, sid):
-        return self.store.delete_source(tid, eid, sid)
+        r = self.store.delete_source(tid, eid, sid)
+        self.controller.refresh_full()
+        return r
 
     def save_image(self, tid, eid, data_url):
-        return self.store.save_image(tid, eid, data_url)
+        r = self.store.save_image(tid, eid, data_url)
+        self.controller.refresh_full()
+        return r
 
     def export_topic(self, tid):
         return self.store.export_topic(tid)
@@ -229,6 +260,19 @@ class Controller:
             return
         try:
             self.full.show()
+            try:
+                self.full.on_top = True
+                self.full.on_top = False
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def refresh_full(self):
+        if self.full is None:
+            return
+        try:
+            self.full.evaluate_js("refreshFromBridge()")
         except Exception:
             pass
 
@@ -263,12 +307,12 @@ class Controller:
 
     def build_windows(self):
         self.popup = webview.create_window(
-            "OpenPointLogger · Quick capture", html=POPUP_HTML, js_api=self.api,
+            "Trailmark · Quick capture", html=POPUP_HTML, js_api=self.api,
             width=POPUP_W, height=POPUP_H, frameless=True, easy_drag=True,
             on_top=True, resizable=False, hidden=True, background_color="#0b0f16")
         self.popup_visible = False
         self.full = webview.create_window(
-            "OpenPointLogger", html=MAIN_HTML, js_api=self.api,
+            "Trailmark", html=MAIN_HTML, js_api=self.api,
             width=MAIN_W, height=MAIN_H, min_size=(900, 620), background_color="#0b0f16")
 
         def on_popup_closing():
@@ -286,8 +330,12 @@ class Controller:
                 pass
             return False
 
+        def on_full_shown():
+            self.refresh_full()
+
         self.popup.events.closing += on_popup_closing
         self.full.events.closing += on_full_closing
+        self.full.events.shown += on_full_shown
 
     def build_tray(self):
         def open_full(icon, item):
@@ -303,13 +351,13 @@ class Controller:
             threading.Thread(target=self.quit, daemon=True).start()
 
         menu = pystray.Menu(
-            pystray.MenuItem("Open OpenPointLogger", open_full),
+            pystray.MenuItem("Open Trailmark", open_full),
             pystray.MenuItem("Quick capture", open_popup),
             pystray.MenuItem("Hide windows", hide_all),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", do_quit),
         )
-        self.tray = pystray.Icon("OpenPointLogger", self._icon_image(), "OpenPointLogger", menu)
+        self.tray = pystray.Icon("Trailmark", self._icon_image(), "Trailmark", menu)
 
     def run(self):
         self.build_windows()
@@ -319,15 +367,22 @@ class Controller:
             self.apply_hotkey()
             t = threading.Thread(target=self.tray.run, daemon=True)
             t.start()
+            # windowed bootloader can leave main hidden on some builds; ensure it's shown
+            try:
+                self.show_full()
+            except Exception:
+                pass
 
         webview.start(func=startup)
 
 
 def main():
     if os.name != "nt":
-        print("OpenPointLogger currently supports Windows only.")
+        print("Trailmark currently supports Windows only.")
         return
     c = Controller()
+    if not single.ensure_single_instance(c.show_full):
+        return
     c.run()
 
 

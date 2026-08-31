@@ -33,8 +33,8 @@ def chat(cfg, system, user, timeout=60):
     req = urllib.request.Request(url, data=body, headers={
         "Authorization": "Bearer %s" % api_key,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/AAhmadS/OpenPointLogger",
-        "X-Title": "OpenPointLogger",
+        "HTTP-Referer": "https://github.com/AAhmadS/trailmark",
+        "X-Title": "Trailmark",
     })
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
