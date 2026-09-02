@@ -476,6 +476,13 @@ function renderMain(){
     main.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.open);}));
     main.querySelectorAll("[data-open-md]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openMd);}));
     main.querySelectorAll("[data-open-f]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openF);}));
+    main.querySelectorAll("[data-remove]").forEach(b=>b.addEventListener("click",async e=>{
+      e.stopPropagation();
+      if(!confirm("Remove this export? The folder will be deleted.")) return;
+      const r=await api.delete_export(b.dataset.remove);
+      if(r.error) return toast(r.error,"err");
+      state=r; render(); toast("Export removed.");
+    }));
     return;
   }
   const t=sel?byId(sel):null;
@@ -503,26 +510,39 @@ function bindNew(){
 
 function exportsOverviewHtml(){
   const exps=(state.exports||[]);
-  if(!exps.length) return `<div class="cards"><div class="card glass fade"><div class="card-t">No exports yet</div><p class="muted">Close a topic or click Export to generate a cited HTML report. Exports appear here and are clickable — open the HTML, Markdown, or folder.</p></div></div>`;
+  if(!exps.length) return `<div class="cards"><div class="card glass fade"><div class="card-t">No exports yet</div><p class="muted">Close a topic or click Export to generate a cited HTML report. Exports appear here and are clickable — open the HTML, Markdown, or folder. Exports can be removed from this log without affecting your topics.</p></div></div>`;
   const rows=exps.map(e=>{
     const d=new Date(e.mtime*1000).toLocaleString(undefined,{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
     const pol=e.name.includes("polished")?`<span style="color:#4fd8c8;font-weight:700">✦ Polished</span> `:"";
-    return `<div class="card sub glass" style="cursor:pointer" data-exp-open="${esc(e.folder)}"><div style="font-weight:650">${pol}${esc(e.name)}</div><div class="muted" style="font-size:12px;margin-top:4px">${esc(d)} · ${Math.round(e.size/1024)} KB</div><div class="row" style="margin-top:10px"><button class="btn primary sm" data-open="${esc(e.html)}">Open HTML</button><button class="btn ghost sm" data-open-md="${esc(e.md)}">Open Markdown</button><button class="btn ghost sm" data-open-f="${esc(e.folder)}">Show folder</button></div></div>`;
+    return `<div class="card sub glass" style="cursor:pointer" data-exp-open="${esc(e.folder)}"><div style="font-weight:650">${pol}${esc(e.name)}</div><div class="muted" style="font-size:12px;margin-top:4px">${esc(d)} · ${Math.round(e.size/1024)} KB</div><div class="row" style="margin-top:10px"><button class="btn primary sm" data-open="${esc(e.html)}">Open HTML</button><button class="btn ghost sm" data-open-md="${esc(e.md)}">Open Markdown</button><button class="btn ghost sm" data-open-f="${esc(e.folder)}">Show folder</button><button class="btn danger sm" data-remove="${esc(e.folder)}">Remove</button></div></div>`;
   }).join("");
-  return `<div class="cards"><div class="card glass fade"><div class="card-t">Exports</div><p class="muted">All generated reports — standard and polished. Click to open.</p></div>${rows}</div>`;
+  return `<div class="cards"><div class="card glass fade"><div class="card-t">Exports</div><p class="muted">All generated reports — standard and polished. Click to open. Remove deletes the export folder only; your topics stay intact.</p></div>${rows}</div>`;
 }
 function exportDetailHtml(ex){
   const d=new Date(ex.mtime*1000).toLocaleString(undefined,{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
   const pol=ex.name.includes("polished")?"✦ Polished via AI — facts unchanged, prose arranged":"";
-  return `<div class="cards"><div class="card glass fade"><div class="card-t">${esc(ex.name)}</div><div class="muted">${esc(d)} · ${Math.round(ex.size/1024)} KB</div>${pol?`<div class="badge" style="margin-top:8px">${pol}</div>`:""}<div class="row" style="margin-top:12px"><button class="btn primary" id="exHtml">Open HTML report</button><button class="btn ghost" id="exMd">Open Markdown</button><button class="btn ghost" id="exFolder">Show folder</button></div></div></div>`;
+  return `<div class="cards"><div class="card glass fade"><div class="card-t">${esc(ex.name)}</div><div class="muted">${esc(d)} · ${Math.round(ex.size/1024)} KB</div>${pol?`<div class="badge" style="margin-top:8px">${pol}</div>`:""}<div class="row" style="margin-top:12px"><button class="btn primary" id="exHtml">Open HTML report</button><button class="btn ghost" id="exMd">Open Markdown</button><button class="btn ghost" id="exFolder">Show folder</button><button class="btn danger" id="exRemove">Remove from log</button></div><p class="muted" style="margin-top:8px">Remove deletes this export folder only and cannot be undone.</p></div></div>`;
 }
 function bindExportDetail(ex){
   $("#exHtml")&&$("#exHtml").addEventListener("click",()=>api.open_path(ex.html));
   $("#exMd")&&$("#exMd").addEventListener("click",()=>api.open_path(ex.md));
   $("#exFolder")&&$("#exFolder").addEventListener("click",()=>api.open_path(ex.folder));
+  $("#exRemove")&&$("#exRemove").addEventListener("click",async()=>{
+    if(!confirm("Remove this export from the log? The folder will be deleted.")) return;
+    const r=await api.delete_export(ex.folder);
+    if(r.error) return toast(r.error,"err");
+    state=r; sel=null; render(); toast("Export removed.");
+  });
   document.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.open);}));
   document.querySelectorAll("[data-open-md]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openMd);}));
   document.querySelectorAll("[data-open-f]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openF);}));
+  document.querySelectorAll("[data-remove]").forEach(b=>b.addEventListener("click",async(e)=>{
+    e.stopPropagation();
+    if(!confirm("Remove this export?")) return;
+    const r=await api.delete_export(b.dataset.remove);
+    if(r.error) return toast(r.error,"err");
+    state=r; render(); toast("Export removed.");
+  }));
 }
 
 function detailHtml(t){

@@ -210,6 +210,23 @@ class Store:
                 pass
         return out[:20]
 
+    def delete_export(self, folder):
+        try:
+            p = Path(str(folder or "")).resolve()
+            base = EXPORT_DIR.resolve()
+            # ensure p is inside EXPORT_DIR to avoid deleting arbitrary paths
+            if not str(p).startswith(str(base)):
+                return {"error": "Invalid export path."}
+            if not p.exists() or not p.is_dir():
+                return {"error": "Export not found."}
+            # safety: must contain report.html
+            if not (p / "report.html").exists():
+                return {"error": "Not a valid export folder."}
+            shutil.rmtree(p, ignore_errors=False)
+            return self.state()
+        except Exception as e:
+            return {"error": "Could not remove export: %s" % e}
+
     def find_topic(self, tid):
         for t in self._topics:
             if t["id"] == tid:

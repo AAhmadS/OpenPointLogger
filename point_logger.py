@@ -187,6 +187,9 @@ class Api:
             return {"error": "AI returned no content."}
         return self.store.export_topic_polished(tid, polished)
 
+    def delete_export(self, folder):
+        return self.store.delete_export(folder)
+
     def open_url(self, url):
         try:
             webbrowser.open(url)
