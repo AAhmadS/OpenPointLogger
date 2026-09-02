@@ -26,11 +26,11 @@ body{
 }
 .glass{
   background:var(--glass);
-  backdrop-filter:blur(22px) saturate(150%);
-  -webkit-backdrop-filter:blur(22px) saturate(150%);
+  backdrop-filter:blur(12px) saturate(120%);
+  -webkit-backdrop-filter:blur(12px) saturate(120%);
   border:1px solid var(--stroke);
   border-radius:var(--radius);
-  box-shadow:0 12px 38px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow:0 8px 24px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.06);
 }
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:9px}
@@ -405,6 +405,7 @@ main{overflow-y:auto;padding:22px}
 <script>
 let state={topics:[],config:{},providers:{}};
 let tab="open", sel=null, editEntry=null, filterSub=null, summaryDraft=null;
+let displayLimit=20;
 const api=new Proxy({},{get:(_,p)=>{const pv=window.pywebview&&window.pywebview.api;return pv?pv[p]:(()=>Promise.resolve({error:"bridge not ready"}));}});
 
 const $=(s,r=document)=>r.querySelector(s);
@@ -453,7 +454,8 @@ function renderSide(){
       <div class="ti-b"><div class="ti-t">${esc(t.title)}</div><div class="ti-s">${esc(sub)}</div></div>
     </div>`;
   }).join("")||`<div class="empty">${open?"No open topics. Start one below.":"No closed topics yet."}</div>`;
-  list.querySelectorAll(".ti").forEach(el=>el.addEventListener("click",()=>{sel=el.dataset.id;editEntry=null;filterSub=null;render();}));
+  list.querySelectorAll(".ti").forEach(el=>el.addEventListener("click",()=>{sel=el.dataset.id;editEntry=null;filterSub=null;displayLimit=20;render();}));
+  list.querySelectorAll(".ti[data-exp]").forEach(el=>el.addEventListener("click",()=>{ sel=el.dataset.exp; displayLimit=20; render(); }));
 }
 
 function renderMain(){
@@ -545,7 +547,9 @@ function detailHtml(t){
   </div>`:"";
   const entries=t.entries.slice().sort((a,b)=>a.created<b.created?1:-1);
   const shown=filterSub?entries.filter(e=>(e.subtopic||"")===filterSub):entries;
-  const list=shown.map(e=>entryHtml(t,e)).join("")||`<div class="empty">No points logged yet.</div>`;
+  const displayShown=shown.slice(0,displayLimit);
+  const list=displayShown.map(e=>entryHtml(t,e)).join("")||`<div class="empty">No points logged yet.</div>`;
+  const moreBtn=shown.length>displayLimit?`<button class="btn ghost full" id="showMore">Show ${shown.length-displayLimit} more</button>`:"";
   const summaryBlock=summaryDraft?`<div class="card sub glass">
     <div class="card-h"><div class="card-t">AI summary</div></div>
     <div class="e-text" style="white-space:pre-line;margin-bottom:10px">${esc(summaryDraft)}</div>
@@ -568,6 +572,7 @@ function detailHtml(t){
     </div>
     ${composer}
     <div class="entries">${list}</div>
+    ${moreBtn}
     <div class="card sub glass">
       <div class="row"><div class="muted grow">Closing the topic locks it and exports a clean, cited report (HTML + Markdown).</div>${acts}</div>
     </div>
@@ -650,7 +655,7 @@ function bindDetail(t){
     state=r;render();
   });
   const sAdd=$("#subClear");
-  if(sAdd)sAdd.addEventListener("click",()=>{filterSub=null;render();});
+  if(sAdd)sAdd.addEventListener("click",()=>{filterSub=null;displayLimit=20;render();});
   document.querySelectorAll("button[data-s]").forEach(b=>b.addEventListener("click",async()=>{
     const s=b.dataset.s;
     if(b.querySelector("span")){
@@ -659,7 +664,7 @@ function bindDetail(t){
       if(r.error)return toast(r.error,"err");
       state=r;render();return;
     }
-    filterSub=s;render();
+    filterSub=s;displayLimit=20;render();
   }));
   document.querySelectorAll("[data-url]").forEach(el=>el.addEventListener("click",()=>api.open_url(el.dataset.url)));
   document.querySelectorAll("[data-copy]").forEach(el=>el.addEventListener("click",()=>copyText(el.dataset.copy)));
@@ -685,6 +690,8 @@ function bindDetail(t){
   });
   const eeCancel=$("#eeCancel");
   if(eeCancel)eeCancel.addEventListener("click",()=>{editEntry=null;render();});
+  const showMore=$("#showMore");
+  if(showMore)showMore.addEventListener("click",()=>{displayLimit+=20;render();});
 }
 
 let compLinks=[],compStrings=[],compImages=[];
@@ -880,9 +887,9 @@ function bindSettings(){
 
 document.getElementById("seg").addEventListener("click",e=>{
   const b=e.target.closest(".seg");if(!b)return;
-  tab=b.dataset.tab;sel=null;editEntry=null;filterSub=null;render();
+  tab=b.dataset.tab;sel=null;editEntry=null;filterSub=null;displayLimit=20;render();
 });
-document.getElementById("newBtn").addEventListener("click",()=>{tab="open";sel=null;render();});
+document.getElementById("newBtn").addEventListener("click",()=>{tab="open";sel=null;displayLimit=20;render();});
 document.getElementById("popupBtn").addEventListener("click",()=>api.show_popup());
 
 function refreshFromBridge(){

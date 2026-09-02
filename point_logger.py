@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import traceback
 import webbrowser
 
 import pystray
@@ -20,40 +21,6 @@ MAIN_HTML = MAIN_HTML.replace("__ICON__", ICON_DATA_URI)
 
 POPUP_W, POPUP_H = 462, 648
 MAIN_W, MAIN_H = 1180, 764
-MENU_W, MENU_H = 248, 220
-
-TRAY_MENU_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box;margin:0}
-body{font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;background:rgba(11,15,22,.94);backdrop-filter:blur(18px);color:#eef1f6;overflow:hidden}
-.wrap{padding:8px}
-.brand{padding:10px 10px 8px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:6px}
-.brand .t{font-weight:700;font-size:13px;letter-spacing:.2px}
-.brand .s{font-size:11px;color:#94a0b2;margin-top:2px}
-.item{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:10px;border:1px solid transparent;background:transparent;color:#eef1f6;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left;transition:.14s}
-.item:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);transform:translateX(1px)}
-.item.primary{background:linear-gradient(180deg,rgba(240,169,74,.92),rgba(201,127,45,.95));color:#201407;box-shadow:0 4px 14px rgba(201,127,45,.32)}
-.item.primary:hover{filter:brightness(1.06)}
-.item.danger{color:#ffb4b4}
-.item.danger:hover{background:rgba(255,107,107,.14);border-color:rgba(255,107,107,.28)}
-.ico{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;opacity:.9}
-.sep{height:1px;background:rgba(255,255,255,.08);margin:6px 0}
-.hint{font-size:10px;color:#7d8694;text-align:center;margin-top:6px;letter-spacing:.04em}
-</style></head><body>
-<div class="wrap">
-  <div class="brand"><div class="t">Trailmark</div><div class="s">Log the point. Keep the source.</div></div>
-  <button class="item primary" onclick="go('open')"><span class="ico">◈</span> Open Trailmark</button>
-  <button class="item" onclick="go('capture')"><span class="ico">✦</span> Quick capture</button>
-  <button class="item" onclick="go('hide')"><span class="ico">—</span> Hide windows</button>
-  <div class="sep"></div>
-  <button class="item danger" onclick="go('quit')"><span class="ico">✕</span> Quit</button>
-  <div class="hint">Right-click outside to dismiss</div>
-</div>
-<script>
-function go(a){ if(window.pywebview&&window.pywebview.api) window.pywebview.api.tray_action(a); }
-document.addEventListener('click',e=>{ if(e.target===document.documentElement||e.target===document.body) window.pywebview&&window.pywebview.api&&window.pywebview.api.hide_menu();});
-document.addEventListener('keydown',e=>{ if(e.key==='Escape' && window.pywebview) window.pywebview.api.hide_menu();});
-window.addEventListener('blur',()=>{ setTimeout(()=>window.pywebview&&window.pywebview.api&&window.pywebview.api.hide_menu(), 180);});
-</script></body></html>"""
 
 
 class Api:
@@ -243,11 +210,9 @@ class Api:
         return {}
 
     def hide_menu(self):
-        self.controller.hide_menu()
         return {}
 
     def tray_action(self, action):
-        # called from custom tray menu
         if action == "open":
             self.controller.show_full()
         elif action == "capture":
@@ -256,7 +221,6 @@ class Api:
             self.controller.hide_all()
         elif action == "quit":
             self.controller.quit()
-        self.controller.hide_menu()
         return {}
 
 
@@ -267,7 +231,6 @@ class Controller:
         self.store = Store()
         self.popup = None
         self.full = None
-        self.menu_win = None
         self.popup_visible = True
         self.quitting = False
         self.hotkey = None
@@ -379,30 +342,7 @@ class Controller:
         except Exception:
             pass
 
-    def hide_menu(self):
-        if self.menu_win is None:
-            return
-        try:
-            self.menu_win.hide()
-        except Exception:
-            pass
-
-    def show_tray_menu(self, x=None, y=None):
-        if self.menu_win is None:
-            return
-        # Called from tray thread (pystray) — keep it minimal and thread-safe.
-        # Do NOT call move() from here (DPI + off-thread causes crashy). Just show.
-        try:
-            self.menu_win.show()
-            try:
-                self.menu_win.evaluate_js("document.body.focus();")
-            except Exception:
-                pass
-        except Exception:
-            pass
-
     def hide_all(self):
-        self.hide_menu()
         self.hide_popup()
         try:
             if self.full:
@@ -422,7 +362,7 @@ class Controller:
                 self.hotkey.stop()
             except Exception:
                 pass
-        for w in (self.popup, self.full, self.menu_win):
+        for w in (self.popup, self.full):
             if w is None:
                 continue
             try:
@@ -440,10 +380,6 @@ class Controller:
         self.full = webview.create_window(
             "Trailmark", html=MAIN_HTML, js_api=self.api,
             width=MAIN_W, height=MAIN_H, min_size=(900, 620), background_color="#0b0f16")
-        self.menu_win = webview.create_window(
-            "Trailmark Menu", html=TRAY_MENU_HTML, js_api=self.api,
-            width=MENU_W, height=MENU_H, frameless=True, easy_drag=False,
-            on_top=True, resizable=False, hidden=True, background_color="#0b0f16")
 
         def on_popup_closing():
             if self.quitting:
@@ -463,20 +399,9 @@ class Controller:
         def on_full_shown():
             self.refresh_full()
 
-        def on_menu_closing():
-            if self.quitting:
-                return True
-            try:
-                self.menu_win.hide()
-            except Exception:
-                pass
-            return False
-
         self.popup.events.closing += on_popup_closing
         self.full.events.closing += on_full_closing
         self.full.events.shown += on_full_shown
-        if self.menu_win:
-            self.menu_win.events.closing += on_menu_closing
 
     def build_tray(self):
         def open_full(icon, item):
@@ -500,71 +425,60 @@ class Controller:
             pystray.MenuItem("Quit", do_quit),
         )
         self.tray = pystray.Icon("Trailmark", self._icon_image(), "Trailmark", menu)
-        # Patch _on_notify to show chic dark menu instead of blurry Win32 white menu
-        try:
-            orig_on_notify = self.tray._on_notify
-
-            def chic_on_notify(wparam, lparam):
-                try:
-                    import ctypes
-                    from ctypes import wintypes
-                    from pystray._util import win32 as _win32
-                    WM_RBUTTONUP = 0x0205
-                    WM_LBUTTONUP = 0x0202
-                    if lparam == WM_LBUTTONUP:
-                        # Left click -> open main (standard)
-                        self.show_full()
-                        return
-                    if lparam == WM_RBUTTONUP:
-                        # Show our chic dark menu at cursor
-                        try:
-                            pt = wintypes.POINT()
-                            ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-                            # use webview thread-safe: schedule via evaluate? but we are on tray thread
-                            # call show_tray_menu directly (it moves + shows)
-                            self.show_tray_menu(pt.x, pt.y)
-                        except Exception:
-                            self.show_tray_menu()
-                        # Set foreground to allow proper focus
-                        try:
-                            _win32.SetForegroundWindow(self.tray._hwnd)
-                        except Exception:
-                            pass
-                        return
-                except Exception:
-                    pass
-                # fallback to original for other messages
-                return orig_on_notify(wparam, lparam)
-
-            self.tray._on_notify = chic_on_notify
-        except Exception:
-            pass
 
     def run(self):
         self.build_windows()
         self.build_tray()
 
         def startup():
-            self.apply_hotkey()
-            t = threading.Thread(target=self.tray.run, daemon=True)
-            t.start()
+            try:
+                self.apply_hotkey()
+            except Exception:
+                traceback.print_exc()
+            try:
+                t = threading.Thread(target=self.tray.run, daemon=True)
+                t.start()
+            except Exception:
+                traceback.print_exc()
             # windowed bootloader can leave main hidden on some builds; ensure it's shown
             try:
                 self.show_full()
             except Exception:
-                pass
+                traceback.print_exc()
 
-        webview.start(func=startup)
+        try:
+            webview.start(func=startup)
+        except Exception as e:
+            # Fallback: log to file and try again without tray
+            try:
+                log_path = data_dir() / "trailmark_crash.log"
+                log_path.write_text(traceback.format_exc(), encoding="utf-8")
+            except Exception:
+                pass
+            # Try to show main directly without tray
+            try:
+                self.show_full()
+            except Exception:
+                pass
+            raise
 
 
 def main():
     if os.name != "nt":
         print("Trailmark currently supports Windows only.")
         return
-    c = Controller()
-    if not single.ensure_single_instance(c.show_full):
-        return
-    c.run()
+    try:
+        c = Controller()
+        if not single.ensure_single_instance(c.show_full):
+            return
+        c.run()
+    except Exception:
+        try:
+            log_path = data_dir() / "trailmark_crash.log"
+            log_path.write_text(traceback.format_exc(), encoding="utf-8")
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":
