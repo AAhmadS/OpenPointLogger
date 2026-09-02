@@ -11,7 +11,7 @@ def resolve_base_url(cfg):
     return PROVIDERS.get(cfg.get("provider"), PROVIDERS["openrouter"])["base_url"].rstrip("/")
 
 
-def chat(cfg, system, user, timeout=60):
+def chat(cfg, system, user, timeout=90):
     if not cfg.get("enabled"):
         return {"error": "AI assist is disabled. Enable it in Settings and add your API key."}
     api_key = (cfg.get("api_key") or "").strip()
@@ -21,21 +21,41 @@ def chat(cfg, system, user, timeout=60):
     if not model:
         return {"error": "No model configured."}
     base = resolve_base_url(cfg)
-    url = "%s/chat/completions" % base
-    body = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "temperature": 0.3,
-    }).encode("utf-8")
-    req = urllib.request.Request(url, data=body, headers={
-        "Authorization": "Bearer %s" % api_key,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/AAhmadS/trailmark",
-        "X-Title": "Trailmark",
-    })
+    provider = (cfg.get("provider") or "").strip()
+    is_google = provider == "google" or "generativelanguage.googleapis.com" in base
+    if is_google and not base.endswith("/openai"):
+        # Google Gemini native endpoint
+        # url: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+        url = "%s/models/%s:generateContent" % (base.rstrip("/"), model)
+        body = json.dumps({
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {"temperature": 0.3},
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers={
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json",
+        })
+    else:
+        # OpenAI-compatible (OpenAI, OpenRouter, Mistral, AvalAI, Google-openai compat)
+        url = "%s/chat/completions" % base
+        body = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.3,
+        }).encode("utf-8")
+        hdrs = {
+            "Authorization": "Bearer %s" % api_key,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/AAhmadS/trailmark",
+            "X-Title": "Trailmark",
+        }
+        if is_google:
+            hdrs["x-goog-api-key"] = api_key
+        req = urllib.request.Request(url, data=body, headers=hdrs)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -48,10 +68,14 @@ def chat(cfg, system, user, timeout=60):
     except Exception as e:
         return {"error": "Request failed: %s" % e}
     try:
-        content = data["choices"][0]["message"]["content"]
+        if is_google and not (base.endswith("/openai") if 'base' in locals() else False):
+            # Google response: candidates[0].content.parts[0].text
+            content = data["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            content = data["choices"][0]["message"]["content"]
         return {"content": content}
-    except Exception:
-        return {"error": "Unexpected provider response."}
+    except Exception as e:
+        return {"error": "Unexpected provider response: %s" % e}
 
 
 def test_connection(cfg):
@@ -78,3 +102,17 @@ def draft_summary(cfg, topic_title, subtopics_text, max_points):
     user = ("Summarize the research topic \"%s\" based on these logged points "
             "(at most %d points, grouped by sub-topic):\n\n%s") % (topic_title, max_points, subtopics_text)
     return chat(cfg, system, user)
+
+
+def polish_report(cfg, topic_title, entries_payload):
+    system = (
+        "You are a research editor. Given raw research points with their citations, produce a polished, "
+        "well-structured report. Rules: DO NOT change facts, claims, numbers, or meaning — only fix grammar, "
+        "typos, and phrasing. Keep every citation exactly as [n] where n is the original number. "
+        "Group points into logical sections; give each section a clear H2 header (markdown ##). "
+        "Keep the tone neutral and academic. Return markdown only: ## headers, paragraphs, bullet lists "
+        "where helpful, and keep [n] citations inline. Do not invent sources or renumber."
+    )
+    user = ("Topic: %s\n\nRaw points (with citations):\n%s\n\n"
+            "Return the polished report in markdown as described.") % (topic_title, entries_payload)
+    return chat(cfg, system, user, timeout=120)

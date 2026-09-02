@@ -151,7 +151,7 @@ section{overflow-y:auto;flex:1}
 <script>
 let state={topics:[]};
 let topicId=null, subTopic="";
-let pLink="", pString="", pImage=null;
+let pLinks=[], pStrings=[], pImages=[];
 let lastTopicId=null;
 const api=new Proxy({},{get:(_,p)=>{const pv=window.pywebview&&window.pywebview.api;return pv?pv[p]:(()=>Promise.resolve({error:"bridge not ready"}));}});
 
@@ -199,23 +199,35 @@ function addSub(name){
 async function logPoint(){
   const text=$("#ptText").value;
   if(!text.trim()){toast("Write the point first.","err");$("#ptText").focus();return;}
-  const r=await api.add_entry(topicId,subTopic,text,pLink,pString,pImage);
+  const sources=[];
+  pLinks.forEach(v=>sources.push({type:"link",value:v}));
+  pStrings.forEach(v=>sources.push({type:"string",value:v}));
+  pImages.forEach(v=>sources.push({type:"image",value:v}));
+  const r=await api.add_entry(topicId,subTopic,text,"","",null,sources);
   if(r.error){toast(r.error,"err");return;}
   state=r;lastTopicId=topicId;
-  $("#ptText").value="";$("#ptLink").value="";$("#ptStr").value="";pLink="";pString="";pImage=null;
+  $("#ptText").value="";$("#ptLink").value="";$("#ptStr").value="";pLinks=[];pStrings=[];pImages=[];
   renderAtt();
-  $("#recent").innerHTML="<b>Logged</b> · "+fmtTime(r.topics.find(t=>t.id===topicId).entries.at(-1).created)+
-    (subTopic?" · "+esc(subTopic):"");
-  toast("Point logged.");
+  const t=state.topics.find(t=>t.id===topicId);
+  $("#recent").innerHTML="<b>Logged</b> · "+fmtTime(t.entries.at(-1).created)+
+    (subTopic?" · "+esc(subTopic):"")+" · "+(t.entries.length)+" point(s) total";
+  toast("Point logged — "+sources.length+" source(s) attached.");
   $("#ptText").focus();
 }
 
 function renderAtt(){
   const wrap=$("#attChips");const parts=[];
-  if(pLink)parts.push(`<span class="chip active">link</span>`);
-  if(pString)parts.push(`<span class="chip active">string</span>`);
-  if(pImage)parts.push(`<span class="chip active">shot</span>`);
-  wrap.innerHTML=parts.join("")||`<span class="muted" style="font-size:11.5px">sources for this point appear here</span>`;
+  pLinks.forEach((v,i)=>parts.push(`<span class="chip active" data-rm="link-${i}" title="${esc(v)}">🔗 ${esc(v.slice(0,22))} ×</span>`));
+  pStrings.forEach((v,i)=>parts.push(`<span class="chip active" data-rm="str-${i}" title="${esc(v)}">“ ${esc(v.slice(0,18))} ×</span>`));
+  pImages.forEach((_,i)=>parts.push(`<span class="chip active" data-rm="img-${i}">🖼 shot ${i+1} ×</span>`));
+  wrap.innerHTML=parts.join("")||`<span class="muted" style="font-size:11.5px">add links, strings or screenshots — all will be cited</span>`;
+  wrap.querySelectorAll("[data-rm]").forEach(el=>el.addEventListener("click",()=>{
+    const k=el.dataset.rm;
+    if(k.startsWith("link-")) pLinks.splice(parseInt(k.split("-")[1]),1);
+    if(k.startsWith("str-")) pStrings.splice(parseInt(k.split("-")[1]),1);
+    if(k.startsWith("img-")) pImages.splice(parseInt(k.split("-")[1]),1);
+    renderAtt();
+  }));
 }
 
 $("#ntGo").addEventListener("click",async()=>{
@@ -228,21 +240,40 @@ $("#ntGo").addEventListener("click",async()=>{
 $("#ntTitle").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ntGo").click();});
 $("#tpSel").addEventListener("change",e=>{topicId=e.target.value;lastTopicId=topicId;subTopic="";renderSubs();});
 $("#tpNew").addEventListener("click",()=>{topicId=null;$("#noTopic").hidden=false;$("#logPanel").hidden=true;$("#ntTitle").value="";$("#ntTitle").focus();});
-$("#ptLinkAdd").addEventListener("click",()=>{const v=$("#ptLink").value.trim();if(!v)return;pLink=v;$("#ptLink").value="";renderAtt();toast("Link added.");});
-$("#ptStrAdd").addEventListener("click",()=>{const v=$("#ptStr").value.trim();if(!v)return;pString=v;$("#ptStr").value="";renderAtt();toast("Citation added.");});
+$("#ptLinkAdd").addEventListener("click",()=>{
+  const v=$("#ptLink").value.trim();if(!v)return;
+  try{new URL(v);}catch(e){toast("That doesn't look like a URL.","err");return;}
+  pLinks.push(v);$("#ptLink").value="";renderAtt();toast("Link added ("+pLinks.length+").");
+});
+$("#ptStrAdd").addEventListener("click",()=>{
+  const v=$("#ptStr").value.trim();if(!v)return;
+  pStrings.push(v);$("#ptStr").value="";renderAtt();toast("Citation added ("+pStrings.length+").");
+});
 $("#ptLink").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ptLinkAdd").click();});
 $("#ptStr").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ptStrAdd").click();});
 $("#ptShot").addEventListener("change",e=>{
-  const f=e.target.files[0];if(!f)return;
-  const rd=new FileReader();
-  rd.onload=()=>{pImage=rd.result;renderAtt();toast("Screenshot attached.");};
-  rd.readAsDataURL(f);e.target.value="";
+  const files=[...e.target.files]; if(!files.length) return;
+  let pending=files.length;
+  files.forEach(f=>{
+    if(f.size>8*1024*1024){toast("Image too large (8 MB max).","err"); pending--; if(!pending) renderAtt(); return;}
+    const rd=new FileReader();
+    rd.onload=()=>{pImages.push(rd.result); renderAtt(); toast("Screenshot attached ("+pImages.length+").");};
+    rd.readAsDataURL(f);
+  });
+  e.target.value="";
 });
 $("#ptGo").addEventListener("click",logPoint);
 $("#ptText").addEventListener("keydown",e=>{
   if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();logPoint();}
 });
-$("#openApp").addEventListener("click",()=>api.show_full());
+$("#openApp").addEventListener("click",async()=>{
+  $("#openApp").textContent="Opening…";
+  try{
+    const r=await api.show_full();
+    if(r && r.error) toast(r.error,"err");
+  }catch(e){ /* bridge not ready, try fallback */ }
+  setTimeout(()=>$("#openApp").textContent="Open app",900);
+});
 $("#ptHide").addEventListener("click",()=>api.hide_popup());
 document.addEventListener("keydown",e=>{if(e.key==="Escape")api.hide_popup();});
 document.addEventListener("wheel",e=>{if(e.ctrlKey)e.preventDefault();},{passive:false});
@@ -359,6 +390,7 @@ main{overflow-y:auto;padding:22px}
     <div class="segmented" id="seg">
       <button class="seg active" data-tab="open">Open</button>
       <button class="seg" data-tab="closed">Closed</button>
+      <button class="seg" data-tab="exports">Exports</button>
       <button class="seg" data-tab="settings">Settings</button>
     </div>
     <div class="list" id="sideList"></div>
@@ -397,6 +429,17 @@ function render(){
 function renderSide(){
   const list=$("#sideList");
   if(tab==="settings"){list.innerHTML=`<div class="empty">AI assist, hotkey &amp; storage preferences.</div>`;return;}
+  if(tab==="exports"){
+    const exps=(state.exports||[]);
+    if(!exps.length){list.innerHTML=`<div class="empty">No exports yet.<br>Close a topic to generate a report.</div>`;return;}
+    list.innerHTML=exps.map(e=>{
+      const d=new Date(e.mtime*1000).toLocaleString(undefined,{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+      const isPol=e.name.includes("polished")?"✦ ":"";
+      return `<div class="ti" data-exp="${esc(e.folder)}"><span class="dot open" style="background:#4fd8c8"></span><div class="ti-b"><div class="ti-t">${esc(isPol+e.name)}</div><div class="ti-s">${esc(d)} · ${Math.round(e.size/1024)} KB</div></div></div>`;
+    }).join("");
+    list.querySelectorAll(".ti[data-exp]").forEach(el=>el.addEventListener("click",()=>{ sel=el.dataset.exp; render(); }));
+    return;
+  }
   const open=tab==="open";
   const items=state.topics.filter(t=>t.status==="open"===open);
   items.sort((a,b)=>(a.status==="open"?(a.created<b.created?1:-1):(a.closed<b.closed?1:-1)));
@@ -416,6 +459,23 @@ function renderSide(){
 function renderMain(){
   const main=$("#main");
   if(tab==="settings"){main.innerHTML=settingsHtml();bindSettings();return;}
+  if(tab==="exports"){
+    if(sel && (state.exports||[]).find(e=>e.folder===sel)){
+      const ex=(state.exports||[]).find(e=>e.folder===sel);
+      main.innerHTML=exportDetailHtml(ex); bindExportDetail(ex); return;
+    }
+    main.innerHTML=exportsOverviewHtml();
+    // bind overview cards
+    main.querySelectorAll("[data-exp-open]").forEach(el=>el.addEventListener("click",()=>{
+      const f=el.dataset.expOpen;
+      const ex=(state.exports||[]).find(e=>e.folder===f);
+      if(ex) api.open_path(ex.html);
+    }));
+    main.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.open);}));
+    main.querySelectorAll("[data-open-md]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openMd);}));
+    main.querySelectorAll("[data-open-f]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openF);}));
+    return;
+  }
   const t=sel?byId(sel):null;
   if(!t){main.innerHTML=newViewHtml();bindNew();return;}
   main.innerHTML=detailHtml(t);bindDetail(t);
@@ -439,14 +499,39 @@ function bindNew(){
   $("#ntTitle").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ntGo").click();});
 }
 
+function exportsOverviewHtml(){
+  const exps=(state.exports||[]);
+  if(!exps.length) return `<div class="cards"><div class="card glass fade"><div class="card-t">No exports yet</div><p class="muted">Close a topic or click Export to generate a cited HTML report. Exports appear here and are clickable — open the HTML, Markdown, or folder.</p></div></div>`;
+  const rows=exps.map(e=>{
+    const d=new Date(e.mtime*1000).toLocaleString(undefined,{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+    const pol=e.name.includes("polished")?`<span style="color:#4fd8c8;font-weight:700">✦ Polished</span> `:"";
+    return `<div class="card sub glass" style="cursor:pointer" data-exp-open="${esc(e.folder)}"><div style="font-weight:650">${pol}${esc(e.name)}</div><div class="muted" style="font-size:12px;margin-top:4px">${esc(d)} · ${Math.round(e.size/1024)} KB</div><div class="row" style="margin-top:10px"><button class="btn primary sm" data-open="${esc(e.html)}">Open HTML</button><button class="btn ghost sm" data-open-md="${esc(e.md)}">Open Markdown</button><button class="btn ghost sm" data-open-f="${esc(e.folder)}">Show folder</button></div></div>`;
+  }).join("");
+  return `<div class="cards"><div class="card glass fade"><div class="card-t">Exports</div><p class="muted">All generated reports — standard and polished. Click to open.</p></div>${rows}</div>`;
+}
+function exportDetailHtml(ex){
+  const d=new Date(ex.mtime*1000).toLocaleString(undefined,{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  const pol=ex.name.includes("polished")?"✦ Polished via AI — facts unchanged, prose arranged":"";
+  return `<div class="cards"><div class="card glass fade"><div class="card-t">${esc(ex.name)}</div><div class="muted">${esc(d)} · ${Math.round(ex.size/1024)} KB</div>${pol?`<div class="badge" style="margin-top:8px">${pol}</div>`:""}<div class="row" style="margin-top:12px"><button class="btn primary" id="exHtml">Open HTML report</button><button class="btn ghost" id="exMd">Open Markdown</button><button class="btn ghost" id="exFolder">Show folder</button></div></div></div>`;
+}
+function bindExportDetail(ex){
+  $("#exHtml")&&$("#exHtml").addEventListener("click",()=>api.open_path(ex.html));
+  $("#exMd")&&$("#exMd").addEventListener("click",()=>api.open_path(ex.md));
+  $("#exFolder")&&$("#exFolder").addEventListener("click",()=>api.open_path(ex.folder));
+  document.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.open);}));
+  document.querySelectorAll("[data-open-md]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openMd);}));
+  document.querySelectorAll("[data-open-f]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openF);}));
+}
+
 function detailHtml(t){
   const n=t.entries.length;
   const pill=t.status==="open"?`<span class="pill open">Open</span>`:`<span class="pill closed">Closed</span>`;
   const subs=(t.subtopics||[]).map(s=>`<button class="chip ${filterSub===s?"active":""}" data-s="${esc(s)}">${esc(s)}<span style="opacity:.5">×</span></button>`).join("");
   const subRow=subs||`<span class="muted">No sub-topics yet.</span>`;
+  const hasAI=state.config.llm&&state.config.llm.enabled&&(state.config.llm.api_key||"").trim()!=="";
   const acts=t.status==="open"
     ?`<button class="btn primary sm" id="tClose">Close &amp; export</button><button class="btn danger sm" id="tDel">Delete</button>`
-    :`<button class="btn primary sm" id="tExp">Export report</button>${state.config.llm&&state.config.llm.enabled?`<button class="btn ghost sm" id="tDraft">Draft AI summary</button>`:""}<button class="btn ghost sm" id="tReopen">Reopen</button><button class="btn danger sm" id="tDel">Delete</button>`;
+    :`<button class="btn primary sm" id="tExp">Export report</button>${hasAI?`<button class="btn ghost sm" id="tPolish" title="AI polishes prose, arranges into headers, keeps all citations linked to References">✦ Polish via AI</button><button class="btn ghost sm" id="tDraft">Draft AI summary</button>`:""}<button class="btn ghost sm" id="tReopen">Reopen</button><button class="btn danger sm" id="tDel">Delete</button>`;
   const composer=t.status==="open"?`<div class="card sub glass composer">
     <div class="row"><select id="cSub" class="input grow"></select>
       <input id="cLink" class="input grow" placeholder="Source link…">
@@ -531,6 +616,14 @@ function bindDetail(t){
     bindComposer(t);
   }else{
     $("#tExp").addEventListener("click",doExport);
+    const tPol=$("#tPolish");
+    if(tPol) tPol.addEventListener("click",async()=>{
+      tPol.disabled=true; tPol.textContent="Polishing…";
+      const r=await api.export_topic_polished(t.id);
+      if(r.error){toast(r.error,"err"); tPol.disabled=false; tPol.textContent="✦ Polish via AI"; return;}
+      state=await api.get_state(); render();
+      showExportToast(r, true); tPol.disabled=false; tPol.textContent="✦ Polish via AI";
+    });
     $("#tReopen").addEventListener("click",async()=>{
       const r=await api.reopen_topic(t.id);
       if(r.error)return toast(r.error,"err");
@@ -594,25 +687,30 @@ function bindDetail(t){
   if(eeCancel)eeCancel.addEventListener("click",()=>{editEntry=null;render();});
 }
 
-let compLink="",compString="",compImage=null;
+let compLinks=[],compStrings=[],compImages=[];
 function bindComposer(t){
   const sub=$("#cSub");
   sub.innerHTML=[`<option value="">General</option>`].concat((t.subtopics||[]).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`)).join("");
   $("#cLinkAdd").addEventListener("click",()=>{
     const v=$("#cLink").value.trim();if(!v)return;
-    compLink=v;$("#cLink").value="";renderAtt();toast("Link added.");
+    try{new URL(v);}catch(e){toast("Not a valid URL.","err");return;}
+    compLinks.push(v);$("#cLink").value="";renderAtt();toast("Link added ("+compLinks.length+").");
   });
   $("#cStrAdd").addEventListener("click",()=>{
     const v=$("#cStr").value.trim();if(!v)return;
-    compString=v;$("#cStr").value="";renderAtt();toast("Citation added.");
+    compStrings.push(v);$("#cStr").value="";renderAtt();toast("Citation added ("+compStrings.length+").");
   });
   $("#cLink").addEventListener("keydown",e=>{if(e.key==="Enter")$("#cLinkAdd").click();});
   $("#cStr").addEventListener("keydown",e=>{if(e.key==="Enter")$("#cStrAdd").click();});
   $("#cShot").addEventListener("change",e=>{
-    const f=e.target.files[0];if(!f)return;
-    const rd=new FileReader();
-    rd.onload=()=>{compImage=rd.result;renderAtt();toast("Screenshot attached.");};
-    rd.readAsDataURL(f);e.target.value="";
+    const files=[...e.target.files]; if(!files.length) return;
+    files.forEach(f=>{
+      if(f.size>8*1024*1024){toast("Image too large (8 MB).","err");return;}
+      const rd=new FileReader();
+      rd.onload=()=>{compImages.push(rd.result);renderAtt();toast("Screenshot ("+compImages.length+").");};
+      rd.readAsDataURL(f);
+    });
+    e.target.value="";
   });
   $("#cGo").addEventListener("click",logComposer);
   $("#cText").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.ctrlKey&&!e.metaKey){e.preventDefault();logComposer();}});
@@ -621,19 +719,30 @@ function renderAtt(){
   const wrap=$("#cAtt");
   if(!wrap)return;
   const parts=[];
-  if(compLink)parts.push(`<span class="chip active">link</span>`);
-  if(compString)parts.push(`<span class="chip active">string</span>`);
-  if(compImage)parts.push(`<span class="chip active">shot</span>`);
-  wrap.innerHTML=parts.join("")||`<span class="muted" style="font-size:11.5px">pending sources</span>`;
+  compLinks.forEach((v,i)=>parts.push(`<span class="chip active" data-rm="link-${i}" title="${esc(v)}">🔗 ${esc(v.slice(0,22))} ×</span>`));
+  compStrings.forEach((v,i)=>parts.push(`<span class="chip active" data-rm="str-${i}" title="${esc(v)}">“ ${esc(v.slice(0,18))} ×</span>`));
+  compImages.forEach((_,i)=>parts.push(`<span class="chip active" data-rm="img-${i}">🖼 shot ${i+1} ×</span>`));
+  wrap.innerHTML=parts.join("")||`<span class="muted" style="font-size:11.5px">add links, strings or screenshots — all cited</span>`;
+  wrap.querySelectorAll("[data-rm]").forEach(el=>el.addEventListener("click",()=>{
+    const k=el.dataset.rm;
+    if(k.startsWith("link-")) compLinks.splice(parseInt(k.split("-")[1]),1);
+    if(k.startsWith("str-")) compStrings.splice(parseInt(k.split("-")[1]),1);
+    if(k.startsWith("img-")) compImages.splice(parseInt(k.split("-")[1]),1);
+    renderAtt();
+  }));
 }
 async function logComposer(){
   const t=byId(sel);if(!t)return;
   const text=$("#cText").value;
   if(!text.trim()){toast("Write the point first.","err");return;}
-  const r=await api.add_entry(t.id,$("#cSub").value,text,compLink,compString,compImage);
+  const sources=[];
+  compLinks.forEach(v=>sources.push({type:"link",value:v}));
+  compStrings.forEach(v=>sources.push({type:"string",value:v}));
+  compImages.forEach(v=>sources.push({type:"image",value:v}));
+  const r=await api.add_entry(t.id,$("#cSub").value,text,"","",null,sources);
   if(r.error)return toast(r.error,"err");
-  state=r;compLink="";compString="";compImage=null;
-  $("#cText").value="";renderAtt();render();toast("Point logged.");
+  state=r;compLinks=[];compStrings=[];compImages=[];
+  $("#cText").value="";renderAtt();render();toast("Point logged — "+sources.length+" source(s).");
 }
 
 async function closeAndExport(){
@@ -642,23 +751,37 @@ async function closeAndExport(){
   if(r.error)return toast(r.error,"err");
   state=r;
   const ex=await api.export_topic(sel);
-  if(ex.error)return toast(ex.error,"err");
+  if(ex.error){ state=await api.get_state(); render(); return toast(ex.error,"err"); }
+  state=await api.get_state();
   tab="closed";render();
   showExportToast(ex);
 }
 async function doExport(){
   const ex=await api.export_topic(sel);
   if(ex.error)return toast(ex.error,"err");
+  state=await api.get_state(); render();
   showExportToast(ex);
 }
-function showExportToast(ex){
+function showExportToast(ex, isPolished=false){
   const t=document.createElement("div");t.className="toast";
-  t.innerHTML=`<b>Exported ${ex.entries} point(s)</b><br><a href="#" id="exOpenHtml" style="color:#f0a94a">Open HTML report</a> &nbsp;·&nbsp; <a href="#" id="exOpenMd" style="color:#7bd88f">Open Markdown</a> &nbsp;·&nbsp; <a href="#" id="exFolder" style="color:#4fd8c8">Show folder</a>`;
+  const hasAI=state.config.llm&&state.config.llm.enabled&&(state.config.llm.api_key||"").trim()!=="";
+  const polishedBtn=(!isPolished && hasAI)?` &nbsp;·&nbsp; <a href="#" id="exPolish" style="color:#4fd8c8">✦ Polish via AI</a>`:"";
+  const label=isPolished?"Polished":"Exported";
+  t.innerHTML=`<b>${label} ${ex.entries} point(s)</b><br><a href="#" id="exOpenHtml" style="color:#f0a94a">Open HTML</a> &nbsp;·&nbsp; <a href="#" id="exOpenMd" style="color:#7bd88f">Open Markdown</a> &nbsp;·&nbsp; <a href="#" id="exFolder" style="color:#4fd8c8">Show folder</a>${polishedBtn}`;
   document.getElementById("toasts").appendChild(t);
-  setTimeout(()=>t.classList.add("out"),9000);setTimeout(()=>t.remove(),9400);
+  setTimeout(()=>t.classList.add("out"),10000);setTimeout(()=>t.remove(),10400);
   t.querySelector("#exOpenHtml").addEventListener("click",()=>api.open_path(ex.html));
   t.querySelector("#exOpenMd").addEventListener("click",()=>api.open_path(ex.md));
   t.querySelector("#exFolder").addEventListener("click",()=>api.open_path(ex.folder));
+  const pol=t.querySelector("#exPolish");
+  if(pol) pol.addEventListener("click",async(e)=>{
+    e.preventDefault(); pol.textContent="Polishing…";
+    const r=await api.export_topic_polished(sel);
+    if(r.error){toast(r.error,"err"); pol.textContent="✦ Polish via AI"; return;}
+    state=await api.get_state(); render();
+    showExportToast(r, true);
+    toast("Polished report ready — facts unchanged.");
+  });
 }
 
 function settingsHtml(){
@@ -682,7 +805,7 @@ function settingsHtml(){
     </div>
     <div class="card glass fade">
       <div class="card-h"><div class="card-t">AI assist</div></div>
-      <p class="muted">Optional and bring-your-own-key. Polish a logged point or draft a summary on export. Works with any OpenAI-compatible provider. Default: <b>OpenRouter</b> + <b>deepseek/deepseek-v4-flash</b>.</p>
+      <p class="muted">Optional and bring-your-own-key. Polish a point, summon a summary, or generate a polished report on export. Supports <b>OpenAI</b>, <b>OpenRouter</b>, <b>Mistral AI</b>, <b>Google AI Studio (Gemini)</b>, and <b>AvalAI</b>. Default: <b>OpenRouter</b> + <b>deepseek/deepseek-v4-flash</b>.</p>
       <div class="row"><label class="mod" style="flex-direction:row"><input type="checkbox" id="lEnabled" ${llm.enabled?"checked":""}> Enable AI assist</label></div>
       <div class="grid3">
         <label>Provider<select id="lProvider" class="input">${provOpts}</select></label>
