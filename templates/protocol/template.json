@@ -1,0 +1,10 @@
+{
+  "id": "protocol",
+  "name": "Protocol",
+  "purpose": "procedure",
+  "description": "A document meant to be followed while doing something else: numbered steps, a materials block, checkboxes, callouts for cautions, a revision line and a sign-off box. Deliberately plain and high-contrast so it survives being printed and carried around.",
+  "kicker": "Protocol",
+  "accent": "#b45309",
+  "formats": ["html", "pdf", "markdown", "docx"],
+  "page": { "size": "A4", "margin": "18mm 16mm 20mm" }
+}

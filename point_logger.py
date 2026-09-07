@@ -10,7 +10,7 @@ from PIL import Image
 
 from brand import ICON_DATA_URI, asset_path
 from hotkey import HotkeyListener
-from point_store import Store
+from point_store import Store, data_dir
 from ui import MAIN_HTML, POPUP_HTML
 
 import llm
@@ -49,12 +49,43 @@ class Api:
         return self.store.state()
 
     def save_llm(self, cfg):
-        merged = dict(self.store.config.get("llm") or {})
+        return self._save_section("llm", cfg)
+
+    def save_export(self, cfg):
+        return self._save_section("export", cfg)
+
+    def save_appearance(self, cfg):
+        return self._save_section("appearance", cfg)
+
+    def _save_section(self, name, cfg):
+        merged = dict(self.store.config.get(name) or {})
         merged.update(cfg or {})
-        self.store.config["llm"] = merged
+        self.store.config[name] = merged
         self.store.save_config()
         self.controller.refresh_full()
         return self.store.state()
+
+    def list_templates(self):
+        return {"templates": self.store.list_templates()}
+
+    def open_template_dir(self):
+        """Open the folder where the user's own templates live, creating it first."""
+        try:
+            import templates_registry
+            d = templates_registry.user_dir()
+            d.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(d))
+            return {"path": str(d)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def pdf_engines(self):
+        try:
+            import pdf_render
+            found = pdf_render.available_engines()
+            return {"engines": {k: bool(v) for k, v in found.items()}}
+        except Exception as e:
+            return {"error": str(e)}
 
     def test_llm(self, cfg):
         return llm.test_connection(cfg or {})
@@ -157,35 +188,34 @@ class Api:
         self.controller.refresh_full()
         return r
 
-    def export_topic(self, tid):
-        return self.store.export_topic(tid)
+    def export_topic(self, tid, options=None):
+        r = self.store.export_topic(tid, options)
+        self.controller.refresh_full()
+        return r
 
-    def export_topic_polished(self, tid):
-        # Build payload for AI, call polish_report, then render polished HTML
-        t = self.store.find_topic(tid)
-        if not t:
-            return {"error": "Topic not found."}
+    def export_topic_polished(self, tid, options=None):
+        """AI writes the prose, code does everything else.
+
+        The model is handed the same Markdown the deterministic export would have
+        produced, and its output goes through the pipeline's citation gate before
+        it is allowed anywhere near a template. If it fails that gate the pipeline
+        silently falls back to the original points and says so in the result.
+        """
         cfg = self.store.config.get("llm") or {}
         if not cfg.get("enabled") or not (cfg.get("api_key") or "").strip():
-            return {"error": "AI is not configured. Open Settings → AI assist and add your key."}
-        entries = sorted(t.get("entries", []), key=lambda e: e.get("created") or "")
-        if not entries:
+            return {"error": "AI is not configured. Open Settings - AI assist and add your key."}
+        payload = self.store.export_payload(tid)
+        if not payload:
             return {"error": "Nothing to polish yet."}
-        refs, cites = self.store._collect_refs(entries)
-        # payload: each entry as text + [n] citations
-        payload_lines = []
-        for e in entries:
-            nums = cites.get(e["id"], [])
-            cite = " ".join("[%d]" % n for n in nums) if nums else ""
-            payload_lines.append("- (%s) %s %s" % (e.get("subtopic") or "General", e.get("text","").strip(), cite))
-        payload = "\n".join(payload_lines[:80])
-        res = llm.polish_report(cfg, t.get("title",""), payload)
+        res = llm.polish_report(cfg, payload["title"], payload["markdown"])
         if res.get("error"):
             return {"error": res["error"]}
-        polished = res.get("content","").strip()
+        polished = (res.get("content") or "").strip()
         if not polished:
-            return {"error": "AI returned no content."}
-        return self.store.export_topic_polished(tid, polished)
+            return {"error": "The model returned no content."}
+        r = self.store.export_topic_polished(tid, polished, options)
+        self.controller.refresh_full()
+        return r
 
     def delete_export(self, folder):
         return self.store.delete_export(folder)
@@ -210,6 +240,13 @@ class Api:
 
     def show_popup(self):
         self.controller.show_popup()
+        return {}
+
+    def show_full(self):
+        """Bring the main window forward. The popup's "Open app" button calls
+        this; it used to call a method that did not exist, so the button silently
+        did nothing."""
+        self.controller.show_full()
         return {}
 
     def hide_menu(self):

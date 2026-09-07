@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>{{title}}</title>
+<style>
+/* Research Roam - journal typesetting. Latin Modern where installed (it ships
+   with every TeX distribution), Computer-Modern-alike metrics otherwise. */
+@page { size: A4; margin: 24mm 22mm; }
+
+:root{
+  --ink:#111418; --mut:#555b64; --rule:#c9ccd1; --accent:{{accent}};
+  --serif: "Latin Modern Roman", "CMU Serif", "Nimbus Roman", "TeX Gyre Termes", Georgia, "Times New Roman", serif;
+  --sans: "Latin Modern Sans", "CMU Sans Serif", "TeX Gyre Heros", Helvetica, Arial, sans-serif;
+  --mono: "Latin Modern Mono", "CMU Typewriter Text", Consolas, "Courier New", monospace;
+}
+*{box-sizing:border-box}
+html{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+body{
+  margin:0; background:#fff; color:var(--ink);
+  font-family:var(--serif); font-size:10.5pt; line-height:1.42;
+  text-align:justify; hyphens:auto; -webkit-hyphens:auto;
+  font-variant-numeric:oldstyle-nums proportional-nums;
+}
+.page{max-width:172mm;margin:0 auto}
+
+/* --- title block ------------------------------------------------------- */
+header{text-align:center;margin:0 0 14pt}
+.kicker{font-family:var(--sans);font-size:7.6pt;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+h1{font-size:17pt;line-height:1.2;font-weight:600;margin:8pt 0 4pt;text-align:center;letter-spacing:-.005em}
+.byline{font-size:10pt;margin:2pt 0 0}
+.affil{font-size:8.6pt;color:var(--mut);font-style:italic;margin:1pt 0 0}
+.dateline{font-family:var(--sans);font-size:8pt;color:var(--mut);margin-top:6pt}
+
+/* --- abstract ----------------------------------------------------------- */
+.abstract{
+  margin:14pt 10mm 16pt; padding:9pt 0 0; border-top:.5pt solid var(--rule);
+  border-bottom:.5pt solid var(--rule); padding-bottom:9pt;
+  font-size:9.2pt; line-height:1.4;
+}
+.abstract .lbl{font-family:var(--sans);font-weight:700;font-size:8pt;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink);margin-right:.6em}
+
+/* --- contents ----------------------------------------------------------- */
+.toc{margin:0 0 14pt;font-size:9pt;font-family:var(--sans)}
+.toc .toc-t{font-weight:700;font-size:8pt;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--mut);margin-bottom:4pt}
+.toc ol{margin:0;padding-left:1.4em;columns:2;column-gap:10mm}
+.toc a{color:var(--ink);text-decoration:none}
+
+/* --- body --------------------------------------------------------------- */
+section.sub{margin:0 0 11pt; break-inside:auto}
+h2{
+  font-family:var(--serif); font-size:11pt; font-weight:700; margin:14pt 0 5pt;
+  text-align:left; counter-increment:sec; break-after:avoid;
+}
+h2::before{content:counter(sec) ".\00a0\00a0"; color:var(--accent)}
+body{counter-reset:sec}
+h3{font-size:10pt;font-weight:600;font-style:italic;margin:9pt 0 3pt;text-align:left;break-after:avoid}
+h4{font-size:9.6pt;font-weight:600;margin:7pt 0 2pt;text-align:left}
+p{margin:0 0 5pt;text-indent:1.6em}
+p:first-of-type, h2 + p, h3 + p, h4 + p, blockquote + p, ul + p, ol + p{text-indent:0}
+ul,ol{margin:4pt 0 6pt;padding-left:1.5em}
+li{margin:0 0 2.5pt;text-align:justify}
+li > ul, li > ol{margin:2pt 0 0}
+blockquote{margin:6pt 6mm;padding:0 0 0 8pt;border-left:1.5pt solid var(--rule);
+  font-size:9.6pt;color:var(--mut);text-indent:0}
+code{font-family:var(--mono);font-size:9.2pt;background:#f4f4f6;padding:0 .18em;border-radius:2px}
+pre{font-family:var(--mono);font-size:8.6pt;line-height:1.35;background:#f7f7f9;
+  border:.5pt solid var(--rule);border-radius:3px;padding:6pt 8pt;overflow-x:auto;
+  text-align:left;text-indent:0;break-inside:avoid}
+pre code{background:none;padding:0}
+hr{border:0;border-top:.5pt solid var(--rule);margin:10pt 0}
+a{color:var(--ink);text-decoration:none;border-bottom:.4pt solid var(--rule)}
+a.cite{
+  color:var(--accent);border:0;font-family:var(--sans);font-size:8.4pt;
+  vertical-align:.12em;white-space:nowrap;
+}
+
+/* --- tables ------------------------------------------------------------- */
+.md-table{
+  width:100%;border-collapse:collapse;margin:8pt 0 10pt;font-size:9pt;
+  font-variant-numeric:tabular-nums;break-inside:avoid;text-align:left;
+}
+.md-table thead th{
+  border-top:1pt solid var(--ink);border-bottom:.5pt solid var(--ink);
+  padding:4pt 6pt 4pt 0;font-family:var(--sans);font-size:8.2pt;font-weight:700;
+  letter-spacing:.03em;text-transform:uppercase;
+}
+.md-table td{border-bottom:.4pt solid var(--rule);padding:3.5pt 6pt 3.5pt 0;vertical-align:top}
+.md-table tbody tr:last-child td{border-bottom:1pt solid var(--ink)}
+
+/* --- figures ------------------------------------------------------------ */
+.figures{margin-top:12pt}
+figure{margin:8pt 0 10pt;text-align:center;break-inside:avoid;counter-increment:fig}
+figure img{max-width:100%;max-height:110mm;object-fit:contain}
+figcaption{font-family:var(--sans);font-size:8.2pt;color:var(--mut);margin-top:4pt;
+  text-align:center;line-height:1.35}
+figcaption::before{content:"Figure " counter(fig) ". ";font-weight:700;color:var(--ink)}
+body{counter-reset:sec fig}
+
+/* --- references --------------------------------------------------------- */
+.refs-h{font-size:11pt;font-weight:700;margin:16pt 0 5pt;border-top:.5pt solid var(--rule);
+  padding-top:8pt;text-align:left;break-after:avoid}
+ol.refs{font-size:8.8pt;line-height:1.42;padding-left:0;list-style:none;counter-reset:ref}
+ol.refs li{counter-increment:ref;padding-left:2.4em;text-indent:-2.4em;margin:0 0 3pt;
+  text-align:left;word-break:break-word}
+ol.refs li::before{content:"[" counter(ref) "]";color:var(--accent);font-family:var(--sans);
+  font-size:8.2pt;font-weight:700;display:inline-block;width:2.4em;text-indent:0}
+ol.refs a{border:0;color:var(--accent)}
+
+footer{margin-top:14pt;padding-top:6pt;border-top:.5pt solid var(--rule);
+  font-family:var(--sans);font-size:7.4pt;color:var(--mut);text-align:center}
+</style></head>
+<body><div class="page">
+<header>
+  <div class="kicker">{{kicker}}</div>
+  <h1>{{title}}</h1>
+  {{#author}}<div class="byline">{{author}}</div>{{/author}}
+  {{#org}}<div class="affil">{{org}}</div>{{/org}}
+  <div class="dateline">{{date}}{{#period}} &nbsp;·&nbsp; collected {{period}}{{/period}}</div>
+</header>
+
+{{#summary}}<div class="abstract"><span class="lbl">Abstract</span>{{summary}}</div>{{/summary}}
+
+{{toc}}
+
+{{body}}
+
+{{#figures}}<div class="figures">{{figures}}</div>{{/figures}}
+
+<div class="refs-h">References</div>
+<ol class="refs">{{references}}</ol>
+
+<footer>{{footer}} &nbsp;·&nbsp; {{count_points}} points, {{count_sources}} sources &nbsp;·&nbsp; Trailmark {{app_version}}</footer>
+</div></body></html>

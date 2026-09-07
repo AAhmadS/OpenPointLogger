@@ -65,7 +65,13 @@ label .input{font-weight:400}
   gap:8px;z-index:80;align-items:center;pointer-events:none}
 .toast{padding:9px 15px;border-radius:12px;background:rgba(18,24,33,.8);border:1px solid var(--stroke-hi);
   backdrop-filter:blur(16px);color:var(--text);font-size:12.5px;box-shadow:0 8px 26px rgba(0,0,0,.45);
-  transition:.3s;max-width:340px}
+  transition:.3s;max-width:340px;pointer-events:auto}
+.toast.wide{max-width:520px}
+.toast .t-links{margin-top:6px;display:flex;flex-wrap:wrap;gap:2px;align-items:center}
+.toast .t-links a{color:var(--accent);text-decoration:none;font-weight:600}
+.toast .t-links a:hover{text-decoration:underline}
+.toast .t-warn{margin-top:7px;padding-top:7px;border-top:1px solid var(--stroke);
+  color:#ffd9a8;font-size:11.5px;line-height:1.45}
 .toast.err{border-color:rgba(255,107,107,.5);color:#ffd9d9}
 .toast.out{opacity:0;transform:translateY(8px)}
 .fade{animation:fade .2s ease}
@@ -380,6 +386,104 @@ main{overflow-y:auto;padding:22px}
 .kkey{width:90px;text-align:center;text-transform:uppercase;letter-spacing:.1em}
 .dim{color:var(--muted)}
 .spacer{flex:1}
+
+/* --- badges ------------------------------------------------------------- */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  font-size:10.5px;font-weight:700;letter-spacing:.04em;background:rgba(255,255,255,.07);
+  border:1px solid var(--stroke);color:var(--muted);white-space:nowrap}
+.badge.tealish{background:rgba(79,216,200,.14);border-color:rgba(79,216,200,.34);color:#8fe9dd}
+.badge.count{background:rgba(240,169,74,.14);border-color:rgba(240,169,74,.34);color:#ffd9a8;
+  font-variant-numeric:tabular-nums}
+
+/* --- exports: collapsible group per topic ------------------------------- */
+.ex-grp{padding:0;overflow:hidden}
+.ex-head{display:flex;align-items:center;gap:11px;width:100%;padding:15px 18px;border:0;
+  background:transparent;color:var(--text);font-family:inherit;text-align:left;cursor:pointer;
+  transition:.16s}
+.ex-head:hover{background:rgba(255,255,255,.05)}
+.ex-head .caret{flex:none;color:var(--muted);transition:transform .18s ease}
+.ex-grp.open .ex-head .caret{transform:rotate(90deg);color:var(--accent)}
+.ex-head-b{flex:1;min-width:0}
+.ex-head-t{font-size:14.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ex-head-s{font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.ex-body{display:none;padding:0 18px 8px;border-top:1px solid rgba(255,255,255,.07)}
+.ex-grp.open .ex-body{display:block;animation:fade .18s ease}
+.ex-row{display:flex;gap:14px;align-items:flex-start;padding:13px 0;
+  border-bottom:1px solid rgba(255,255,255,.055)}
+.ex-row:last-child{border-bottom:0}
+.ex-when{flex:none;width:152px;font-size:11.5px;color:var(--muted);line-height:1.5;
+  font-variant-numeric:tabular-nums}
+.ex-size{display:block;opacity:.7;font-size:10.5px;margin-top:1px}
+.ex-mid{flex:1;min-width:0}
+.ex-act{flex:none;display:flex;gap:6px;align-items:center}
+.chip.fmt{font-variant-numeric:tabular-nums;letter-spacing:.04em;font-size:11.5px;padding:5px 10px}
+.chip.fmt:hover{background:rgba(240,169,74,.14);border-color:rgba(240,169,74,.4);color:#ffd9a8}
+.ex-warn{margin-top:8px;font-size:11.5px;line-height:1.45;color:#ffd9a8;
+  border-left:2px solid rgba(240,169,74,.5);padding-left:9px}
+
+/* --- modal + export dialog ---------------------------------------------- */
+.modal-back{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;
+  padding:26px;background:rgba(6,9,14,.62);backdrop-filter:blur(3px);animation:fade .16s ease}
+.modal{width:min(620px,100%);max-height:calc(100vh - 52px);display:flex;flex-direction:column;padding:0}
+.modal-h{display:flex;align-items:flex-start;gap:14px;padding:18px 20px 14px;
+  border-bottom:1px solid var(--stroke)}
+.modal-h .card-t{word-break:break-word}
+.modal-b{flex:1;overflow-y:auto;padding:16px 20px}
+.modal-f{display:flex;align-items:center;gap:14px;padding:14px 20px;border-top:1px solid var(--stroke)}
+.modal-f .muted{flex:1;font-size:11.5px}
+.sec-l{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin:4px 0 9px}
+.modal-b label:not(.fmt-opt):not(.mod){display:flex;flex-direction:column;gap:6px;
+  font-size:12.5px}
+.modal-b label .cap{display:block}
+/* the checkbox row's title and its explanation are two spans inside one span;
+   without this they run together on a single line */
+.modal-b label.mod>span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.modal-b label.mod>span .muted{font-size:11.5px;line-height:1.45;font-weight:400}
+.modal-b label.mod input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);
+  margin-top:2px;flex:none}
+.sec-l:not(:first-child){margin-top:20px}
+
+.tpls{display:flex;flex-direction:column;gap:7px;max-height:250px;overflow-y:auto;
+  /* with five or six templates installed the Formats section fell below the
+     fold and the Export button looked like the whole dialog - the list gets
+     its own scroll so both halves of the decision stay visible */
+  padding-right:4px;margin-right:-4px}
+.tpl{display:flex;align-items:flex-start;gap:11px;padding:11px 13px;border-radius:13px;
+  border:1px solid var(--stroke);background:rgba(255,255,255,.035);color:var(--text);
+  font-family:inherit;text-align:left;cursor:pointer;transition:.15s}
+.tpl:hover{background:rgba(255,255,255,.07)}
+.tpl.on{border-color:rgba(240,169,74,.5);background:rgba(240,169,74,.11);
+  box-shadow:0 0 0 3px rgba(240,169,74,.12)}
+.tpl-dot{flex:none;width:11px;height:11px;border-radius:3px;margin-top:4px;
+  box-shadow:0 0 0 3px rgba(255,255,255,.06)}
+.tpl-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.tpl-n{font-size:13.5px;font-weight:650}
+.tpl-d{font-size:11.5px;color:var(--muted);line-height:1.45}
+
+.fmts{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.fmt-opt{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-radius:12px;
+  border:1px solid var(--stroke);background:rgba(255,255,255,.035);cursor:pointer;transition:.15s;
+  flex-direction:row;font-size:13px;font-weight:400;color:var(--text);letter-spacing:0}
+.fmt-opt:hover{background:rgba(255,255,255,.07)}
+.fmt-opt.on{border-color:rgba(240,169,74,.45);background:rgba(240,169,74,.1)}
+.fmt-opt input{width:15px;height:15px;accent-color:var(--accent);margin-top:1px;flex:none}
+.fmt-opt span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fmt-opt b{font-size:13px;font-weight:650}
+.fmt-opt .muted{font-size:11px;line-height:1.4}
+
+.stages{display:flex;flex-wrap:wrap;gap:6px;margin-top:18px;padding-top:14px;
+  border-top:1px solid var(--stroke)}
+.stage{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;
+  font-size:11.5px;font-weight:600;color:var(--muted);background:rgba(255,255,255,.04);
+  border:1px solid var(--stroke);transition:.2s}
+.stage-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.45}
+.stage.now{color:#ffd9a8;border-color:rgba(240,169,74,.45);background:rgba(240,169,74,.12)}
+.stage.now .stage-dot{opacity:1;animation:pulse 1s ease-in-out infinite}
+.stage.done{color:#8fe9dd;border-color:rgba(79,216,200,.34);background:rgba(79,216,200,.1)}
+.stage.done .stage-dot{opacity:1}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.6);opacity:.5}}
 </style></head><body>
 <div class="app">
   <aside class="glass">
@@ -403,9 +507,14 @@ main{overflow-y:auto;padding:22px}
 </div>
 <div id="toasts"></div>
 <script>
-let state={topics:[],config:{},providers:{}};
+let state={topics:[],config:{},providers:{},exports:[],templates:[]};
 let tab="open", sel=null, editEntry=null, filterSub=null, summaryDraft=null;
 let displayLimit=20;
+// Exports are grouped by topic. openGroups holds the topic ids whose group is
+// expanded; the newest group opens by default so the last thing you exported is
+// the first thing you see.
+let openGroups=null;
+let exportDialog=null;
 const api=new Proxy({},{get:(_,p)=>{const pv=window.pywebview&&window.pywebview.api;return pv?pv[p]:(()=>Promise.resolve({error:"bridge not ready"}));}});
 
 const $=(s,r=document)=>r.querySelector(s);
@@ -431,14 +540,24 @@ function renderSide(){
   const list=$("#sideList");
   if(tab==="settings"){list.innerHTML=`<div class="empty">AI assist, hotkey &amp; storage preferences.</div>`;return;}
   if(tab==="exports"){
-    const exps=(state.exports||[]);
-    if(!exps.length){list.innerHTML=`<div class="empty">No exports yet.<br>Close a topic to generate a report.</div>`;return;}
-    list.innerHTML=exps.map(e=>{
-      const d=new Date(e.mtime*1000).toLocaleString(undefined,{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
-      const isPol=e.name.includes("polished")?"✦ ":"";
-      return `<div class="ti" data-exp="${esc(e.folder)}"><span class="dot open" style="background:#4fd8c8"></span><div class="ti-b"><div class="ti-t">${esc(isPol+e.name)}</div><div class="ti-s">${esc(d)} · ${Math.round(e.size/1024)} KB</div></div></div>`;
+    const groups=(state.exports||[]);
+    if(!groups.length){list.innerHTML=`<div class="empty">No exports yet.<br>Close a topic to generate a report.</div>`;return;}
+    list.innerHTML=groups.map(g=>{
+      const d=new Date(g.latest*1000).toLocaleString(undefined,{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+      const n=g.total||g.exports.length;
+      return `<div class="ti ${sel===("grp:"+g.topic_id)?"sel":""}" data-grp="${esc(g.topic_id)}">
+        <span class="dot open" style="background:var(--teal)"></span>
+        <div class="ti-b"><div class="ti-t">${esc(g.topic_title)}</div>
+        <div class="ti-s">${n} export${n===1?"":"s"} · latest ${esc(d)}</div></div></div>`;
     }).join("");
-    list.querySelectorAll(".ti[data-exp]").forEach(el=>el.addEventListener("click",()=>{ sel=el.dataset.exp; render(); }));
+    list.querySelectorAll(".ti[data-grp]").forEach(el=>el.addEventListener("click",()=>{
+      const id=el.dataset.grp;
+      sel="grp:"+id;
+      groupSet().add(id);
+      render();
+      const card=document.getElementById("g_"+cssId(id));
+      if(card) card.scrollIntoView({behavior:"smooth",block:"start"});
+    }));
     return;
   }
   const open=tab==="open";
@@ -462,27 +581,8 @@ function renderMain(){
   const main=$("#main");
   if(tab==="settings"){main.innerHTML=settingsHtml();bindSettings();return;}
   if(tab==="exports"){
-    if(sel && (state.exports||[]).find(e=>e.folder===sel)){
-      const ex=(state.exports||[]).find(e=>e.folder===sel);
-      main.innerHTML=exportDetailHtml(ex); bindExportDetail(ex); return;
-    }
     main.innerHTML=exportsOverviewHtml();
-    // bind overview cards
-    main.querySelectorAll("[data-exp-open]").forEach(el=>el.addEventListener("click",()=>{
-      const f=el.dataset.expOpen;
-      const ex=(state.exports||[]).find(e=>e.folder===f);
-      if(ex) api.open_path(ex.html);
-    }));
-    main.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.open);}));
-    main.querySelectorAll("[data-open-md]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openMd);}));
-    main.querySelectorAll("[data-open-f]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openF);}));
-    main.querySelectorAll("[data-remove]").forEach(b=>b.addEventListener("click",async e=>{
-      e.stopPropagation();
-      if(!confirm("Remove this export? The folder will be deleted.")) return;
-      const r=await api.delete_export(b.dataset.remove);
-      if(r.error) return toast(r.error,"err");
-      state=r; render(); toast("Export removed.");
-    }));
+    bindExports(main);
     return;
   }
   const t=sel?byId(sel):null;
@@ -508,41 +608,247 @@ function bindNew(){
   $("#ntTitle").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ntGo").click();});
 }
 
+/* --- Exports: one collapsible group per topic ---------------------------- */
+
+const cssId=s=>String(s).replace(/[^a-zA-Z0-9_-]/g,"_");
+const FORMAT_LABEL={html:"HTML",pdf:"PDF",docx:"DOCX",markdown:"MD",latex:"TeX"};
+
+function groupSet(){
+  // First render: open the newest group only. A topic exported ten times should
+  // not push every other topic off the screen.
+  if(openGroups===null){
+    openGroups=new Set();
+    const first=(state.exports||[])[0];
+    if(first) openGroups.add(first.topic_id);
+  }
+  return openGroups;
+}
+
+function exportRowHtml(e){
+  const d=new Date(e.mtime*1000).toLocaleString(undefined,
+    {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  const chips=Object.keys(e.files||{}).sort().map(k=>
+    `<button class="chip fmt" data-open="${esc(e.files[k])}" title="Open the ${FORMAT_LABEL[k]||k} file">${FORMAT_LABEL[k]||k}</button>`).join("");
+  const badges=[
+    e.polished?`<span class="badge tealish">&#10022; Polished</span>`:"",
+    e.template_name?`<span class="badge">${esc(e.template_name)}</span>`:"",
+    e.pdf_pages?`<span class="badge">${e.pdf_pages} page${e.pdf_pages===1?"":"s"}</span>`:"",
+  ].filter(Boolean).join("");
+  const warn=(e.warnings||[]).length
+    ? `<div class="ex-warn">&#9888; ${esc(e.warnings.join(" "))}</div>` : "";
+  return `<div class="ex-row">
+    <div class="ex-when">${esc(d)}<span class="ex-size">${Math.round(e.size/1024)} KB</span></div>
+    <div class="ex-mid">
+      <div class="chips">${chips||`<span class="muted">no files</span>`}</div>
+      ${badges?`<div class="chips" style="margin-top:6px">${badges}</div>`:""}
+      ${warn}
+    </div>
+    <div class="ex-act">
+      <button class="btn ghost sm" data-open-f="${esc(e.folder)}">Folder</button>
+      <button class="btn danger sm" data-remove="${esc(e.folder)}">Remove</button>
+    </div>
+  </div>`;
+}
+
 function exportsOverviewHtml(){
-  const exps=(state.exports||[]);
-  if(!exps.length) return `<div class="cards"><div class="card glass fade"><div class="card-t">No exports yet</div><p class="muted">Close a topic or click Export to generate a cited HTML report. Exports appear here and are clickable — open the HTML, Markdown, or folder. Exports can be removed from this log without affecting your topics.</p></div></div>`;
-  const rows=exps.map(e=>{
-    const d=new Date(e.mtime*1000).toLocaleString(undefined,{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
-    const pol=e.name.includes("polished")?`<span style="color:#4fd8c8;font-weight:700">✦ Polished</span> `:"";
-    return `<div class="card sub glass" style="cursor:pointer" data-exp-open="${esc(e.folder)}"><div style="font-weight:650">${pol}${esc(e.name)}</div><div class="muted" style="font-size:12px;margin-top:4px">${esc(d)} · ${Math.round(e.size/1024)} KB</div><div class="row" style="margin-top:10px"><button class="btn primary sm" data-open="${esc(e.html)}">Open HTML</button><button class="btn ghost sm" data-open-md="${esc(e.md)}">Open Markdown</button><button class="btn ghost sm" data-open-f="${esc(e.folder)}">Show folder</button><button class="btn danger sm" data-remove="${esc(e.folder)}">Remove</button></div></div>`;
+  const groups=(state.exports||[]);
+  if(!groups.length) return `<div class="cards"><div class="card glass fade">
+    <div class="card-t">No exports yet</div>
+    <p class="muted">Export a topic and its reports collect here &mdash; one group per topic, newest first.
+    Removing an export deletes only that export folder; your points are untouched.</p></div></div>`;
+  const open=groupSet();
+  const cards=groups.map(g=>{
+    const isOpen=open.has(g.topic_id);
+    const d=new Date(g.latest*1000).toLocaleString(undefined,
+      {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+    const n=g.total||g.exports.length;
+    const formats=(g.formats||[]).map(k=>FORMAT_LABEL[k]||k).join(" · ");
+    const hidden=n>g.exports.length
+      ? `<div class="muted" style="padding:8px 2px 0">Showing the ${g.exports.length} most recent of ${n}.</div>` : "";
+    return `<div class="card glass fade ex-grp ${isOpen?"open":""}" id="g_${cssId(g.topic_id)}">
+      <button class="ex-head" data-toggle="${esc(g.topic_id)}" aria-expanded="${isOpen}">
+        <svg class="caret" width="14" height="14" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 6l6 6-6 6"/></svg>
+        <div class="ex-head-b">
+          <div class="ex-head-t">${esc(g.topic_title)}</div>
+          <div class="ex-head-s">${n} export${n===1?"":"s"} · latest ${esc(d)}${formats?" · "+esc(formats):""}</div>
+        </div>
+        <span class="badge count">${n}</span>
+      </button>
+      <div class="ex-body">${g.exports.map(exportRowHtml).join("")}${hidden}</div>
+    </div>`;
   }).join("");
-  return `<div class="cards"><div class="card glass fade"><div class="card-t">Exports</div><p class="muted">All generated reports — standard and polished. Click to open. Remove deletes the export folder only; your topics stay intact.</p></div>${rows}</div>`;
+  return `<div class="cards">
+    <div class="card glass fade">
+      <div class="card-t">Exports</div>
+      <p class="muted">Every report you have generated, grouped by the topic it came from.
+      The topic you exported most recently sits at the top, and inside each group the newest
+      report is first. Click a format chip to open that file.</p>
+    </div>${cards}</div>`;
 }
-function exportDetailHtml(ex){
-  const d=new Date(ex.mtime*1000).toLocaleString(undefined,{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
-  const pol=ex.name.includes("polished")?"✦ Polished via AI — facts unchanged, prose arranged":"";
-  return `<div class="cards"><div class="card glass fade"><div class="card-t">${esc(ex.name)}</div><div class="muted">${esc(d)} · ${Math.round(ex.size/1024)} KB</div>${pol?`<div class="badge" style="margin-top:8px">${pol}</div>`:""}<div class="row" style="margin-top:12px"><button class="btn primary" id="exHtml">Open HTML report</button><button class="btn ghost" id="exMd">Open Markdown</button><button class="btn ghost" id="exFolder">Show folder</button><button class="btn danger" id="exRemove">Remove from log</button></div><p class="muted" style="margin-top:8px">Remove deletes this export folder only and cannot be undone.</p></div></div>`;
-}
-function bindExportDetail(ex){
-  $("#exHtml")&&$("#exHtml").addEventListener("click",()=>api.open_path(ex.html));
-  $("#exMd")&&$("#exMd").addEventListener("click",()=>api.open_path(ex.md));
-  $("#exFolder")&&$("#exFolder").addEventListener("click",()=>api.open_path(ex.folder));
-  $("#exRemove")&&$("#exRemove").addEventListener("click",async()=>{
-    if(!confirm("Remove this export from the log? The folder will be deleted.")) return;
-    const r=await api.delete_export(ex.folder);
-    if(r.error) return toast(r.error,"err");
-    state=r; sel=null; render(); toast("Export removed.");
-  });
-  document.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.open);}));
-  document.querySelectorAll("[data-open-md]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openMd);}));
-  document.querySelectorAll("[data-open-f]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation(); api.open_path(b.dataset.openF);}));
-  document.querySelectorAll("[data-remove]").forEach(b=>b.addEventListener("click",async(e)=>{
+
+function bindExports(root){
+  root.querySelectorAll("[data-toggle]").forEach(b=>b.addEventListener("click",()=>{
+    const id=b.dataset.toggle, set=groupSet();
+    if(set.has(id)) set.delete(id); else set.add(id);
+    sel=set.has(id)?("grp:"+id):null;
+    render();
+  }));
+  root.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation(); api.open_path(b.dataset.open);}));
+  root.querySelectorAll("[data-open-f]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation(); api.open_path(b.dataset.openF);}));
+  root.querySelectorAll("[data-remove]").forEach(b=>b.addEventListener("click",async e=>{
     e.stopPropagation();
-    if(!confirm("Remove this export?")) return;
+    if(!confirm("Remove this export? The folder and its files will be deleted. Your points are not touched.")) return;
     const r=await api.delete_export(b.dataset.remove);
     if(r.error) return toast(r.error,"err");
     state=r; render(); toast("Export removed.");
   }));
+}
+
+/* --- Export dialog: pick a template and the formats you want ------------- */
+
+function defaultExportOpts(){
+  const cfg=(state.config&&state.config.export)||{};
+  return {
+    template: cfg.template||"personal-report",
+    formats: (cfg.formats||["html","pdf","markdown"]).slice(),
+    polish: false,
+    subtitle: "",
+  };
+}
+
+function exportDialogHtml(t, opts, closing){
+  const tpls=(state.templates||[]);
+  const hasAI=state.config.llm&&state.config.llm.enabled&&(state.config.llm.api_key||"").trim()!=="";
+  const tplCards=tpls.map(tp=>{
+    const on=opts.template===tp.id;
+    return `<button class="tpl ${on?"on":""}" data-tpl="${esc(tp.id)}">
+      <span class="tpl-dot" style="background:${esc(tp.accent||"#f0a94a")}"></span>
+      <span class="tpl-b"><span class="tpl-n">${esc(tp.name)}</span>
+      <span class="tpl-d">${esc(tp.description||"")}</span></span>
+      ${tp.source==="user"?`<span class="badge">yours</span>`:""}
+    </button>`;
+  }).join("")||`<p class="muted">No templates found. Settings &rarr; Exports has the folder to put them in.</p>`;
+  const fmt=(k,label,note)=>`<label class="fmt-opt ${opts.formats.includes(k)?"on":""}">
+    <input type="checkbox" data-fmt="${k}" ${opts.formats.includes(k)?"checked":""}>
+    <span><b>${label}</b><span class="muted">${note}</span></span></label>`;
+  return `<div class="modal-back" id="mBack"><div class="modal glass">
+    <div class="modal-h">
+      <div><div class="card-t">${closing?"Close &amp; export":"Export"} &mdash; ${esc(t.title)}</div>
+      <p class="muted" style="margin:4px 0 0">${t.entries.length} point${t.entries.length===1?"":"s"} will be written into the template you pick.</p></div>
+      <button class="btn ghost sm" id="mX">Cancel</button>
+    </div>
+    <div class="modal-b">
+      <div class="sec-l">Template</div>
+      <div class="tpls">${tplCards}</div>
+      <div class="sec-l">Formats</div>
+      <div class="fmts">
+        ${fmt("html","HTML","one self-contained file")}
+        ${fmt("pdf","PDF","rendered from the template")}
+        ${fmt("docx","DOCX","opens in Word")}
+        ${fmt("markdown","Markdown","plain text, portable")}
+      </div>
+      <div class="sec-l">Options</div>
+      <label class="mod" style="flex-direction:row;align-items:flex-start;gap:9px">
+        <input type="checkbox" id="mPolish" ${opts.polish?"checked":""} ${hasAI?"":"disabled"}>
+        <span><b>&#10022; Let AI arrange the prose</b>
+        <span class="muted">${hasAI
+          ? "The model rewrites wording only. Every citation is checked against your sources afterwards; if any is invented or dropped, your original points are used instead."
+          : "Turn on AI assist in Settings to enable this."}</span></span></label>
+      <label style="margin-top:10px"><span class="cap">Sub-title <span class="muted">(optional)</span></span>
+        <input id="mSub" class="input" placeholder="A line under the title" value="${esc(opts.subtitle||"")}"></label>
+      <div id="mStages" class="stages" hidden></div>
+    </div>
+    <div class="modal-f">
+      <span class="muted" id="mHint">Reports land in your exports folder and appear in the Exports tab.</span>
+      <button class="btn primary" id="mGo">Export</button>
+    </div>
+  </div></div>`;
+}
+
+const STAGE_LABEL={compose:"Compose",ground:"Check citations",fill:"Fill template",
+                   render:"Render",verify:"Verify",manifest:"Record"};
+
+function renderStages(active, done){
+  const el=document.getElementById("mStages");
+  if(!el) return;
+  el.hidden=false;
+  el.innerHTML=Object.keys(STAGE_LABEL).map(k=>{
+    const cls=done.includes(k)?"done":(k===active?"now":"");
+    return `<div class="stage ${cls}"><span class="stage-dot"></span>${STAGE_LABEL[k]}</div>`;
+  }).join("");
+}
+
+function openExportDialog(t, closing){
+  exportDialog=defaultExportOpts();
+  const host=document.createElement("div");
+  host.innerHTML=exportDialogHtml(t, exportDialog, closing);
+  const back=host.firstElementChild;
+  document.body.appendChild(back);
+  const close=()=>{back.remove(); exportDialog=null;};
+
+  back.querySelector("#mX").addEventListener("click",close);
+  back.addEventListener("mousedown",e=>{if(e.target===back)close();});
+  back.querySelectorAll("[data-tpl]").forEach(b=>b.addEventListener("click",()=>{
+    exportDialog.template=b.dataset.tpl;
+    back.querySelectorAll("[data-tpl]").forEach(x=>x.classList.toggle("on",x===b));
+  }));
+  back.querySelectorAll("[data-fmt]").forEach(cb=>cb.addEventListener("change",()=>{
+    const k=cb.dataset.fmt;
+    const i=exportDialog.formats.indexOf(k);
+    if(cb.checked&&i<0) exportDialog.formats.push(k);
+    if(!cb.checked&&i>=0) exportDialog.formats.splice(i,1);
+    cb.closest(".fmt-opt").classList.toggle("on",cb.checked);
+  }));
+
+  back.querySelector("#mGo").addEventListener("click",async()=>{
+    const go=back.querySelector("#mGo"), hint=back.querySelector("#mHint");
+    exportDialog.polish=back.querySelector("#mPolish").checked;
+    exportDialog.subtitle=back.querySelector("#mSub").value;
+    if(!exportDialog.formats.length) return toast("Pick at least one format.","err");
+    go.disabled=true; go.textContent="Exporting…";
+    hint.textContent=exportDialog.polish
+      ? "Asking the model for the prose, then rendering."
+      : "Rendering. The PDF step starts a short-lived browser process.";
+
+    // The stages are shown optimistically: the pipeline runs synchronously in
+    // Python, so there is no progress channel back. Nothing here claims a stage
+    // succeeded -- the result decides that.
+    const order=Object.keys(STAGE_LABEL);
+    let i=0; const done=[];
+    renderStages(order[0],done);
+    const tick=setInterval(()=>{
+      if(i<order.length-1){done.push(order[i]); i++; renderStages(order[i],done);}
+    },700);
+
+    const opts={template:exportDialog.template,formats:exportDialog.formats,
+                subtitle:exportDialog.subtitle};
+    let r;
+    try{
+      if(closing){
+        const c=await api.close_topic(t.id);
+        if(c.error){clearInterval(tick); go.disabled=false; go.textContent="Export"; return toast(c.error,"err");}
+        state=c;
+      }
+      r=exportDialog.polish ? await api.export_topic_polished(t.id,opts)
+                            : await api.export_topic(t.id,opts);
+    }finally{ clearInterval(tick); }
+
+    if(r&&r.error&&!(r.files&&Object.keys(r.files).length)){
+      go.disabled=false; go.textContent="Export";
+      return toast(r.error,"err");
+    }
+    renderStages(null, order);
+    const wasPolish=exportDialog.polish;
+    state=await api.get_state();
+    openGroups=groupSet(); if(r.topic_id) openGroups.add(r.topic_id);
+    if(closing) tab="closed";
+    close(); render();
+    showExportToast(r, wasPolish);
+  });
 }
 
 function detailHtml(t){
@@ -553,7 +859,7 @@ function detailHtml(t){
   const hasAI=state.config.llm&&state.config.llm.enabled&&(state.config.llm.api_key||"").trim()!=="";
   const acts=t.status==="open"
     ?`<button class="btn primary sm" id="tClose">Close &amp; export</button><button class="btn danger sm" id="tDel">Delete</button>`
-    :`<button class="btn primary sm" id="tExp">Export report</button>${hasAI?`<button class="btn ghost sm" id="tPolish" title="AI polishes prose, arranges into headers, keeps all citations linked to References">✦ Polish via AI</button><button class="btn ghost sm" id="tDraft">Draft AI summary</button>`:""}<button class="btn ghost sm" id="tReopen">Reopen</button><button class="btn danger sm" id="tDel">Delete</button>`;
+    :`<button class="btn primary sm" id="tExp">Export report…</button>${hasAI?`<button class="btn ghost sm" id="tDraft">Draft AI summary</button>`:""}<button class="btn ghost sm" id="tReopen">Reopen</button><button class="btn danger sm" id="tDel">Delete</button>`;
   const composer=t.status==="open"?`<div class="card sub glass composer">
     <div class="row"><select id="cSub" class="input grow"></select>
       <input id="cLink" class="input grow" placeholder="Source link…">
@@ -594,7 +900,7 @@ function detailHtml(t){
     <div class="entries">${list}</div>
     ${moreBtn}
     <div class="card sub glass">
-      <div class="row"><div class="muted grow">Closing the topic locks it and exports a clean, cited report (HTML + Markdown).</div>${acts}</div>
+      <div class="row"><div class="muted grow">Closing the topic locks it, then opens the export dialog &mdash; pick a template and the formats you want.</div>${acts}</div>
     </div>
   </div>`;
 }
@@ -641,14 +947,6 @@ function bindDetail(t){
     bindComposer(t);
   }else{
     $("#tExp").addEventListener("click",doExport);
-    const tPol=$("#tPolish");
-    if(tPol) tPol.addEventListener("click",async()=>{
-      tPol.disabled=true; tPol.textContent="Polishing…";
-      const r=await api.export_topic_polished(t.id);
-      if(r.error){toast(r.error,"err"); tPol.disabled=false; tPol.textContent="✦ Polish via AI"; return;}
-      state=await api.get_state(); render();
-      showExportToast(r, true); tPol.disabled=false; tPol.textContent="✦ Polish via AI";
-    });
     $("#tReopen").addEventListener("click",async()=>{
       const r=await api.reopen_topic(t.id);
       if(r.error)return toast(r.error,"err");
@@ -772,43 +1070,31 @@ async function logComposer(){
   $("#cText").value="";renderAtt();render();toast("Point logged — "+sources.length+" source(s).");
 }
 
-async function closeAndExport(){
-  if(!confirm("Close this topic? It will be locked and exported as a cited report."))return;
-  const r=await api.close_topic(sel);
-  if(r.error)return toast(r.error,"err");
-  state=r;
-  const ex=await api.export_topic(sel);
-  if(ex.error){ state=await api.get_state(); render(); return toast(ex.error,"err"); }
-  state=await api.get_state();
-  tab="closed";render();
-  showExportToast(ex);
+function closeAndExport(){
+  const t=byId(sel); if(!t) return;
+  if(!confirm("Close this topic? It will be locked, then exported."))return;
+  openExportDialog(t, true);
 }
-async function doExport(){
-  const ex=await api.export_topic(sel);
-  if(ex.error)return toast(ex.error,"err");
-  state=await api.get_state(); render();
-  showExportToast(ex);
+function doExport(){
+  const t=byId(sel); if(!t) return;
+  openExportDialog(t, false);
 }
+
 function showExportToast(ex, isPolished=false){
-  const t=document.createElement("div");t.className="toast";
-  const hasAI=state.config.llm&&state.config.llm.enabled&&(state.config.llm.api_key||"").trim()!=="";
-  const polishedBtn=(!isPolished && hasAI)?` &nbsp;·&nbsp; <a href="#" id="exPolish" style="color:#4fd8c8">✦ Polish via AI</a>`:"";
-  const label=isPolished?"Polished":"Exported";
-  t.innerHTML=`<b>${label} ${ex.entries} point(s)</b><br><a href="#" id="exOpenHtml" style="color:#f0a94a">Open HTML</a> &nbsp;·&nbsp; <a href="#" id="exOpenMd" style="color:#7bd88f">Open Markdown</a> &nbsp;·&nbsp; <a href="#" id="exFolder" style="color:#4fd8c8">Show folder</a>${polishedBtn}`;
+  const t=document.createElement("div");t.className="toast wide";
+  const files=ex.files||{};
+  const links=Object.keys(files).sort().map(k=>
+    `<a href="#" data-p="${esc(files[k])}">${FORMAT_LABEL[k]||k}</a>`).join(" &nbsp;·&nbsp; ");
+  const label=isPolished?"Polished and exported":"Exported";
+  const problems=[].concat(ex.warnings||[],ex.errors||[]);
+  t.innerHTML=`<b>${label} ${ex.entries} point${ex.entries===1?"":"s"}</b>`
+    +`<div class="t-links">${links} &nbsp;·&nbsp; <a href="#" data-p="${esc(ex.folder)}">Folder</a></div>`
+    +(problems.length?`<div class="t-warn">${esc(problems.join(" "))}</div>`:"");
   document.getElementById("toasts").appendChild(t);
-  setTimeout(()=>t.classList.add("out"),10000);setTimeout(()=>t.remove(),10400);
-  t.querySelector("#exOpenHtml").addEventListener("click",()=>api.open_path(ex.html));
-  t.querySelector("#exOpenMd").addEventListener("click",()=>api.open_path(ex.md));
-  t.querySelector("#exFolder").addEventListener("click",()=>api.open_path(ex.folder));
-  const pol=t.querySelector("#exPolish");
-  if(pol) pol.addEventListener("click",async(e)=>{
-    e.preventDefault(); pol.textContent="Polishing…";
-    const r=await api.export_topic_polished(sel);
-    if(r.error){toast(r.error,"err"); pol.textContent="✦ Polish via AI"; return;}
-    state=await api.get_state(); render();
-    showExportToast(r, true);
-    toast("Polished report ready — facts unchanged.");
-  });
+  const life=problems.length?16000:10000;
+  setTimeout(()=>t.classList.add("out"),life);setTimeout(()=>t.remove(),life+400);
+  t.querySelectorAll("[data-p]").forEach(a=>a.addEventListener("click",e=>{
+    e.preventDefault(); api.open_path(a.dataset.p);}));
 }
 
 function settingsHtml(){
@@ -819,6 +1105,13 @@ function settingsHtml(){
   const prov=(state.providers||{});
   const mk=(id,checked,label)=>`<label class="mod"><input type="checkbox" id="${id}" ${checked?"checked":""}> ${label}</label>`;
   const provOpts=Object.keys(prov).map(k=>`<option value="${k}" ${llm.provider===k?"selected":""}>${prov[k].label}</option>`).join("");
+  const ex=c.export||{}, app=c.appearance||{};
+  const tpls=state.templates||[];
+  const builtinN=tpls.filter(t=>t.source==="builtin").length;
+  const tplOpts=tpls.map(t=>`<option value="${esc(t.id)}" ${ex.template===t.id?"selected":""}>${esc(t.name)}${t.source==="user"?" (yours)":""}</option>`).join("");
+  const xf=ex.formats||["html","pdf","markdown"];
+  const fmtBoxes=[["html","HTML"],["pdf","PDF"],["docx","DOCX"],["markdown","Markdown"]].map(
+    ([k,l])=>`<label class="fmt-opt ${xf.includes(k)?"on":""}"><input type="checkbox" data-xfmt="${k}" ${xf.includes(k)?"checked":""}><span><b>${l}</b></span></label>`).join("");
   return `<div class="cards">
     <div class="card glass fade">
       <div class="card-h"><div class="card-t">Global hotkey</div></div>
@@ -845,6 +1138,35 @@ function settingsHtml(){
         <button class="btn primary" id="lSave">Save settings</button>
       </div>
       <div class="row"><button class="btn ghost sm" id="lTest">Test connection</button><span class="muted" id="lTestOut"></span></div>
+    </div>
+    <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Appearance</div></div>
+      <p class="muted">Trailmark follows your Windows light/dark setting by default. Override it here if you want one or the other regardless.</p>
+      <div class="segmented" id="themeSeg">
+        ${["system","light","dark"].map(k=>`<button class="seg ${(app.theme||"system")===k?"active":""}" data-theme="${k}">${k[0].toUpperCase()+k.slice(1)}</button>`).join("")}
+      </div>
+    </div>
+    <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Exports</div></div>
+      <p class="muted">Defaults for the export dialog. Whatever you pick in the dialog itself wins for that one export.</p>
+      <div class="grid3">
+        <label>Default template<select id="xTpl" class="input">${tplOpts}</select></label>
+        <label>Your name <span class="muted" style="font-weight:400">(appears on reports)</span><input id="xAuthor" class="input" value="${esc(ex.author||"")}" placeholder="optional"></label>
+        <label>Organisation<input id="xOrg" class="input" value="${esc(ex.org||"")}" placeholder="optional"></label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="fmts grow">${fmtBoxes}</div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" id="xSave">Save export defaults</button>
+        <button class="btn ghost" id="xFolder">Open my templates folder</button>
+        <span class="muted" id="xEngines">Checking PDF engines…</span>
+      </div>
+      <p class="muted" style="margin-top:10px">Trailmark ships ${builtinN} template${builtinN===1?"":"s"} and picks up any you add yourself.
+      A template is a folder with a <b>template.json</b> and a <b>template.html</b>; the HTML uses
+      <b>{{title}}</b>, <b>{{body}}</b>, <b>{{references}}</b> and friends, which Trailmark fills in.
+      Drop your folder next to the built-ins and it shows up in the dialog. The full field list and a
+      prompt you can hand to an AI assistant to write one for you are in <b>TEMPLATES.md</b> in the app folder.</p>
     </div>
     <div class="card glass fade">
       <div class="card-h"><div class="card-t">Data &amp; privacy</div></div>
@@ -903,6 +1225,53 @@ function bindSettings(){
     const p=(state.providers||{})[k];
     if(p){if(!$("#lModel").value||p.model)$("#lModel").value=p.model||"";}
   });
+
+  // --- appearance ---
+  const seg=$("#themeSeg");
+  if(seg) seg.addEventListener("click",async e=>{
+    const b=e.target.closest("[data-theme]"); if(!b) return;
+    const theme=b.dataset.theme;
+    applyTheme(theme);
+    seg.querySelectorAll(".seg").forEach(x=>x.classList.toggle("active",x===b));
+    const r=await api.save_appearance({theme});
+    if(r&&!r.error) state=r;
+  });
+
+  // --- export defaults ---
+  const xf=$("#xTpl");
+  if(xf){
+    document.querySelectorAll("[data-xfmt]").forEach(cb=>cb.addEventListener("change",()=>{
+      cb.closest(".fmt-opt").classList.toggle("on",cb.checked);
+    }));
+    $("#xSave").addEventListener("click",async()=>{
+      const formats=[...document.querySelectorAll("[data-xfmt]")].filter(c=>c.checked).map(c=>c.dataset.xfmt);
+      if(!formats.length) return toast("Pick at least one default format.","err");
+      const r=await api.save_export({template:$("#xTpl").value,formats,
+        author:$("#xAuthor").value,org:$("#xOrg").value});
+      if(r.error)return toast(r.error,"err");
+      state=r; toast("Export defaults saved.");
+    });
+    $("#xFolder").addEventListener("click",async()=>{
+      const r=await api.open_template_dir();
+      if(r.error)return toast(r.error,"err");
+      toast("Opened "+r.path);
+    });
+    api.pdf_engines().then(r=>{
+      const out=$("#xEngines"); if(!out) return;
+      const found=Object.keys((r&&r.engines)||{}).filter(k=>r.engines[k]);
+      out.textContent=found.length
+        ? "PDF via "+found[0]+(found.length>1?" (also: "+found.slice(1).join(", ")+")":"")
+        : "No PDF engine found — install Edge or Chrome.";
+    }).catch(()=>{});
+  }
+}
+
+/* --- theme -------------------------------------------------------------- */
+
+function applyTheme(pref){
+  const el=document.documentElement;
+  if(pref==="light"||pref==="dark") el.setAttribute("data-theme",pref);
+  else el.removeAttribute("data-theme");   // fall back to prefers-color-scheme
 }
 
 document.getElementById("seg").addEventListener("click",e=>{
@@ -918,6 +1287,7 @@ function refreshFromBridge(){
 
 async function init(){
   state=await api.get_state();
+  applyTheme(((state.config||{}).appearance||{}).theme||"system");
   render();
 }
 if(window.pywebview){init();}else{window.addEventListener("pywebviewready",init);}

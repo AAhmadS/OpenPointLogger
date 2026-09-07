@@ -38,10 +38,14 @@ ex = s.export_topic(tid)
 assert not ex.get("error"), ex
 html = pathlib.Path(ex["html"]).read_text(encoding="utf-8")
 md = pathlib.Path(ex["md"]).read_text(encoding="utf-8")
-assert "References" in html and "References" in md
+# the export goes through the template pipeline now, so the source list is
+# whatever the chosen template calls it - what has to hold is that every
+# reference got an anchor and every citation points at one.
+assert 'id="r1"' in html and 'id="r2"' in html
+assert "References" in md
 assert "Ownership" in html
 assert "<img" in html
-assert html.count('<sup class="cite">') == 4
+assert html.count('class="cite"') == 4
 assert "[1]" in md and "[2]" in md
 print("EXPORT OK ->", ex["folder"])
 print("points.json entries:", len(s.state()["topics"][0]["entries"]))

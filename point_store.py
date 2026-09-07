@@ -22,6 +22,17 @@ DEFAULT_CONFIG = {
         "api_key": "",
         "base_url": "",
     },
+    "export": {
+        "template": "personal-report",
+        "formats": ["html", "pdf", "markdown"],
+        "author": "",
+        "org": "",
+        "engine": "",
+        "dates": True,
+    },
+    "appearance": {
+        "theme": "system",
+    },
 }
 
 PROVIDERS = {
@@ -174,7 +185,7 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "llm"):
+                for section in ("hotkey", "llm", "export", "appearance"):
                     if section in saved and isinstance(saved[section], dict):
                         cfg[section].update(saved[section])
             except Exception:
@@ -189,26 +200,103 @@ class Store:
 
     def state(self):
         topics = sorted(self._topics, key=lambda t: t.get("closed") or t.get("created") or "", reverse=True)
-        return {"topics": topics, "config": self.config, "providers": PROVIDERS, "exports": self.list_exports()}
+        return {"topics": topics, "config": self.config, "providers": PROVIDERS,
+                "exports": self.list_exports(), "templates": self.list_templates()}
 
-    def list_exports(self):
-        out = []
+    def list_templates(self):
+        try:
+            import templates_registry
+            return [{k: v for k, v in t.items() if k != "dir"} for t in templates_registry.available()]
+        except Exception:
+            return []
+
+    # --- exports -------------------------------------------------------------
+
+    def _read_export(self, folder):
+        """One export folder as a record, from its manifest when it has one.
+
+        Exports written before manifests existed are still listed: the topic is
+        recovered from the folder-name slug so old reports do not vanish from the
+        tab, they just group under a slug instead of a topic id.
+        """
+        files = {}
+        for kind, name in (("html", "report.html"), ("markdown", "report.md"),
+                           ("pdf", "report.pdf"), ("docx", "report.docx"),
+                           ("latex", "report.tex")):
+            p = folder / name
+            if p.exists():
+                files[kind] = str(p)
+        if not files:
+            return None
+        mf = folder / "manifest.json"
+        doc = {}
+        if mf.exists():
+            try:
+                doc = json.loads(mf.read_text(encoding="utf-8"))
+            except Exception:
+                doc = {}
+        newest = max((Path(p).stat().st_mtime for p in files.values()), default=0)
+        slug = re.sub(r"_\d{8}_\d{6}(?:-\d+)?$", "", folder.name)
+        legacy_polished = slug.endswith("_polished")
+        if legacy_polished:
+            slug = slug[: -len("_polished")]
+        return {
+            "folder": str(folder),
+            "name": folder.name,
+            "files": files,
+            # kept flat for the toast and older call sites
+            "html": files.get("html", ""),
+            "md": files.get("markdown", ""),
+            "pdf": files.get("pdf", ""),
+            "docx": files.get("docx", ""),
+            "mtime": newest,
+            "size": sum(Path(p).stat().st_size for p in files.values()),
+            "topic_id": doc.get("topic_id") or ("slug:" + slug),
+            "topic_title": doc.get("topic_title") or slug.replace("-", " ").title(),
+            "template": doc.get("template", ""),
+            "template_name": doc.get("template_name", ""),
+            "polished": bool(doc.get("polished", legacy_polished)),
+            "entries": doc.get("entries"),
+            "sources": doc.get("sources"),
+            "pdf_pages": doc.get("pdf_pages"),
+            "warnings": doc.get("warnings", []),
+            "has_manifest": bool(doc),
+        }
+
+    def list_exports(self, per_topic=12, max_groups=40):
+        """Exports grouped by the topic they came from, newest group first.
+
+        The tab used to be a flat list, so a topic exported five times filled the
+        sidebar with five near-identical rows. Grouping makes each topic one
+        collapsible entry whose most recent report is the one on top.
+        """
+        groups = {}
         if not EXPORT_DIR.exists():
-            return out
-        for folder in sorted(EXPORT_DIR.iterdir(), reverse=True):
+            return []
+        for folder in EXPORT_DIR.iterdir():
             if not folder.is_dir():
                 continue
-            html = folder / "report.html"
-            md = folder / "report.md"
-            if not html.exists():
-                continue
             try:
-                stat = html.stat()
-                out.append({"folder": str(folder), "html": str(html), "md": str(md) if md.exists() else "",
-                            "name": folder.name, "mtime": stat.st_mtime, "size": stat.st_size})
+                rec = self._read_export(folder)
             except Exception:
-                pass
-        return out[:20]
+                rec = None
+            if not rec:
+                continue
+            g = groups.setdefault(rec["topic_id"], {
+                "topic_id": rec["topic_id"], "topic_title": rec["topic_title"],
+                "exports": [], "latest": 0})
+            g["exports"].append(rec)
+            if rec["mtime"] > g["latest"]:
+                g["latest"] = rec["mtime"]
+                g["topic_title"] = rec["topic_title"]
+
+        out = sorted(groups.values(), key=lambda g: g["latest"], reverse=True)[:max_groups]
+        for g in out:
+            g["exports"].sort(key=lambda e: e["mtime"], reverse=True)
+            g["total"] = len(g["exports"])
+            g["exports"] = g["exports"][:per_topic]
+            g["formats"] = sorted({k for e in g["exports"] for k in e["files"]})
+        return out
 
     def delete_export(self, folder):
         try:
@@ -219,8 +307,9 @@ class Store:
                 return {"error": "Invalid export path."}
             if not p.exists() or not p.is_dir():
                 return {"error": "Export not found."}
-            # safety: must contain report.html
-            if not (p / "report.html").exists():
+            # safety: the folder must actually look like an export we produced
+            if not any((p / n).exists() for n in
+                       ("report.html", "report.md", "report.pdf", "report.docx", "manifest.json")):
                 return {"error": "Not a valid export folder."}
             shutil.rmtree(p, ignore_errors=False)
             return self.state()
@@ -489,178 +578,68 @@ class Store:
                 return e
         return None
 
-    def export_topic(self, tid):
+    # --- export --------------------------------------------------------------
+    #
+    # All four artefacts come out of one staged pipeline (pipeline.py). The old
+    # hand-rolled HTML/Markdown renderers that used to live here are gone: there
+    # were two of them, they disagreed about Markdown, and the polished one
+    # emitted literal ** into the report.
+
+    def _export_meta(self, extra=None):
+        cfg = dict(self.config.get("export") or {})
+        meta = {"author": cfg.get("author", ""), "org": cfg.get("org", "")}
+        meta.update(extra or {})
+        return meta
+
+    def export_topic(self, tid, options=None):
+        """Export one topic. ``options`` may carry template, formats, subtitle,
+        summary, and a polished Markdown body from the AI path."""
+        import pipeline
+        options = dict(options or {})
         t = self.find_topic(tid)
         if not t:
             return {"error": "Topic not found."}
         entries = sorted(t.get("entries", []), key=lambda e: e.get("created") or "")
         if not entries:
-            return {"error": "Nothing to export yet — add a few logs first."}
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        folder = EXPORT_DIR / ("%s_%s" % (slugify(t["title"]), stamp))
-        folder.mkdir(parents=True, exist_ok=True)
-        html_path = folder / "report.html"
-        md_path = folder / "report.md"
+            return {"error": "Nothing to export yet - add a few logs first."}
+        cfg = dict(self.config.get("export") or {})
+        template = options.get("template") or cfg.get("template") or "personal-report"
+        formats = options.get("formats") or cfg.get("formats") or ["html", "markdown"]
         refs, cites = self._collect_refs(entries)
-        html_path.write_text(self._render_html(t, entries, refs, cites), encoding="utf-8")
-        md_path.write_text(self._render_md(t, entries, refs, folder), encoding="utf-8")
-        return {"html": str(html_path), "md": str(md_path), "entries": len(entries), "folder": str(folder)}
+        res = pipeline.export(
+            t, entries, refs, cites, EXPORT_DIR,
+            template_id=template,
+            formats=tuple(formats),
+            polished_markdown=options.get("polished_markdown"),
+            meta=self._export_meta({"subtitle": options.get("subtitle", ""),
+                                    "summary": options.get("summary", "")}),
+            prefer_engine=(cfg.get("engine") or None))
+        if res.get("error") and not res.get("files"):
+            return {"error": res["error"]}
+        # shape the result the UI toast expects, plus the richer detail
+        files = res.get("files", {})
+        res.update({"html": files.get("html", ""), "md": files.get("markdown", ""),
+                    "pdf": files.get("pdf", ""), "docx": files.get("docx", "")})
+        return res
 
-    def export_topic_polished(self, tid, polished_markdown):
-        """Render a polished AI version without touching raw data. Returns same shape as export_topic."""
+    def export_topic_polished(self, tid, polished_markdown, options=None):
+        options = dict(options or {})
+        options["polished_markdown"] = polished_markdown
+        return self.export_topic(tid, options)
+
+    def export_payload(self, tid):
+        """The Markdown the AI polish pass rewrites - same text the deterministic
+        export starts from, so the citation check can compare the two."""
+        import pipeline
         t = self.find_topic(tid)
         if not t:
-            return {"error": "Topic not found."}
+            return None
         entries = sorted(t.get("entries", []), key=lambda e: e.get("created") or "")
         if not entries:
-            return {"error": "Nothing to export yet — add a few logs first."}
+            return None
         refs, cites = self._collect_refs(entries)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        folder = EXPORT_DIR / ("%s_polished_%s" % (slugify(t["title"]), stamp))
-        folder.mkdir(parents=True, exist_ok=True)
-        html_path = folder / "report.html"
-        md_path = folder / "report.md"
-        html_path.write_text(self._render_polished_html(t, entries, refs, cites, polished_markdown), encoding="utf-8")
-        md_path.write_text(self._render_polished_md(t, refs, polished_markdown, folder, entries), encoding="utf-8")
-        return {"html": str(html_path), "md": str(md_path), "entries": len(entries), "folder": str(folder), "polished": True}
-
-    def _render_polished_html(self, t, entries, refs, cites, polished_md):
-        # Convert markdown ## headers / paragraphs to HTML, keep [n] as links to #rN
-        import re as _re
-        def md_inline(s):
-            s = esc(s)
-            s = _re.sub(r'\[(\d+)\]', lambda m: '<a class="cite" href="#r%s">[%s]</a>' % (m.group(1), m.group(1)), s)
-            s = s.replace("\n", "<br>")
-            return s
-        lines = polished_md.split("\n")
-        body = ""
-        in_list = False
-        for line in lines:
-            ls = line.strip()
-            if ls.startswith("## "):
-                if in_list:
-                    body += "</ul>"
-                    in_list = False
-                body += '<section class="sub"><h2>%s</h2>' % esc(ls[3:].strip())
-            elif ls.startswith("- ") or ls.startswith("* "):
-                if not in_list:
-                    body += '<ul class="polished-list">'
-                    in_list = True
-                body += '<li>%s</li>' % md_inline(ls[2:].strip())
-            elif ls == "":
-                if in_list:
-                    body += "</ul>"
-                    in_list = False
-                body += ""
-            else:
-                if in_list:
-                    body += "</ul>"
-                    in_list = False
-                if ls.startswith("# "):
-                    body += '<h2>%s</h2>' % esc(ls[2:].strip())
-                else:
-                    body += '<p>%s</p>' % md_inline(line)
-        if in_list:
-            body += "</ul>"
-        # close open sections
-        body = body.replace("</ul><section", "</ul></section><section")
-        # Ensure sections closed (simple count)
-        open_secs = body.count("<section")
-        close_secs = body.count("</section>")
-        if open_secs > close_secs:
-            body += "</section>" * (open_secs - close_secs)
-
-        # append image figures at end (so screenshots are not lost)
-        figures = ""
-        for e in entries:
-            for s in e.get("sources", []):
-                if s.get("type") == "image":
-                    p = Path(s["value"])
-                    try:
-                        b64 = base64.b64encode(p.read_bytes()).decode()
-                        src = "data:image/%s;base64,%s" % (p.suffix.lstrip("."), b64)
-                    except Exception:
-                        src = ""
-                    figures += '<figure><img src="%s" alt="screenshot"><figcaption>%s — %s</figcaption></figure>' % (src, esc(e.get("text","")[:60]), esc(p.name))
-        if figures:
-            body += '<section class="sub"><h2>Figures</h2>%s</section>' % figures
-
-        ref_html = "".join(
-            '<li id="r%d">%s</li>' % (i + 1, self._ref_text(r, Path(r.get("value", "")) if r.get("type") == "image" else None))
-            for i, r in enumerate(refs))
-        closed = parse_time(t.get("closed"))
-        when_c = closed.strftime("%B %d, %Y · %H:%M") if closed else ""
-        html = self._render_html(t, entries, refs, cites)  # reuse shell
-        # replace body section with polished body
-        # Instead of re-rendering shell, build fresh shell using polished body
-        shell = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<title>__TITLE__ — Polished</title>
-<style>
-:root{--ink:#1a2230;--mut:#5c6675;--acc:#c97f2d;--acc-soft:#f3e4d2;--line:#e4e2dd;--bg:#fbfaf7}
-*{box-sizing:border-box}body{margin:0;font-family:Georgia,'Times New Roman',serif;color:var(--ink);background:var(--bg)}
-.page{max-width:820px;margin:0 auto;padding:52px 44px}
-header{border-bottom:3px solid var(--acc);padding-bottom:22px;margin-bottom:30px}
-.kicker{font-family:'Segoe UI',sans-serif;letter-spacing:.18em;text-transform:uppercase;font-size:11px;color:var(--acc);font-weight:600}
-h1{margin:6px 0 4px;font-size:34px;line-height:1.15}
-.sub{font-family:'Segoe UI',sans-serif;color:var(--mut);font-size:13px}
-section.sub{margin:0 0 26px}
-section.sub h2{font-family:'Segoe UI',sans-serif;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:#b3742a;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
-.entry{margin:0 0 18px}
-.meta{font-family:'Segoe UI',sans-serif;font-size:11px;color:#a09a8e;letter-spacing:.03em}
-.meta .cite, a.cite{color:var(--acc);font-weight:700;font-size:12px;text-decoration:none;border-bottom:1px solid rgba(201,127,45,.35)}
-a.cite:hover{background:var(--acc-soft)}
-.entry p, .page p{margin:5px 0 8px;font-size:15.5px;line-height:1.65;white-space:pre-line}
-.polished-list{margin:6px 0 10px;padding-left:22px;font-size:15px;line-height:1.6}
-h2.refs{font-family:'Segoe UI',sans-serif;font-size:16px;margin:38px 0 10px;padding-top:16px;border-top:3px solid var(--acc)}
-ol.refs{font-family:'Segoe UI',sans-serif;font-size:12.5px;line-height:1.7;color:#333;padding-left:22px}
-ol.refs a{color:var(--acc);word-break:break-all}
-footer{margin-top:40px;font-family:'Segoe UI',sans-serif;font-size:11px;color:#b3ada1;text-align:center}
-.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-family:'Segoe UI',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:rgba(79,216,200,.14);color:#0e8a7a;border:1px solid rgba(79,216,200,.32);margin-top:8px}
-figure{margin:10px 0}figure img{max-width:100%;border-radius:10px;border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.08)}
-figcaption{font-family:'Segoe UI',sans-serif;font-size:11.5px;color:var(--mut);margin-top:6px}
-</style></head><body><div class="page">
-<header><div class="kicker">Trailmark · Research Notes — Polished via AI</div>
-<h1>__TITLE__</h1>
-<div class="sub">__WHEN__ &nbsp;·&nbsp; __COUNT__</div>
-<span class="badge">✦ Polished — facts unchanged, prose arranged</span>
-</header>
-__BODY__
-<h2 class="refs">References</h2>
-<ol class="refs">__REFS__</ol>
-<footer>Generated by Trailmark · Log the point. Keep the source. · Polished via AI (optional)</footer>
-</div></body></html>"""
-        shell = (shell.replace("__TITLE__", esc(t["title"]))
-                 .replace("__WHEN__", when_c)
-                 .replace("__COUNT__", "%d logged point%s &nbsp;·&nbsp; %d source%s cited" % (
-                     len(entries), "" if len(entries) == 1 else "s",
-                     len(refs), "" if len(refs) == 1 else "s"))
-                 .replace("__BODY__", body)
-                 .replace("__REFS__", ref_html))
-        return shell
-
-    def _render_polished_md(self, t, refs, polished_md, folder, entries):
-        lines = ["# %s (Polished)" % t["title"], ""]
-        lines.append(polished_md)
-        lines.append("")
-        lines.append("## References")
-        lines.append("")
-        for i, r in enumerate(refs):
-            if r.get("type") == "link":
-                lines.append("%d. %s" % (i + 1, r["value"]))
-            elif r.get("type") == "string":
-                lines.append("%d. \"%s\"" % (i + 1, r["value"]))
-            elif r.get("type") == "image":
-                lines.append("%d. Screenshot: %s" % (i + 1, Path(r["value"]).name))
-                src = Path(r["value"])
-                if src.is_absolute() and src.exists():
-                    img_dir = folder / "images"
-                    img_dir.mkdir(exist_ok=True)
-                    shutil.copy2(src, img_dir / src.name)
-        lines.append("")
-        lines.append("---")
-        lines.append("_Polished via AI — facts unchanged. Generated by Trailmark._")
-        return "\n".join(lines)
+        return {"markdown": pipeline.compose_markdown(t, entries, cites),
+                "refs": len(refs), "entries": len(entries), "title": t.get("title", "")}
 
     @staticmethod
     def _collect_refs(entries):
@@ -677,150 +656,3 @@ __BODY__
             cites[e["id"]] = nums
         return refs, cites
 
-    def _render_html(self, t, entries, refs, cites):
-        def img_data(path):
-            try:
-                return "data:%s;base64,%s" % ("image/" + path.suffix.lstrip("."), base64.b64encode(path.read_bytes()).decode())
-            except Exception:
-                return ""
-
-        groups = {}
-        for e in entries:
-            groups.setdefault(e.get("subtopic") or "General", []).append(e)
-
-        body = ""
-        for subtopic in sorted(groups.keys()):
-            body += '<section class="sub"><h2>%s</h2>' % esc(subtopic)
-            for e in groups[subtopic]:
-                when = parse_time(e.get("created"))
-                when_s = when.strftime("%B %d, %Y · %H:%M") if when else ""
-                nums = cites.get(e["id"], [])
-                cite = (" ".join('<sup class="cite"><a href="#r%d">[%d]</a></sup>' % (n, n) for n in nums)) if nums else ""
-                body += '<article class="entry"><div class="meta">%s %s</div><p>%s</p>' % (
-                    esc(when_s), cite, esc(e.get("text")).replace("\n", "<br>"))
-                for s in e.get("sources", []):
-                    if s.get("type") == "link":
-                        body += '<div class="src src-link">Link: <a href="%s" target="_blank" rel="noopener">%s</a></div>' % (esc(s["value"]), esc(s["value"]))
-                    elif s.get("type") == "string":
-                        body += '<div class="src src-str">Source: &ldquo;%s&rdquo;</div>' % esc(s["value"])
-                    elif s.get("type") == "image":
-                        body += '<figure><img src="%s" alt="screenshot"><figcaption>%s</figcaption></figure>' % (img_data(Path(s["value"])), esc(s.get("note") or "Screenshot"))
-                body += "</article>"
-            body += "</section>"
-
-        ref_html = "".join(
-            '<li id="r%d">%s</li>' % (i + 1, self._ref_text(r, Path(r.get("value", "")) if r.get("type") == "image" else None))
-            for i, r in enumerate(refs))
-
-        closed = parse_time(t.get("closed"))
-        when_c = closed.strftime("%B %d, %Y · %H:%M") if closed else ""
-        html = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<title>__TITLE__</title>
-<style>
-:root{--ink:#1a2230;--mut:#5c6675;--acc:#c97f2d;--acc-soft:#f3e4d2;--line:#e4e2dd;--bg:#fbfaf7}
-*{box-sizing:border-box}body{margin:0;font-family:Georgia,'Times New Roman',serif;color:var(--ink);background:var(--bg)}
-.page{max-width:820px;margin:0 auto;padding:52px 44px}
-header{border-bottom:3px solid var(--acc);padding-bottom:22px;margin-bottom:30px}
-.kicker{font-family:'Segoe UI',sans-serif;letter-spacing:.18em;text-transform:uppercase;font-size:11px;color:var(--acc);font-weight:600}
-h1{margin:6px 0 4px;font-size:34px;line-height:1.15}
-.sub{font-family:'Segoe UI',sans-serif;color:var(--mut);font-size:13px}
-.stats{margin-top:10px;font-family:'Segoe UI',sans-serif;font-size:12.5px;color:var(--mut)}
-.stats b{color:var(--ink)}
-section.sub{margin:0 0 26px}
-section.sub h2{font-family:'Segoe UI',sans-serif;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:#b3742a;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
-.entry{margin:0 0 18px}
-.meta{font-family:'Segoe UI',sans-serif;font-size:11px;color:#a09a8e;letter-spacing:.03em}
-.meta .cite{color:var(--acc);font-weight:700;font-size:12px}
-.meta .cite a{color:inherit;text-decoration:none;border-bottom:1px solid rgba(201,127,45,.35)}
-.meta .cite a:hover{background:var(--acc-soft)}
-.entry p{margin:5px 0 8px;font-size:15.5px;line-height:1.65;white-space:pre-line}
-.src{font-family:'Segoe UI',sans-serif;font-size:12.5px;margin:3px 0}
-.src-link a{color:var(--acc);text-decoration:none;word-break:break-all}
-.src-link a:hover{text-decoration:underline}
-.src-str{color:var(--mut);font-style:italic}
-figure{margin:10px 0}
-figure img{max-width:100%;border-radius:10px;border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.08)}
-figcaption{font-family:'Segoe UI',sans-serif;font-size:11.5px;color:var(--mut);margin-top:6px}
-h2.refs{font-family:'Segoe UI',sans-serif;font-size:16px;margin:38px 0 10px;padding-top:16px;border-top:3px solid var(--acc)}
-ol.refs{font-family:'Segoe UI',sans-serif;font-size:12.5px;line-height:1.7;color:#333;padding-left:22px}
-ol.refs a{color:var(--acc);word-break:break-all}
-ol.refs .imgref{color:var(--mut);font-style:italic}
-footer{margin-top:40px;font-family:'Segoe UI',sans-serif;font-size:11px;color:#b3ada1;text-align:center}
-</style></head><body><div class="page">
-<header><div class="kicker">Trailmark · Research Notes</div>
-<h1>__TITLE__</h1>
-<div class="sub">__WHEN__ &nbsp;·&nbsp; __COUNT__</div>
-</header>
-__BODY__
-<h2 class="refs">References</h2>
-<ol class="refs">__REFS__</ol>
-<footer>Generated by Trailmark · Log the point. Keep the source.</footer>
-</div></body></html>"""
-        html = (html.replace("__TITLE__", esc(t["title"]))
-                .replace("__WHEN__", when_c)
-                .replace("__COUNT__", "%d logged point%s &nbsp;·&nbsp; %d source%s cited" % (
-                    len(entries), "" if len(entries) == 1 else "s",
-                    len(refs), "" if len(refs) == 1 else "s"))
-                .replace("__BODY__", body)
-                .replace("__REFS__", ref_html))
-        return html
-
-    def _ref_text(self, r, image_path=None):
-        if r.get("type") == "link":
-            return '<a href="%s">%s</a>' % (esc(r["value"]), esc(r["value"]))
-        if r.get("type") == "string":
-            return "&ldquo;%s&rdquo;" % esc(r["value"])
-        if r.get("type") == "image":
-            return '<span class="imgref">Screenshot: %s</span>' % esc(image_path.name if image_path else "")
-        return ""
-
-    def _render_md(self, t, entries, refs, folder):
-        lines = ["# %s" % t["title"], ""]
-        when_c = parse_time(t.get("closed"))
-        lines.append("_%s · %d points · %d sources cited_" % (
-            when_c.strftime("%Y-%m-%d") if when_c else "", len(entries), len(refs)))
-        lines.append("")
-        groups = {}
-        for e in entries:
-            groups.setdefault(e.get("subtopic") or "General", []).append(e)
-        ref_nums = {}
-        for i, r in enumerate(refs):
-            ref_nums[(r.get("type"), r.get("value"))] = i + 1
-        for subtopic in sorted(groups.keys()):
-            lines.append("## %s" % subtopic)
-            lines.append("")
-            for e in groups[subtopic]:
-                when = parse_time(e.get("created"))
-                stamp = when.strftime("%Y-%m-%d %H:%M") if when else ""
-                nums = [ref_nums[(s.get("type"), s.get("value"))] for s in e.get("sources", [])
-                        if (s.get("type"), s.get("value")) in ref_nums]
-                cite = " [%s]" % ", ".join("[%d]" % n for n in nums) if nums else ""
-                lines.append("- **%s** %s%s" % (stamp, e.get("text", ""), cite))
-                for s in e.get("sources", []):
-                    if s.get("type") == "link":
-                        lines.append("  - Link: %s" % s["value"])
-                    elif s.get("type") == "string":
-                        lines.append("  - Source: \"%s\"" % s["value"])
-                    elif s.get("type") == "image":
-                        src = Path(s["value"])
-                        rel = "images/%s" % src.name if src.is_absolute() else s["value"]
-                        if src.is_absolute() and src.exists():
-                            img_dir = folder / "images"
-                            img_dir.mkdir(exist_ok=True)
-                            shutil.copy2(src, img_dir / src.name)
-                        lines.append("  - Screenshot: %s" % rel)
-                lines.append("")
-        lines.append("## References")
-        lines.append("")
-        for i, r in enumerate(refs):
-            if r.get("type") == "link":
-                lines.append("%d. %s" % (i + 1, r["value"]))
-            elif r.get("type") == "string":
-                lines.append("%d. \"%s\"" % (i + 1, r["value"]))
-            elif r.get("type") == "image":
-                lines.append("%d. Screenshot: %s" % (i + 1, Path(r["value"]).name))
-        lines.append("")
-        lines.append("---")
-        lines.append("_Generated by Trailmark — Log the point. Keep the source._")
-        return "\n".join(lines)

@@ -104,15 +104,31 @@ def draft_summary(cfg, topic_title, subtopics_text, max_points):
     return chat(cfg, system, user)
 
 
-def polish_report(cfg, topic_title, entries_payload):
-    system = (
-        "You are a research editor. Given raw research points with their citations, produce a polished, "
-        "well-structured report. Rules: DO NOT change facts, claims, numbers, or meaning — only fix grammar, "
-        "typos, and phrasing. Keep every citation exactly as [n] where n is the original number. "
-        "Group points into logical sections; give each section a clear H2 header (markdown ##). "
-        "Keep the tone neutral and academic. Return markdown only: ## headers, paragraphs, bullet lists "
-        "where helpful, and keep [n] citations inline. Do not invent sources or renumber."
-    )
-    user = ("Topic: %s\n\nRaw points (with citations):\n%s\n\n"
-            "Return the polished report in markdown as described.") % (topic_title, entries_payload)
+def polish_report(cfg, topic_title, composed_markdown):
+    """Rewrite an already-composed Markdown report, returning Markdown.
+
+    The contract changed when export became a pipeline: the model no longer sees
+    raw points and no longer decides layout. It receives the Markdown the
+    deterministic composer produced and returns Markdown of the same shape. The
+    citation grounding gate downstream rejects the result if [n] markers were
+    invented or silently dropped, so the prompt says so plainly rather than
+    leaving the model to guess what will be checked.
+    """
+    system = "\n".join([
+        "You are a research editor. You will be given a report that is ALREADY in Markdown.",
+        "Return the improved report as Markdown and nothing else - no preamble, no code fence,",
+        "no HTML, no commentary.",
+        "Rules:",
+        "- Do not change facts, claims, numbers, names or meaning. Fix grammar, typos and phrasing.",
+        "- Keep every citation exactly as [n] with its original number. Never renumber, never invent",
+        "  a number, never drop one. A citation you add or remove is rejected automatically.",
+        "- You may merge, split, reorder and retitle sections, and turn a run of related points into",
+        "  a paragraph. Use ## for sections and ### for sub-sections.",
+        "- Markdown you may use: ## headers, paragraphs, - bullets, 1. numbered lists, **bold**,",
+        "  *italic*, `code`, > blockquotes and [text](url) links. Nothing else: no table of contents,",
+        "  no front matter, no title line (the template supplies the title), no horizontal rules.",
+        "- Keep the tone neutral and precise.",
+    ])
+    user = "\n".join(["Topic: %s" % topic_title, "", "Report to polish:", "",
+                      composed_markdown, "", "Return the polished report as Markdown."])
     return chat(cfg, system, user, timeout=120)

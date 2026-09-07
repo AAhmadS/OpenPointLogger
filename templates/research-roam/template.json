@@ -1,0 +1,11 @@
+{
+  "id": "research-roam",
+  "name": "Research Roam",
+  "purpose": "academic",
+  "description": "Journal-style academic typesetting: Latin Modern, a numbered abstract, tight measure, IEEE-flavoured bracket citations. Emits report.tex alongside, so you can build it with Typst, Tectonic or pdflatex if you have one installed.",
+  "kicker": "Research note",
+  "accent": "#1f3a5f",
+  "formats": ["html", "pdf", "markdown", "docx", "latex"],
+  "page": { "size": "A4", "margin": "24mm 22mm" },
+  "notes": "The LaTeX path is preferred when a TeX engine is on PATH; otherwise the HTML shell renders through headless Edge and is designed to look near-identical."
+}

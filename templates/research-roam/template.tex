@@ -1,0 +1,66 @@
+% Research Roam - LaTeX shell for Trailmark.
+% Used automatically when tectonic / xelatex / pdflatex is on PATH; otherwise the
+% HTML shell renders through headless Edge and this file is still written next to
+% the report so you can build it yourself:
+%     tectonic report.tex      (or)      pdflatex report.tex ; pdflatex report.tex
+%
+% Deliberately plain article class: no journal-specific package that might not be
+% installed, no bibliography engine, no fonts to download. It compiles on a bare
+% TeX Live and looks like a preprint, which is the point.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=24mm,top=26mm,bottom=26mm]{geometry}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{abstract}
+\usepackage{xcolor}
+\definecolor{accent}{HTML}{{{accent_hex}}}
+
+\hypersetup{
+  colorlinks=true, linkcolor=black, citecolor=accent,
+  urlcolor=accent, pdftitle={ {{title}} }, pdfauthor={ {{author}} }
+}
+\urlstyle{same}
+
+\titleformat{\section}{\normalfont\bfseries\large}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\normalfont\bfseries\itshape\normalsize}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{14pt plus 3pt minus 2pt}{5pt}
+\setlist[itemize]{leftmargin=1.4em,itemsep=2pt,topsep=4pt,parsep=0pt}
+\setlist[enumerate]{leftmargin=1.6em,itemsep=2pt,topsep=4pt,parsep=0pt}
+
+\renewcommand{\abstractnamefont}{\normalfont\bfseries\small}
+\renewcommand{\abstracttextfont}{\normalfont\small}
+
+\title{\vspace{-12mm}\textbf{ {{title}} }}
+\author{ {{author}} }
+\date{ {{date}} }
+
+\begin{document}
+\maketitle
+
+{{#summary}}
+\begin{abstract}
+{{summary}}
+\end{abstract}
+{{/summary}}
+
+{{body}}
+
+\begin{thebibliography}{99}
+{{bibliography}}
+\end{thebibliography}
+
+\vfill
+\begin{center}\footnotesize\itshape
+{{footer}}
+\end{center}
+
+\end{document}
