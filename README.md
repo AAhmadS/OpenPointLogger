@@ -41,6 +41,8 @@ No accounts. No cloud. No telemetry. Your research is your file.
 - **Export in four formats** — **HTML** (single file, assets inlined), **PDF**, **Markdown** and **DOCX**. Sources are deduplicated into a **References** section and cited inline as `[1]`, `[2]`, … PDF is printed by the headless Edge that already ships with Windows, so nothing extra is bundled or downloaded; Chrome and WeasyPrint are used instead if you have them.
 - **Templates** — pick the document the report should become: **Research Roam** (journal typesetting, optional real LaTeX build), **Personal Report** (fast to scan, key facts up front), **Protocol** (numbered steps, checkboxes, sign-off). Drop your own in `%APPDATA%\Trailmark\templates` and it appears in the picker — see **[TEMPLATES.md](TEMPLATES.md)**, which includes a prompt you can hand to an AI assistant to write one for you.
 - **A pipeline, not a prompt** — export runs `compose → ground → fill → render → verify → manifest`. The model only ever touches prose: layout is code's job, and a polished draft that invents or drops a `[n]` citation is rejected and falls back to your own points. A PDF that comes out empty or unparseable fails the export rather than being handed to you.
+- **Scientific mode** - off by default. On, Trailmark keeps three things apart in every report: a **claim** you took from a source, a **quotation** reproduced word for word, and a **note** of your own. Notes get their own section and are never given a citation; quotations are never reworded. Sources can be described properly (author, year, journal, DOI - and Trailmark can fetch the rest from doi.org), and the reference list is rendered in **APA 7**, **IEEE**, **Chicago author-date**, **Vancouver** or plain numbering. A field you leave blank stays blank: a source with no author is printed without one rather than given a plausible-looking invention.
+- **The AI pass is held to the same rules, mechanically** - a polished draft that attaches a citation to one of your notes, loses a note, rewords a quotation, or invents a citation number is rejected, and your own text is exported instead. It is a check, not a request in a prompt.
 - **Exports grouped per topic** — the Exports tab shows one collapsible group per topic, newest first, with every export that topic has ever produced inside it. Re-exporting appends rather than duplicating.
 - **Full window from the tray** — the app lives in the Windows tray (the navigation bar). Double-click the tray icon or use **Open Trailmark** to review, edit, and organize topics; the quick-capture popup stays independent. The main window always refreshes when shown, so popup logs appear immediately.
 - **Single instance** — launching Trailmark while it's already running just brings the existing window forward — no duplicate processes or lost logs.
@@ -183,9 +185,10 @@ Trailmark/
 ├── hotkey.py           global hotkey (RegisterHotKey, no admin needed)
 ├── single.py           single-instance guard (Windows named event)
 ├── llm.py              optional BYOK client (OpenRouter/OpenAI/Mistral/AvalAI)
+├── citation.py         source metadata, reference strings in five styles, DOI lookup
 ├── brand.py            brand assets as data URIs
 ├── templates/          the three shipped document templates
-├── assets/             icon & logo
+├── assets/             the mark (mark.svg) and every raster generated from it (make_icons.py)
 ├── tests/              headless unit tests (store, hotkey, llm, export pipeline)
 └── build.bat           PyInstaller one-file build
 ```
@@ -198,6 +201,7 @@ $env:PYTHONPATH="."; python tests\test_store.py
 $env:PYTHONPATH="."; python tests\test_hotkey.py
 $env:PYTHONPATH="."; python tests\test_llm.py
 $env:PYTHONPATH="."; python tests\test_export.py
+$env:PYTHONPATH="."; python tests\test_science.py
 ```
 
 ## License

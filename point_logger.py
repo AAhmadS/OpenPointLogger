@@ -19,6 +19,24 @@ import single
 POPUP_HTML = POPUP_HTML.replace("__ICON__", ICON_DATA_URI)
 MAIN_HTML = MAIN_HTML.replace("__ICON__", ICON_DATA_URI)
 
+
+def system_prefers_light():
+    """Whether Windows is set to a light app theme.
+
+    Read straight from the registry rather than through a dependency; any
+    failure (missing key on an old build, a locked-down profile) answers
+    "dark", which is the app's default and never worse than guessing.
+    """
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        ) as k:
+            return bool(winreg.QueryValueEx(k, "AppsUseLightTheme")[0])
+    except Exception:
+        return False
+
 POPUP_W, POPUP_H = 462, 648
 MAIN_W, MAIN_H = 1180, 764
 
@@ -56,6 +74,9 @@ class Api:
 
     def save_appearance(self, cfg):
         return self._save_section("appearance", cfg)
+
+    def save_science(self, cfg):
+        return self._save_section("science", cfg)
 
     def _save_section(self, name, cfg):
         merged = dict(self.store.config.get(name) or {})
@@ -158,8 +179,8 @@ class Api:
         self.controller.refresh_full()
         return r
 
-    def add_entry(self, tid, subtopic, text, source_link="", source_string="", image_data=None, sources=None):
-        r = self.store.add_entry(tid, subtopic, text, source_link, source_string, image_data, sources)
+    def add_entry(self, tid, subtopic, text, source_link="", source_string="", image_data=None, sources=None, kind="claim"):
+        r = self.store.add_entry(tid, subtopic, text, source_link, source_string, image_data, sources, kind)
         self.controller.refresh_full()
         return r
 
@@ -173,10 +194,27 @@ class Api:
         self.controller.refresh_full()
         return r
 
-    def add_source(self, tid, eid, stype, value, note=""):
-        r = self.store.add_source(tid, eid, stype, value, note)
+    def add_source(self, tid, eid, stype, value, note="", meta=None):
+        r = self.store.add_source(tid, eid, stype, value, note, meta)
         self.controller.refresh_full()
         return r
+
+    def set_source_meta(self, tid, eid, sid, meta):
+        r = self.store.set_source_meta(tid, eid, sid, meta)
+        self.controller.refresh_full()
+        return r
+
+    def lookup_doi(self, doi):
+        """Fill a source's metadata from doi.org. Online, optional, best effort."""
+        import citation
+        return citation.lookup_doi(doi)
+
+    def citation_styles(self):
+        """The styles scientific mode can render, for the settings card."""
+        import citation
+        return {"styles": [{"id": k, "label": v[0], "hint": v[1]}
+                           for k, v in citation.STYLES.items()],
+                "fields": list(citation.META_FIELDS)}
 
     def delete_source(self, tid, eid, sid):
         r = self.store.delete_source(tid, eid, sid)
@@ -204,10 +242,11 @@ class Api:
         cfg = self.store.config.get("llm") or {}
         if not cfg.get("enabled") or not (cfg.get("api_key") or "").strip():
             return {"error": "AI is not configured. Open Settings - AI assist and add your key."}
-        payload = self.store.export_payload(tid)
+        payload = self.store.export_payload(tid, options)
         if not payload:
             return {"error": "Nothing to polish yet."}
-        res = llm.polish_report(cfg, payload["title"], payload["markdown"])
+        res = llm.polish_report(cfg, payload["title"], payload["markdown"],
+                                science=self.store._science(options))
         if res.get("error"):
             return {"error": res["error"]}
         polished = (res.get("content") or "").strip()
@@ -278,7 +317,13 @@ class Controller:
         self.tray = None
 
     def _icon_image(self):
-        icon_path = asset_path("icon-64.png")
+        # The tray lives on the taskbar, not on Trailmark's own surface, so it
+        # follows Windows rather than the app's theme: a white silhouette on a
+        # dark taskbar, a dark one on a light taskbar. The amber mark is what
+        # falls back if those assets are missing.
+        icon_path = asset_path("tray-light.png" if system_prefers_light() else "tray-dark.png")
+        if not icon_path.exists():
+            icon_path = asset_path("icon-64.png")
         if icon_path.exists():
             try:
                 return Image.open(icon_path).convert("RGBA")
@@ -411,15 +456,30 @@ class Controller:
                 pass
         threading.Timer(1.5, lambda: os._exit(0), ).start()
 
+    def window_bg(self):
+        """The colour the native window paints before the page has painted.
+
+        pywebview fixes this at creation time, so it cannot follow a theme
+        change later - but it can at least start on the right side. Getting it
+        wrong is a dark flash on every launch for a light-theme user.
+        """
+        pref = ((self.store.config.get("appearance") or {}).get("theme") or "system")
+        if pref == "light":
+            return "#f6f1e8"
+        if pref == "dark":
+            return "#0b0f16"
+        return "#f6f1e8" if system_prefers_light() else "#0b0f16"
+
     def build_windows(self):
+        bg = self.window_bg()
         self.popup = webview.create_window(
             "Trailmark · Quick capture", html=POPUP_HTML, js_api=self.api,
             width=POPUP_W, height=POPUP_H, frameless=True, easy_drag=True,
-            on_top=True, resizable=False, hidden=True, background_color="#0b0f16")
+            on_top=True, resizable=False, hidden=True, background_color=bg)
         self.popup_visible = False
         self.full = webview.create_window(
             "Trailmark", html=MAIN_HTML, js_api=self.api,
-            width=MAIN_W, height=MAIN_H, min_size=(900, 620), background_color="#0b0f16")
+            width=MAIN_W, height=MAIN_H, min_size=(900, 620), background_color=bg)
 
         def on_popup_closing():
             if self.quitting:

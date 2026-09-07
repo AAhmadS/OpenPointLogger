@@ -22,10 +22,18 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+import citation
 import mdlite
 import templates_registry as templates
 
-__all__ = ["export", "compose_markdown", "STAGES", "PipelineError"]
+__all__ = ["export", "compose_markdown", "STAGES", "PipelineError",
+           "NOTES_HEADING", "NOTE_PREFIX", "ground_science", "ordered_refs"]
+
+#: Scientific mode keeps your own thinking out of the sourced argument. It has
+#: to be a real heading rather than a styling choice, because the grounding gate
+#: needs somewhere it can point at and say "no citation may appear below this".
+NOTES_HEADING = "Notes and commentary"
+NOTE_PREFIX = "*Note.*"
 
 STAGES = ["compose", "ground", "fill", "render", "verify", "manifest"]
 APP_VERSION = "0.4.0"
@@ -62,13 +70,49 @@ def ref_display(ref):
     return value
 
 
-def compose_markdown(topic, entries, cites, with_dates=True):
+def _meta_index(refs):
+    """number -> that reference's structured metadata (or None)."""
+    return {i + 1: (r.get("meta") or None) for i, r in enumerate(refs or [])}
+
+
+def markers_for(nums, meta_for, style):
+    """The in-text citation strings for one entry, in the configured style."""
+    return [citation.inline_marker(n, meta_for.get(n), style) for n in nums]
+
+
+def ordered_refs(refs, style="numeric"):
+    """(number, ref) pairs in the order the reference list should print them.
+
+    The number is always the order of first use, because that is what the
+    in-text markers and the #rN anchors point at. Only the *order of the rows*
+    changes for the alphabetical styles - which is the actual difference between
+    an IEEE list and an APA one.
+    """
+    pairs = list(enumerate(refs or [], 1))
+    if style in citation.ALPHABETICAL:
+        pairs.sort(key=lambda pr: citation.sort_key(pr[1].get("meta"), ref_display(pr[1])))
+    return pairs
+
+
+def reference_text(ref, style="numeric"):
+    """One reference row: formatted from metadata when there is any, and left
+    exactly as the user typed it when there is not."""
+    return citation.format_reference(ref.get("meta"), style, fallback=ref_display(ref))
+
+
+def compose_markdown(topic, entries, cites, with_dates=True, refs=None, science=None):
     """The deterministic composer: points become Markdown grouped by sub-topic.
 
     This is what 'raw' export uses, and it is also the payload the AI polish
     pass rewrites - so the two paths always start from the same text and stage 2
     can compare them.
     """
+    sci = dict(science or {})
+    on = bool(sci.get("enabled"))
+    style = sci.get("style") or "numeric"
+    separate = bool(sci.get("separate_notes", True))
+    meta_for = _meta_index(refs) if on else {}
+
     groups = {}
     order = []
     for e in entries:
@@ -78,22 +122,45 @@ def compose_markdown(topic, entries, cites, with_dates=True):
             order.append(sub)
         groups[sub].append(e)
 
+    def dated(line, e):
+        # the log date rides along as italic text, not an HTML comment - a
+        # comment survives Markdown but not the HTML escaper, and used to
+        # show up in the report as literal "<!-- logged ... -->"
+        when = _fmt_date(e.get("created"), long=False)
+        return "%s *(%s)*" % (line, when) if (with_dates and when) else line
+
     out = []
     for sub in order:
         out.append("## %s" % sub)
         out.append("")
+        notes = []
         for e in groups[sub]:
             nums = cites.get(e["id"], [])
-            marks = " ".join("[%d]" % n for n in nums)
-            text = (e.get("text") or "").strip()
-            when = _fmt_date(e.get("created"), long=False)
-            line = text if not marks else "%s %s" % (text, marks)
-            # the log date rides along as italic text, not an HTML comment - a
-            # comment survives Markdown but not the HTML escaper, and used to
-            # show up in the report as literal "<!-- logged ... -->"
-            if with_dates and when:
-                line = "%s *(%s)*" % (line, when)
-            out.append("- %s" % line.replace("\n", " "))
+            kind = (e.get("kind") if on else "claim") or "claim"
+            if kind not in ("claim", "note", "quote"):
+                kind = "claim"
+            text = (e.get("text") or "").strip().replace("\n", " ")
+            if on and kind == "note":
+                # a note is yours: it never carries a citation, in either layout
+                line = dated(text, e)
+                if separate:
+                    notes.append("- %s" % line)
+                else:
+                    out.append("- %s %s" % (NOTE_PREFIX, line))
+                continue
+            marks = " ".join(markers_for(nums, meta_for, style) if on
+                             else ["[%d]" % n for n in nums])
+            body = text if not marks else "%s %s" % (text, marks)
+            if on and kind == "quote":
+                out.append("> %s" % dated(body, e))
+                out.append("")
+            else:
+                out.append("- %s" % dated(body, e))
+        if notes:
+            out.append("")
+            out.append("### %s" % NOTES_HEADING)
+            out.append("")
+            out += notes
         out.append("")
     return "\n".join(out).strip()
 
@@ -103,7 +170,7 @@ def compose_markdown(topic, entries, cites, with_dates=True):
 _CITE_RE = re.compile(r"\[(\d{1,3})\]")
 
 
-def ground_citations(original_md, produced_md, ref_count):
+def ground_citations(original_md, produced_md, ref_count, expected_markers=None):
     """Check the AI pass neither invented nor lost citations.
 
     Returns (ok, findings). Findings are reported either way - an export that
@@ -111,20 +178,92 @@ def ground_citations(original_md, produced_md, ref_count):
     because a citation silently vanishing from a research report is exactly the
     failure the app exists to prevent.
     """
-    before = set(int(n) for n in _CITE_RE.findall(original_md))
     after = set(int(n) for n in _CITE_RE.findall(produced_md))
     findings = []
     invented = sorted(n for n in after if n < 1 or n > ref_count)
-    dropped = sorted(before - after)
+    # In an author-date style the markers are not numbers, so the check is on the
+    # literal marker strings the composer emitted rather than on [n].
+    if expected_markers is None:
+        before = set(int(n) for n in _CITE_RE.findall(original_md))
+        missing = ["[%d]" % n for n in sorted(before - after)]
+    else:
+        missing = sorted({m for m in expected_markers if m not in produced_md})
     if invented:
         findings.append("Invented citation numbers with no matching source: %s."
                         % ", ".join("[%d]" % n for n in invented))
-    if dropped:
+    if missing:
         findings.append("Citations present in your points but missing from the polished "
-                        "text: %s." % ", ".join("[%d]" % n for n in dropped))
+                        "text: %s." % ", ".join(missing))
     if not produced_md.strip():
         findings.append("The model returned nothing.")
     return (not invented and bool(produced_md.strip())), findings
+
+
+_AUTHOR_DATE_RE = re.compile(r"\([A-Z][^()]{0,70}?\b(?:1[6-9]|20)\d{2}[a-z]?\)")
+
+
+def _norm(s):
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+
+def ground_science(produced_md, entries, sci):
+    """Scientific-mode gate: the model may reword, but not reclassify.
+
+    Three things it must not do, and all three are mechanically checkable:
+
+      * turn one of your notes into a sourced claim, by attaching a citation
+        to it or by dropping the notes block it lived in;
+      * lose a note entirely, which would quietly delete your own thinking;
+      * reword a quotation, which stops being a quotation the moment it is
+        reworded.
+
+    Returns (ok, findings). ok=False sends the export back to your own text.
+    """
+    findings = []
+    if not sci.get("enabled"):
+        return True, findings
+    separate = bool(sci.get("separate_notes", True))
+    notes = [e for e in entries if (e.get("kind") or "claim") == "note"]
+    quotes = [e for e in entries if (e.get("kind") or "claim") == "quote"]
+    hay = _norm(produced_md)
+
+    if notes:
+        if separate:
+            # everything under a notes heading, up to the next heading, must be
+            # citation-free
+            blocks = re.split(r"^#{1,4}[ \t]+", produced_md, flags=re.M)
+            found = False
+            for b in blocks:
+                if not b.lower().startswith(NOTES_HEADING.lower()):
+                    continue
+                found = True
+                if _CITE_RE.search(b) or _AUTHOR_DATE_RE.search(b):
+                    findings.append("A citation was attached to your own notes - "
+                                    "notes are your thinking, not a sourced claim.")
+                    break
+            if not found:
+                findings.append("The '%s' section disappeared from the polished draft."
+                                % NOTES_HEADING)
+        else:
+            for line in produced_md.split("\n"):
+                if NOTE_PREFIX in line and (_CITE_RE.search(line)
+                                            or _AUTHOR_DATE_RE.search(line)):
+                    findings.append("A citation was attached to a line marked as your "
+                                    "own note.")
+                    break
+        for e in notes:
+            head = _norm(e.get("text"))[:60]
+            if head and head not in hay:
+                findings.append("A note of yours is missing from the polished draft.")
+                break
+
+    for e in quotes:
+        body = _norm(e.get("text")).strip('"').strip()
+        if body and body not in hay:
+            findings.append("A quotation was reworded: %s..." % (e.get("text") or "")[:48])
+            break
+
+    return not findings, findings
 
 
 # --- stage 3: fill -----------------------------------------------------------
@@ -168,10 +307,13 @@ def _figures_html(entries, embed=True):
     return "".join(out)
 
 
-def build_values(topic, entries, refs, markdown, manifest, meta):
+def build_values(topic, entries, refs, markdown, manifest, meta, style="numeric"):
     body = _anchor_sections(mdlite.render(markdown, cite_href="#r%s", heading_offset=0))
-    refs_html = "".join('<li id="r%d">%s</li>' % (i + 1, mdlite.render_inline(ref_display(r), None))
-                        for i, r in enumerate(refs))
+    # value="n" keeps the printed number equal to the citation number even when
+    # the rows are sorted by author, which is what an APA list actually wants.
+    refs_html = "".join('<li id="r%d" value="%d">%s</li>'
+                        % (n, n, mdlite.render_inline(reference_text(r, style), None))
+                        for n, r in ordered_refs(refs, style))
     created = topic.get("created")
     closed = topic.get("closed")
     period = _fmt_date(created) if not closed else "%s - %s" % (_fmt_date(created), _fmt_date(closed))
@@ -201,7 +343,7 @@ def build_values(topic, entries, refs, markdown, manifest, meta):
 
 # --- stage 4/5: render + verify ---------------------------------------------
 
-def _write_markdown(path, topic, markdown, refs, folder, entries):
+def _write_markdown(path, topic, markdown, refs, folder, entries, style="numeric"):
     lines = ["# %s" % topic.get("title", "Untitled"), ""]
     lines.append("*%d point%s - %d source%s - exported %s*"
                  % (len(entries), "" if len(entries) == 1 else "s",
@@ -209,8 +351,8 @@ def _write_markdown(path, topic, markdown, refs, folder, entries):
                     datetime.now().strftime("%Y-%m-%d %H:%M")))
     lines += ["", markdown, "", "## References", ""]
     img_dir = folder / "images"
-    for i, r in enumerate(refs, 1):
-        lines.append("%d. %s" % (i, ref_display(r)))
+    for i, r in ordered_refs(refs, style):
+        lines.append("%d. %s" % (i, reference_text(r, style)))
         if r.get("type") == "image":
             src = Path(r.get("value", ""))
             if src.exists():
@@ -229,7 +371,7 @@ def _tex_escape(s):
     return s
 
 
-def _markdown_to_tex(md, refs):
+def _markdown_to_tex(md, refs, style="numeric"):
     """A narrow Markdown-to-LaTeX pass for the academic template.
 
     Only the constructs the composer emits are handled; anything else degrades to
@@ -283,8 +425,8 @@ def _markdown_to_tex(md, refs):
             out.append(body)
     if in_list:
         out.append(r"\end{itemize}")
-    bib = "\n".join(r"\bibitem{ref%d} %s" % (i, _tex_escape(ref_display(r)))
-                    for i, r in enumerate(refs, 1))
+    bib = "\n".join(r"\bibitem{ref%d} %s" % (i, _tex_escape(reference_text(r, style)))
+                    for i, r in ordered_refs(refs, style))
     return "\n".join(out), bib
 
 
@@ -292,7 +434,7 @@ def _markdown_to_tex(md, refs):
 
 def export(topic, entries, refs, cites, export_root, template_id="personal-report",
            formats=("html", "markdown"), polished_markdown=None, meta=None,
-           prefer_engine=None, on_stage=None):
+           prefer_engine=None, on_stage=None, science=None):
     """Run the full pipeline. Returns a result dict; never raises for a partial
     success - formats that failed are reported in ``errors`` so the user gets the
     three artefacts that worked plus an honest note about the fourth."""
@@ -321,15 +463,29 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
         return {"error": str(e)}
 
     # 1 compose
+    sci = dict(science or {})
+    style = (sci.get("style") or "numeric") if sci.get("enabled") else "numeric"
+    result["science"] = bool(sci.get("enabled"))
+    result["citation_style"] = style
     stage("compose")
-    base_md = compose_markdown(topic, entries, cites)
+    base_md = compose_markdown(topic, entries, cites, refs=refs, science=sci)
     markdown = polished_markdown.strip() if polished_markdown else base_md
-    note("compose", True, "%d points, %d chars of Markdown" % (len(entries), len(markdown)))
+    note("compose", True, "%d points, %d chars of Markdown%s"
+         % (len(entries), len(markdown),
+            ", %s style" % citation.STYLES.get(style, (style,))[0] if sci.get("enabled") else ""))
 
     # 2 ground
     stage("ground")
     if polished_markdown:
-        ok, findings = ground_citations(base_md, markdown, len(refs))
+        meta_for = _meta_index(refs) if sci.get("enabled") else {}
+        expected = None
+        if sci.get("enabled") and style not in ("numeric", "ieee", "vancouver"):
+            expected = sorted({m for nums in cites.values() if isinstance(nums, list)
+                               for m in markers_for(nums, meta_for, style)})
+        ok, findings = ground_citations(base_md, markdown, len(refs), expected)
+        sci_ok, sci_findings = ground_science(markdown, entries, sci)
+        findings = findings + sci_findings
+        ok = ok and sci_ok
         result["warnings"] += findings
         note("ground", ok, "; ".join(findings) or "citations intact")
         if not ok:
@@ -355,7 +511,7 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
 
     # 3 fill
     stage("fill")
-    values = build_values(topic, entries, refs, markdown, manifest, meta)
+    values = build_values(topic, entries, refs, markdown, manifest, meta, style)
     html = ""
     if {"html", "pdf"} & set(formats) and manifest.get("has_html"):
         try:
@@ -372,7 +528,7 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
     if "markdown" in formats:
         try:
             result["files"]["markdown"] = _write_markdown(
-                folder / "report.md", topic, markdown, refs, folder, entries)
+                folder / "report.md", topic, markdown, refs, folder, entries, style)
         except Exception as e:
             result["errors"].append("Markdown: %s" % e)
 
@@ -388,7 +544,7 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
         if manifest.get("has_tex") and "latex" in manifest.get("formats", []):
             try:
                 import pdf_render
-                tex_body, bib = _markdown_to_tex(markdown, refs)
+                tex_body, bib = _markdown_to_tex(markdown, refs, style)
                 tex_values = dict(values)
                 tex_values.update({"body": tex_body, "bibliography": bib,
                                    "title": _tex_escape(topic.get("title") or "Untitled"),
@@ -431,7 +587,7 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
                     values["date"], len(entries), "" if len(entries) == 1 else "s",
                     len(refs), "" if len(refs) == 1 else "s"),
                 "markdown": markdown,
-                "references": [ref_display(r) for r in refs],
+                "references": [reference_text(r, style) for _n, r in ordered_refs(refs, style)],
                 "figures": [{"path": s["value"], "caption": (e.get("text") or "")[:110]}
                             for e in entries for s in e.get("sources", [])
                             if s.get("type") == "image"],
@@ -470,6 +626,8 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
         "template": template_id,
         "template_name": manifest.get("name"),
         "polished": bool(polished_markdown),
+        "science": bool(sci.get("enabled")),
+        "citation_style": style,
         "created": datetime.now().isoformat(timespec="seconds"),
         "entries": len(entries),
         "sources": len(refs),

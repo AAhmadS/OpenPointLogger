@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1349 1568" width="1349" height="1568"
+     role="img" aria-label="Trailmark">
+  <title>Trailmark</title>
+  <!--
+    The Trailmark blaze: a T whose stem is notched like a trail marker - two
+    ticks cut to the left, one stepping out to the right at the foot. Read it as
+    a path with things noted along the way, which is what the app is.
+
+    Hand-authored from the artwork's own geometry rather than auto-traced. The
+    previous assets/icon.svg was a VTracer output: forty-odd overlapping paths
+    including grey compression artefacts, which is why it could never be recoloured.
+    Five rectangles can be, at any size, in any theme - the fill is a variable.
+  -->
+  <g fill="currentColor">
+    <rect x="0"   y="0"    width="1347" height="279" rx="46"/>
+    <rect x="597" y="180"  width="147"  height="1388" rx="46"/>
+    <rect x="206" y="679"  width="392"  height="138" rx="46"/>
+    <rect x="206" y="984"  width="392"  height="139" rx="46"/>
+    <rect x="744" y="1259" width="395"  height="140" rx="46"/>
+  </g>
+</svg>

@@ -146,11 +146,17 @@ html,body{height:100%;margin:0}
 body{
   font-family:var(--font-ui);
   color:var(--text);
+  /* A solid ground under the washes. The colour has to ride inside the
+     shorthand, which resets background-color to transparent - so the colour
+     is declared after it, not before. Written the other way round the live
+     window reported a transparent body, which means the native window colour
+     shows through wherever a gradient layer does not paint. */
   background:
     radial-gradient(900px 620px at 90% -10%, var(--wash-1), transparent 60%),
     radial-gradient(800px 600px at -8% 110%, var(--wash-2), transparent 58%),
     radial-gradient(600px 460px at 55% 50%, var(--wash-3), transparent 60%),
     linear-gradient(158deg,var(--bg1),var(--bg2));
+  background-color:var(--bg1);
   overflow:hidden;
   -webkit-font-smoothing:antialiased;
 }
@@ -219,6 +225,31 @@ label .input{font-weight:400}
 .toast.out{opacity:0;transform:translateY(8px)}
 .fade{animation:fade .2s var(--ease-entrance)}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* --- scientific mode: a point is a claim, a note, or a quotation --------- */
+.kinds{display:flex;gap:4px;background:var(--fill-1);border:1px solid var(--stroke);
+  border-radius:10px;padding:3px;min-width:250px}
+.kinds .k{flex:1;border:0;background:transparent;color:var(--muted);font:inherit;
+  font-size:11.5px;font-weight:600;padding:5px 8px;border-radius:7px;cursor:pointer;
+  white-space:nowrap;transition:background .14s,color .14s}
+.kinds .k:hover{color:var(--text)}
+.kinds .k.on{background:var(--fill-3);color:var(--text)}
+.kinds .k.on[data-kind="note"]{box-shadow:inset 0 0 0 1px var(--stroke)}
+.k-hint{font-size:10.5px;color:var(--muted);margin-top:4px}
+.badge.kind{font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-size:9.5px}
+.src-descs{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.src-desc{border:0;background:var(--fill-1);color:var(--muted);font:inherit;font-size:11px;
+  padding:3px 8px;border-radius:999px;cursor:pointer;transition:background .14s,color .14s}
+.src-desc:hover{background:var(--fill-3);color:var(--text)}
+.src-desc.has{color:var(--accent)}
+.meta-form{margin-top:10px;padding:12px;border:1px solid var(--stroke);border-radius:12px;
+  background:var(--fill-1)}
+.meta-form .mf-t{font-weight:600;font-size:12.5px;margin-bottom:2px}
+.meta-form .mf-s{font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5}
+.meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.meta-grid label{display:flex;flex-direction:column;gap:3px;font-size:10.5px;color:var(--muted)}
+.meta-grid .input{font-size:12px;padding:6px 8px}
+.meta-form .row{margin-top:10px}
+
 """
 
 POPUP_HTML = """<!doctype html>
@@ -228,8 +259,7 @@ __BASE_CSS__
 body{user-select:none}
 .win{display:flex;flex-direction:column;height:100vh;padding:12px;gap:10px}
 header{display:flex;align-items:center;gap:9px;padding:9px 12px}
-header img{width:30px;height:30px;border-radius:9px;object-fit:cover;border:1px solid var(--fill-4);
-  box-shadow:var(--shadow-2)}
+header img{width:auto;height:26px;object-fit:contain}
 .tt{min-width:0;flex:1}
 .app{font-weight:650;font-size:13.5px;letter-spacing:.2px}
 .hk{font-size:10.5px;color:var(--muted)}
@@ -273,6 +303,15 @@ section{overflow-y:auto;flex:1}
       </div>
       <label>Sub-topic</label>
       <div class="chips" id="subChips"></div>
+      <div id="ptKinds" hidden>
+        <label>This point is</label>
+        <div class="kinds">
+          <button class="k on" data-kind="claim">Claim</button>
+          <button class="k" data-kind="note">My note</button>
+          <button class="k" data-kind="quote">Quotation</button>
+        </div>
+        <div class="k-hint" id="ptKindHint"></div>
+      </div>
       <label>Point</label>
       <textarea id="ptText" class="input ta" rows="3" placeholder="Type or paste the point…" spellcheck="false"></textarea>
       <div class="srcbar">
@@ -301,6 +340,13 @@ section{overflow-y:auto;flex:1}
 let state={topics:[]};
 let topicId=null, subTopic="";
 let pLinks=[], pStrings=[], pImages=[];
+let pKind="claim";
+const KIND_HINT={
+  claim:"Taken from a source. It carries the citation.",
+  note:"Your own thinking. It is kept separate and never given a citation - not even by the AI pass.",
+  quote:"Verbatim from the source. Nothing, including the AI pass, may reword it."
+};
+const sciOn=()=>!!((state.config||{}).science||{}).enabled;
 let lastTopicId=null;
 const api=new Proxy({},{get:(_,p)=>{const pv=window.pywebview&&window.pywebview.api;return pv?pv[p]:(()=>Promise.resolve({error:"bridge not ready"}));}});
 
@@ -319,6 +365,12 @@ function renderMode(){
     no.hidden=false;log.hidden=true;return;
   }
   no.hidden=true;log.hidden=false;
+  const kw=$("#ptKinds");
+  if(kw){
+    kw.hidden=!sciOn();
+    kw.querySelectorAll(".k").forEach(b=>b.classList.toggle("on",b.dataset.kind===pKind));
+    $("#ptKindHint").textContent=KIND_HINT[pKind]||"";
+  }
   if(!topicId||!byId(topicId))topicId=lastTopicId&&byId(lastTopicId)?lastTopicId:opens[0].id;
   const sel=$("#tpSel");
   sel.innerHTML=opens.map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join("");
@@ -352,7 +404,7 @@ async function logPoint(){
   pLinks.forEach(v=>sources.push({type:"link",value:v}));
   pStrings.forEach(v=>sources.push({type:"string",value:v}));
   pImages.forEach(v=>sources.push({type:"image",value:v}));
-  const r=await api.add_entry(topicId,subTopic,text,"","",null,sources);
+  const r=await api.add_entry(topicId,subTopic,text,"","",null,sources,pKind);
   if(r.error){toast(r.error,"err");return;}
   state=r;lastTopicId=topicId;
   $("#ptText").value="";$("#ptLink").value="";$("#ptStr").value="";pLinks=[];pStrings=[];pImages=[];
@@ -411,6 +463,11 @@ $("#ptShot").addEventListener("change",e=>{
   });
   e.target.value="";
 });
+const ptKinds=$("#ptKinds");
+if(ptKinds) ptKinds.addEventListener("click",e=>{
+  const b=e.target.closest("[data-kind]"); if(!b) return;
+  pKind=b.dataset.kind; renderMode();
+});
 $("#ptGo").addEventListener("click",logPoint);
 $("#ptText").addEventListener("keydown",e=>{
   if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();logPoint();}
@@ -466,8 +523,8 @@ __BASE_CSS__
    and Windows snap. This strip is the designed top bar living under real chrome. */
 .topbar{grid-column:1/-1;display:flex;align-items:center;gap:10px;height:44px;
   padding:0 4px;-webkit-user-select:none;user-select:none}
-.tb-mark{flex:none;width:22px;height:22px;display:grid;place-items:center}
-.tb-mark svg{width:20px;height:20px}
+.tb-mark{flex:none;width:20px;height:22px;display:grid;place-items:center}
+.tb-mark svg{width:auto;height:19px}
 .tb-title{font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.2px;
   white-space:nowrap}
 .tb-ctx{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;
@@ -484,8 +541,7 @@ __BASE_CSS__
 .tb-btn.on{color:var(--accent);background:var(--accent-tint)}
 aside{display:flex;flex-direction:column;overflow:hidden}
 .brand{display:flex;align-items:center;gap:10px;padding:16px 16px 8px}
-.brand img{width:34px;height:34px;border-radius:10px;object-fit:cover;border:1px solid var(--fill-4);
-  box-shadow:var(--shadow-2)}
+.brand img{width:auto;height:30px;object-fit:contain}
 .brand .bn{font-weight:700;font-size:14.5px;letter-spacing:.2px}
 .brand .bt{font-size:10.5px;color:var(--muted)}
 .segmented{display:flex;gap:4px;margin:10px 14px 6px;padding:4px;background:var(--fill-1);
@@ -660,8 +716,7 @@ main{overflow-y:auto;padding:22px}
 </style></head><body>
 <div class="app">
   <header class="topbar">
-    <span class="tb-mark"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)"
-      stroke-width="2.2" stroke-linecap="round"><path d="M4 8h13M11 8v11M7 13h4M7 16h4"/></svg></span>
+    <span class="tb-mark"><svg viewBox="0 0 1349 1568" fill="var(--accent)" aria-hidden="true"><rect x="0" y="0" width="1347" height="279" rx="46"/><rect x="597" y="180" width="147" height="1388" rx="46"/><rect x="206" y="679" width="392" height="138" rx="46"/><rect x="206" y="984" width="392" height="139" rx="46"/><rect x="744" y="1259" width="395" height="140" rx="46"/></svg></span>
     <span class="tb-title">Trailmark</span>
     <span class="tb-ctx" id="tbCtx"></span>
     <span class="tb-act">
@@ -773,6 +828,19 @@ function renderSide(){
   list.querySelectorAll(".ti").forEach(el=>el.addEventListener("click",()=>{sel=el.dataset.id;editEntry=null;filterSub=null;displayLimit=20;render();}));
   list.querySelectorAll(".ti[data-exp]").forEach(el=>el.addEventListener("click",()=>{ sel=el.dataset.exp; displayLimit=20; render(); }));
 }
+
+const KIND_HINT={
+  claim:"Taken from a source. It carries the citation.",
+  note:"Your own thinking. Kept in its own section and never given a citation - not even by the AI pass.",
+  quote:"Verbatim from the source. Nothing, including the AI pass, may reword it."
+};
+const KIND_LABEL={claim:"Claim",note:"My note",quote:"Quotation"};
+let CITE_STYLES=[{id:"numeric",label:"Numbered",hint:""}];
+const META_LABEL=[["authors","Authors"],["year","Year"],["title","Title"],
+  ["container","Journal / book / site"],["publisher","Publisher"],["volume","Volume"],
+  ["issue","Issue"],["pages","Pages"],["doi","DOI"],["url","URL"]];
+let editSource=null;
+const sciOn=()=>!!((state.config||{}).science||{}).enabled;
 
 function renderMain(){
   const main=$("#main");
@@ -1061,6 +1129,9 @@ function detailHtml(t){
     <div class="row"><select id="cSub" class="input grow"></select>
       <input id="cLink" class="input grow" placeholder="Source link…">
       <button class="chip" id="cLinkAdd">+ Link</button></div>
+    ${sciOn()?`<div class="row"><div class="kinds grow" id="cKinds">
+      ${["claim","note","quote"].map(k=>`<button class="k ${compKind===k?"on":""}" data-kind="${k}">${KIND_LABEL[k]}</button>`).join("")}
+    </div><span class="muted" style="flex:2;min-width:180px;font-size:11px">${esc(KIND_HINT[compKind]||"")}</span></div>`:""}
     <div class="row"><textarea id="cText" class="input ta grow" rows="2" placeholder="Type or paste the point…" spellcheck="false"></textarea>
       <button class="btn primary" id="cGo">Log point</button></div>
     <div class="row"><input id="cStr" class="input grow" placeholder="String citation…">
@@ -1104,13 +1175,24 @@ function detailHtml(t){
 
 function entryHtml(t,e){
   const when=fmt(e.created);
+  const kind=e.kind||"claim";
+  const kindBadge=(sciOn()&&kind!=="claim")
+    ?`<span class="badge kind ${kind==="note"?"":"tealish"}">${KIND_LABEL[kind]}</span>`:"";
   const sub=e.subtopic?`<span class="tag">${esc(e.subtopic)}</span>`:"";
+  const described=s=>!!(s.meta&&Object.keys(s.meta).some(k=>k!=="type"&&s.meta[k]&&String(s.meta[k]).length));
   const srcs=e.sources.map((s,i)=>{
     if(s.type==="link")return `<span class="src-link" data-url="${esc(s.value)}" title="${esc(s.value)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>${esc(s.value)}</span>`;
     if(s.type==="string")return `<span class="src-str" data-copy="${esc(s.value)}" title="Click to copy"><span>“${esc(s.value)}”</span></span>`;
     if(s.type==="image")return `<img class="thumb" data-path="${esc(s.value)}" src="${imgSrc(s.value)}" title="Screenshot">`;
     return "";
   }).join("")||`<span class="muted" style="font-size:11.5px">no source</span>`;
+  // In scientific mode a source can be described properly - author, year, journal -
+  // so the reference list can be a reference list rather than a row of bare URLs.
+  const descBtns=sciOn()?e.sources.map(s=>
+    `<button class="src-desc ${described(s)?"has":""}" data-desc="${esc(e.id)}|${esc(s.id)}"
+      title="${described(s)?"Edit this source's details":"Describe this source"}">${described(s)?"&#10003; described":"describe"}</button>`).join(""):"";
+  const mf=(editSource&&editSource.split("|")[0]===e.id)
+    ? metaFormHtml(e,(e.sources||[]).find(x=>x.id===editSource.split("|")[1])) : "";
   const actions=editEntry===e.id
     ?`<div class="edit"><textarea id="eeText" class="input ta" rows="2">${esc(e.text)}</textarea>
        <div class="row"><input id="eeSub" class="input grow" placeholder="Sub-topic" value="${esc(e.subtopic||"")}">
@@ -1121,10 +1203,37 @@ function entryHtml(t,e){
         <button class="btn danger sm" data-del="${e.id}">Delete</button>
        </div>`;
   return `<div class="card sub glass entry fade">
-    <div class="e-meta">${when}${sub}</div>
+    <div class="e-meta">${when}${sub}${kindBadge}</div>
     <div class="e-text">${escTop(e.text)}</div>
     <div class="sources">${srcs}</div>
+    ${descBtns?`<div class="src-descs">${descBtns}</div>`:""}
+    ${mf}
     ${actions}
+  </div>`;
+}
+
+function metaFormHtml(e,s){
+  if(!s) return "";
+  const m=s.meta||{};
+  const val=k=>{
+    if(k!=="authors") return esc(m[k]||"");
+    return esc((m.authors||[]).map(a=>[a.family,a.given].filter(Boolean).join(", ")).join("; "));
+  };
+  const fields=META_LABEL.map(([k,l])=>
+    `<label>${l}<input class="input" data-mf="${k}" value="${val(k)}" ${k==="authors"?`placeholder="Smith, Jane; Doe, John"`:""}></label>`).join("");
+  return `<div class="meta-form">
+    <div class="mf-t">Describe this source</div>
+    <div class="mf-s">Fill in what you know and leave the rest blank &mdash; a blank field stays
+      blank in the reference rather than being guessed at. With a DOI, Trailmark can fetch the
+      rest for you.</div>
+    <div class="meta-grid">${fields}</div>
+    <div class="row">
+      <button class="btn ghost sm" id="mfDoi">Fetch from DOI</button>
+      <span class="muted grow" id="mfOut"></span>
+      <button class="btn primary sm" id="mfSave">Save details</button>
+      <button class="btn ghost sm" id="mfClear">Clear</button>
+      <button class="btn ghost sm" id="mfCancel">Cancel</button>
+    </div>
   </div>`;
 }
 
@@ -1205,12 +1314,58 @@ function bindDetail(t){
   });
   const eeCancel=$("#eeCancel");
   if(eeCancel)eeCancel.addEventListener("click",()=>{editEntry=null;render();});
+  document.querySelectorAll("[data-desc]").forEach(b=>b.addEventListener("click",()=>{
+    editSource=(editSource===b.dataset.desc)?null:b.dataset.desc; render();
+  }));
+  bindMetaForm(t);
   const showMore=$("#showMore");
   if(showMore)showMore.addEventListener("click",()=>{displayLimit+=20;render();});
 }
 
-let compLinks=[],compStrings=[],compImages=[];
+function bindMetaForm(t){
+  const save=$("#mfSave");
+  if(!save||!editSource) return;
+  const [eid,sid]=editSource.split("|");
+  const read=()=>{
+    const out={};
+    document.querySelectorAll("[data-mf]").forEach(i=>{out[i.dataset.mf]=i.value.trim();});
+    return out;
+  };
+  const write=m=>{
+    document.querySelectorAll("[data-mf]").forEach(i=>{
+      const k=i.dataset.mf;
+      if(k==="authors") i.value=(m.authors||[]).map(a=>[a.family,a.given].filter(Boolean).join(", ")).join("; ");
+      else i.value=m[k]||"";
+    });
+  };
+  $("#mfDoi").addEventListener("click",async()=>{
+    const out=$("#mfOut"); const doi=(read().doi||"").trim();
+    if(!doi) return toast("Put the DOI in the DOI field first.","err");
+    out.textContent="Looking it up…";
+    const r=await api.lookup_doi(doi);
+    if(r.error){out.textContent="";return toast(r.error,"err");}
+    write(r.meta); out.textContent="Filled in from doi.org — check it before saving.";
+  });
+  save.addEventListener("click",async()=>{
+    const r=await api.set_source_meta(t.id,eid,sid,read());
+    if(r.error)return toast(r.error,"err");
+    state=r;editSource=null;render();toast("Source described.");
+  });
+  $("#mfClear").addEventListener("click",async()=>{
+    const r=await api.set_source_meta(t.id,eid,sid,{});
+    if(r.error)return toast(r.error,"err");
+    state=r;editSource=null;render();toast("Details cleared.");
+  });
+  $("#mfCancel").addEventListener("click",()=>{editSource=null;render();});
+}
+
+let compLinks=[],compStrings=[],compImages=[],compKind="claim";
 function bindComposer(t){
+  const ck=$("#cKinds");
+  if(ck) ck.addEventListener("click",e=>{
+    const b=e.target.closest("[data-kind]"); if(!b) return;
+    compKind=b.dataset.kind; render();
+  });
   const sub=$("#cSub");
   sub.innerHTML=[`<option value="">General</option>`].concat((t.subtopics||[]).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`)).join("");
   $("#cLinkAdd").addEventListener("click",()=>{
@@ -1261,7 +1416,12 @@ async function logComposer(){
   compLinks.forEach(v=>sources.push({type:"link",value:v}));
   compStrings.forEach(v=>sources.push({type:"string",value:v}));
   compImages.forEach(v=>sources.push({type:"image",value:v}));
-  const r=await api.add_entry(t.id,$("#cSub").value,text,"","",null,sources);
+  if(sciOn()&&compKind!=="note"&&!sources.length
+     &&((state.config||{}).science||{}).require_source_for_claims){
+    toast("Scientific mode: a claim needs a source. Log it as a note instead if it is your own.","err");
+    return;
+  }
+  const r=await api.add_entry(t.id,$("#cSub").value,text,"","",null,sources,compKind);
   if(r.error)return toast(r.error,"err");
   state=r;compLinks=[];compStrings=[];compImages=[];
   $("#cText").value="";renderAtt();render();toast("Point logged — "+sources.length+" source(s).");
@@ -1302,7 +1462,9 @@ function settingsHtml(){
   const prov=(state.providers||{});
   const mk=(id,checked,label)=>`<label class="mod"><input type="checkbox" id="${id}" ${checked?"checked":""}> ${label}</label>`;
   const provOpts=Object.keys(prov).map(k=>`<option value="${k}" ${llm.provider===k?"selected":""}>${prov[k].label}</option>`).join("");
-  const ex=c.export||{}, app=c.appearance||{};
+  const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{};
+  const styleOpts=CITE_STYLES.map(x=>`<option value="${x.id}" ${(sci.style||"numeric")===x.id?"selected":""}>${esc(x.label)}</option>`).join("");
+  const styleHint=(CITE_STYLES.find(x=>x.id===(sci.style||"numeric"))||{}).hint||"";
   const tpls=state.templates||[];
   const builtinN=tpls.filter(t=>t.source==="builtin").length;
   const tplOpts=tpls.map(t=>`<option value="${esc(t.id)}" ${ex.template===t.id?"selected":""}>${esc(t.name)}${t.source==="user"?" (yours)":""}</option>`).join("");
@@ -1342,6 +1504,28 @@ function settingsHtml(){
       <div class="segmented" id="themeSeg">
         ${["system","light","dark"].map(k=>`<button class="seg ${(app.theme||"system")===k?"active":""}" data-theme="${k}">${k[0].toUpperCase()+k.slice(1)}</button>`).join("")}
       </div>
+    </div>
+    <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Scientific mode</div></div>
+      <p class="muted">Off, a point is a point. On, Trailmark keeps three things apart in every
+      report: a <b>claim</b> you took from a source, a <b>quotation</b> reproduced word for word,
+      and a <b>note</b> of your own. Notes get their own section and are never given a citation;
+      quotations are never reworded. The AI polish pass is held to the same rules mechanically
+      &mdash; a draft that attaches a citation to your note, drops a note, or rewrites a quotation
+      is rejected and your own text is exported instead.</p>
+      <div class="row"><label class="mod" style="flex-direction:row"><input type="checkbox" id="sciOn" ${sci.enabled?"checked":""}> Enable scientific mode</label></div>
+      <div class="grid3">
+        <label>Citation style<select id="sciStyle" class="input">${styleOpts}</select></label>
+        <label class="mod" style="flex-direction:row;align-self:end;padding-bottom:8px"><input type="checkbox" id="sciSep" ${sci.separate_notes!==false?"checked":""}> Notes in their own section</label>
+        <label class="mod" style="flex-direction:row;align-self:end;padding-bottom:8px"><input type="checkbox" id="sciReq" ${sci.require_source_for_claims?"checked":""}> A claim must have a source</label>
+      </div>
+      <p class="muted" id="sciHint">${esc(styleHint)}</p>
+      <div class="row"><button class="btn primary" id="sciSave">Save scientific mode</button></div>
+      <p class="muted">These styles are careful approximations, not a CSL processor &mdash; good
+      enough for a working document and honest about it. A source is described from the fields you
+      fill in on it, and a field you leave blank stays blank: Trailmark will print a reference with
+      no author rather than invent one. For submission-grade output, export the Markdown and run it
+      through Pandoc with a real <b>.csl</b> file.</p>
     </div>
     <div class="card glass fade">
       <div class="card-h"><div class="card-t">Exports</div></div>
@@ -1423,6 +1607,26 @@ function bindSettings(){
     if(p){if(!$("#lModel").value||p.model)$("#lModel").value=p.model||"";}
   });
 
+  // --- scientific mode ---
+  const sciStyle=$("#sciStyle");
+  if(sciStyle){
+    sciStyle.addEventListener("change",()=>{
+      const x=CITE_STYLES.find(y=>y.id===sciStyle.value);
+      $("#sciHint").textContent=x?x.hint:"";
+    });
+    $("#sciSave").addEventListener("click",async()=>{
+      const r=await api.save_science({
+        enabled:$("#sciOn").checked,
+        style:sciStyle.value,
+        separate_notes:$("#sciSep").checked,
+        require_source_for_claims:$("#sciReq").checked,
+      });
+      if(r.error)return toast(r.error,"err");
+      state=r;render();
+      toast($("#sciOn").checked?"Scientific mode on.":"Scientific mode off.");
+    });
+  }
+
   // --- appearance ---
   const seg=$("#themeSeg");
   if(seg) seg.addEventListener("click",async e=>{
@@ -1497,6 +1701,9 @@ function refreshFromBridge(){
 async function init(){
   state=await api.get_state();
   applyTheme(((state.config||{}).appearance||{}).theme||"system");
+  // the list of citation styles lives in citation.py; the UI asks for it rather
+  // than keeping a second copy that can drift
+  try{const cs=await api.citation_styles(); if(cs&&cs.styles&&cs.styles.length)CITE_STYLES=cs.styles;}catch(e){}
   render();
 }
 if(window.pywebview){init();}else{window.addEventListener("pywebviewready",init);}

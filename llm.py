@@ -104,7 +104,7 @@ def draft_summary(cfg, topic_title, subtopics_text, max_points):
     return chat(cfg, system, user)
 
 
-def polish_report(cfg, topic_title, composed_markdown):
+def polish_report(cfg, topic_title, composed_markdown, science=None):
     """Rewrite an already-composed Markdown report, returning Markdown.
 
     The contract changed when export became a pipeline: the model no longer sees
@@ -129,6 +129,29 @@ def polish_report(cfg, topic_title, composed_markdown):
         "  no front matter, no title line (the template supplies the title), no horizontal rules.",
         "- Keep the tone neutral and precise.",
     ])
+    sci = dict(science or {})
+    if sci.get("enabled"):
+        # Scientific mode adds a second contract on top of the citation one, and
+        # the same rule applies: say exactly what is checked. The gate rejects a
+        # note that gained a citation, a note that vanished, and a quotation that
+        # was reworded - so those three are the three rules, in those words.
+        import pipeline
+        rules = [
+            "",
+            "This report is in scientific mode. Two kinds of text are mixed in it and they are",
+            "not interchangeable:",
+            "- Sourced claims and quotations carry a citation marker. Leave every marker exactly",
+            "  as it is, in place, attached to the same statement.",
+            "- Text under a '%s' heading" % pipeline.NOTES_HEADING,
+            "  (or a line beginning %s) is the author's own thinking. It must keep that heading" % pipeline.NOTE_PREFIX,
+            "  or that marker, must stay in the report, and must NEVER be given a citation - not a",
+            "  number, not an (Author, year). Attaching one is rejected automatically.",
+            "- Text in a > blockquote is a verbatim quotation. Reproduce it character for character.",
+            "  You may not reword, shorten, modernise or 'improve' it. A reworded quotation is",
+            "  rejected automatically.",
+            "- Do not move a sentence from the notes into the sourced argument, or the other way.",
+        ]
+        system = system + "\n" + "\n".join(rules)
     user = "\n".join(["Topic: %s" % topic_title, "", "Report to polish:", "",
                       composed_markdown, "", "Return the polished report as Markdown."])
     return chat(cfg, system, user, timeout=120)

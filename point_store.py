@@ -33,7 +33,24 @@ DEFAULT_CONFIG = {
     "appearance": {
         "theme": "system",
     },
+    # Scientific mode. Off by default: it changes how every export reads, and a
+    # person keeping a reading log is not automatically writing a paper.
+    "science": {
+        "enabled": False,
+        "style": "numeric",
+        "separate_notes": True,
+        "require_source_for_claims": False,
+    },
 }
+
+#: what a logged point *is*. The distinction only matters in scientific mode,
+#: but it is stored always, so turning the mode on later does not require
+#: re-classifying a year of logs.
+#:
+#:   claim  something you took from a source - carries the citation
+#:   note   your own thinking - never carries one, and never gains one
+#:   quote  verbatim from a source - carries a citation and must not be reworded
+ENTRY_KINDS = ("claim", "note", "quote")
 
 PROVIDERS = {
     "openrouter": {"label": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "model": "deepseek/deepseek-v4-flash"},
@@ -127,19 +144,42 @@ def new_topic(title):
     }
 
 
-def new_entry(subtopic, text):
+def new_entry(subtopic, text, kind="claim"):
     return {
         "id": uuid.uuid4().hex,
         "subtopic": subtopic or "",
         "text": text,
+        "kind": kind if kind in ENTRY_KINDS else "claim",
         "created": now_iso(),
         "sources": [],
     }
 
 
+def entry_kind(e):
+    """The kind of a stored entry, tolerating logs written before kinds existed.
+
+    Everything logged before this field was added was, by construction, a point
+    with a source attached - so the safe reading of an absent kind is "claim".
+    """
+    k = (e or {}).get("kind")
+    return k if k in ENTRY_KINDS else "claim"
+
+
 def esc(s):
     return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;"))
+
+
+def _clean_meta(meta):
+    """Normalise citation metadata, and return nothing at all when it is empty."""
+    if not meta:
+        return None
+    try:
+        import citation
+    except Exception:
+        return None
+    m = citation.normalise_meta(meta)
+    return None if citation.is_empty(m) else m
 
 
 def slugify(title):
@@ -185,7 +225,7 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "llm", "export", "appearance"):
+                for section in ("hotkey", "llm", "export", "appearance", "science"):
                     if section in saved and isinstance(saved[section], dict):
                         cfg[section].update(saved[section])
             except Exception:
@@ -422,14 +462,14 @@ class Store:
         self._save()
         return self.state()
 
-    def add_entry(self, tid, subtopic, text, source_link="", source_string="", image_data=None, sources=None):
+    def add_entry(self, tid, subtopic, text, source_link="", source_string="", image_data=None, sources=None, kind="claim"):
         t = self.find_topic(tid)
         if not t:
             return {"error": "Topic not found."}
         text = str(text or "").strip()
         if not text:
             return {"error": "Write the point before logging it."}
-        e = new_entry(subtopic, text)
+        e = new_entry(subtopic, text, kind)
         # legacy single fields (kept for backward compat + tests)
         if source_link:
             links = source_link if isinstance(source_link, list) else [source_link]
@@ -467,8 +507,12 @@ class Store:
                         value = str(path)
                     else:
                         continue
-                e["sources"].append({"id": uuid.uuid4().hex, "type": stype,
-                                     "value": value, "note": str(s.get("note") or "").strip(), "added": now_iso()})
+                rec = {"id": uuid.uuid4().hex, "type": stype, "value": value,
+                       "note": str(s.get("note") or "").strip(), "added": now_iso()}
+                meta = _clean_meta(s.get("meta"))
+                if meta:
+                    rec["meta"] = meta
+                e["sources"].append(rec)
         if e["subtopic"] and e["subtopic"] not in t["subtopics"]:
             t["subtopics"].append(e["subtopic"])
         t["entries"].append(e)
@@ -484,6 +528,10 @@ class Store:
             return {"error": "Entry not found."}
         if "text" in fields:
             e["text"] = str(fields.get("text") or "").strip()
+        if "kind" in fields:
+            k = str(fields.get("kind") or "").strip()
+            if k in ENTRY_KINDS:
+                e["kind"] = k
         if "subtopic" in fields:
             e["subtopic"] = str(fields.get("subtopic") or "").strip()
             if e["subtopic"] and e["subtopic"] not in t["subtopics"]:
@@ -507,7 +555,31 @@ class Store:
         self._save()
         return self.state()
 
-    def add_source(self, tid, eid, stype, value, note=""):
+    def set_source_meta(self, tid, eid, sid, meta):
+        """Attach (or clear) structured citation metadata on one source.
+
+        An empty result removes the key rather than storing a dict of blanks -
+        an absent field must stay absent, so that a reference with only a title
+        renders as a title.
+        """
+        t = self.find_topic(tid)
+        if not t:
+            return {"error": "Topic not found."}
+        e = self._find_entry(t, eid)
+        if not e:
+            return {"error": "Entry not found."}
+        src = next((s for s in e.get("sources", []) if s.get("id") == sid), None)
+        if not src:
+            return {"error": "Source not found."}
+        cleaned = _clean_meta(meta)
+        if cleaned:
+            src["meta"] = cleaned
+        else:
+            src.pop("meta", None)
+        self._save()
+        return self.state()
+
+    def add_source(self, tid, eid, stype, value, note="", meta=None):
         t = self.find_topic(tid)
         if not t:
             return {"error": "Topic not found."}
@@ -517,8 +589,12 @@ class Store:
         value = str(value or "").strip()
         if not value:
             return {"error": "Source cannot be empty."}
-        e["sources"].append({"id": uuid.uuid4().hex, "type": stype,
-                             "value": value, "note": str(note or "").strip(), "added": now_iso()})
+        rec = {"id": uuid.uuid4().hex, "type": stype, "value": value,
+               "note": str(note or "").strip(), "added": now_iso()}
+        cleaned = _clean_meta(meta)
+        if cleaned:
+            rec["meta"] = cleaned
+        e["sources"].append(rec)
         self._save()
         return self.state()
 
@@ -585,6 +661,18 @@ class Store:
     # were two of them, they disagreed about Markdown, and the polished one
     # emitted literal ** into the report.
 
+    def _science(self, options=None):
+        """The scientific-mode settings for one export.
+
+        A per-export override is allowed (the export dialog offers it), but the
+        stored config is the default - so turning the mode on once is enough.
+        """
+        sci = dict(self.config.get("science") or {})
+        over = (options or {}).get("science")
+        if isinstance(over, dict):
+            sci.update({k: v for k, v in over.items() if v is not None})
+        return sci
+
     def _export_meta(self, extra=None):
         cfg = dict(self.config.get("export") or {})
         meta = {"author": cfg.get("author", ""), "org": cfg.get("org", "")}
@@ -613,7 +701,8 @@ class Store:
             polished_markdown=options.get("polished_markdown"),
             meta=self._export_meta({"subtitle": options.get("subtitle", ""),
                                     "summary": options.get("summary", "")}),
-            prefer_engine=(cfg.get("engine") or None))
+            prefer_engine=(cfg.get("engine") or None),
+            science=self._science(options))
         if res.get("error") and not res.get("files"):
             return {"error": res["error"]}
         # shape the result the UI toast expects, plus the richer detail
@@ -627,7 +716,7 @@ class Store:
         options["polished_markdown"] = polished_markdown
         return self.export_topic(tid, options)
 
-    def export_payload(self, tid):
+    def export_payload(self, tid, options=None):
         """The Markdown the AI polish pass rewrites - same text the deterministic
         export starts from, so the citation check can compare the two."""
         import pipeline
@@ -638,8 +727,14 @@ class Store:
         if not entries:
             return None
         refs, cites = self._collect_refs(entries)
-        return {"markdown": pipeline.compose_markdown(t, entries, cites),
-                "refs": len(refs), "entries": len(entries), "title": t.get("title", "")}
+        sci = self._science(options)
+        return {"markdown": pipeline.compose_markdown(t, entries, cites, refs=refs,
+                                                      science=sci),
+                "refs": len(refs), "entries": len(entries), "title": t.get("title", ""),
+                "science": bool(sci.get("enabled")),
+                "style": sci.get("style") or "numeric",
+                "notes": sum(1 for e in entries if entry_kind(e) == "note"),
+                "quotes": sum(1 for e in entries if entry_kind(e) == "quote")}
 
     @staticmethod
     def _collect_refs(entries):
