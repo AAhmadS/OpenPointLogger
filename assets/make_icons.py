@@ -12,6 +12,7 @@ Outputs:
   icon.png icon-32 icon-64 icon-96 icon-256    amber, transparent - app + web
   logo.png                                     amber wordmark-free mark, large
   tray-dark.png / tray-light.png               silhouettes for the notification area
+  tray-dark.ico / tray-light.ico               the same, as Windows wants them
   app.ico                                      multi-size Windows icon
 """
 
@@ -70,10 +71,22 @@ def main():
     render(64, INK, pad=0.04).save(HERE / "tray-light.png")
     print("wrote tray-dark.png, tray-light.png")
 
-    ico = HERE.parent / "app.ico"
-    render(256, AMBER).save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48),
-                                        (64, 64), (128, 128), (256, 256)])
-    print("wrote", ico)
+    # Shell_NotifyIconW wants an HICON, and the only way to get one without a
+    # second image library is LoadImage on a real .ico - so ship one. The tray
+    # asks for SM_CXSMICON, which is 16 at 100% and 24 at 150%.
+    for name, colour in (("tray-dark.ico", PAPER), ("tray-light.ico", INK)):
+        render(64, colour, pad=0.04).save(
+            HERE / name, sizes=[(16, 16), (20, 20), (24, 24), (32, 32), (48, 48)])
+        print("wrote", name)
+
+    # Two copies on purpose: the repo root one is what PyInstaller stamps into
+    # the .exe, and the assets one is what ships inside it so the running app
+    # can hand webview.start() a real file instead of relying on the icon being
+    # extractable from whatever sys.executable happens to be.
+    sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+    for ico in (HERE.parent / "app.ico", HERE / "app.ico"):
+        render(256, AMBER).save(ico, sizes=sizes)
+        print("wrote", ico)
 
 
 if __name__ == "__main__":

@@ -4,9 +4,7 @@ import threading
 import traceback
 import webbrowser
 
-import pystray
 import webview
-from PIL import Image
 
 from brand import ICON_DATA_URI, asset_path
 from hotkey import HotkeyListener
@@ -15,6 +13,7 @@ from ui import MAIN_HTML, POPUP_HTML
 
 import llm
 import single
+import traymenu
 
 POPUP_HTML = POPUP_HTML.replace("__ICON__", ICON_DATA_URI)
 MAIN_HTML = MAIN_HTML.replace("__ICON__", ICON_DATA_URI)
@@ -316,21 +315,13 @@ class Controller:
         self.api = Api(self.store, self)
         self.tray = None
 
-    def _icon_image(self):
+    def _tray_icon(self, light):
         # The tray lives on the taskbar, not on Trailmark's own surface, so it
-        # follows Windows rather than the app's theme: a white silhouette on a
-        # dark taskbar, a dark one on a light taskbar. The amber mark is what
+        # follows Windows rather than the app's theme: a dark silhouette on a
+        # light taskbar, a white one on a dark taskbar. The amber mark is what
         # falls back if those assets are missing.
-        icon_path = asset_path("tray-light.png" if system_prefers_light() else "tray-dark.png")
-        if not icon_path.exists():
-            icon_path = asset_path("icon-64.png")
-        if icon_path.exists():
-            try:
-                return Image.open(icon_path).convert("RGBA")
-            except Exception:
-                pass
-        img = Image.new("RGBA", (64, 64), (11, 15, 22, 255))
-        return img
+        p = asset_path("tray-light.ico" if light else "tray-dark.ico")
+        return p if p.exists() else asset_path("app.ico")
 
     def apply_hotkey(self, mods=None, key=None):
         cfg = self.store.config.get("hotkey") or {}
@@ -504,27 +495,24 @@ class Controller:
         self.full.events.shown += on_full_shown
 
     def build_tray(self):
-        def open_full(icon, item):
-            self.show_full()
+        """The notification-area icon, with the menu Trailmark draws itself.
 
-        def open_popup(icon, item):
-            self.show_popup()
-
-        def hide_all(icon, item):
-            self.hide_all()
-
-        def do_quit(icon, item):
-            threading.Thread(target=self.quit, daemon=True).start()
-
-        # Keep a native menu as fallback (hidden if chic menu works) — but we will intercept RMB
-        menu = pystray.Menu(
-            pystray.MenuItem("Open Trailmark", open_full),
-            pystray.MenuItem("Quick capture", open_popup),
-            pystray.MenuItem("Hide windows", hide_all),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit", do_quit),
-        )
-        self.tray = pystray.Icon("Trailmark", self._icon_image(), "Trailmark", menu)
+        The actions run on the tray thread, so `quit` gets its own thread -
+        it tears that very thread down."""
+        item = traymenu.Item
+        items = [
+            item("Open Trailmark", self.show_full, glyph="window", tone="accent"),
+            item("Quick capture", self.show_popup, glyph="capture"),
+            item("Hide windows", self.hide_all, glyph="hide"),
+            item(kind="sep"),
+            item("Quit", lambda: threading.Thread(target=self.quit, daemon=True).start(),
+                 glyph="power", tone="danger"),
+        ]
+        self.tray = traymenu.Tray(
+            "Trailmark", items,
+            icon_for_theme=self._tray_icon,
+            prefers_light=system_prefers_light,
+            on_activate=self.show_full)
 
     def run(self):
         self.build_windows()
@@ -547,7 +535,12 @@ class Controller:
                 traceback.print_exc()
 
         try:
-            webview.start(func=startup)
+            # Hand pywebview the icon explicitly. Left to itself it calls
+            # ExtractIconW on sys.executable, which is the right file but the
+            # wrong guarantee - under a onefile build that is the bootloader,
+            # and the window icon is then whatever the shell has cached for it.
+            icon = asset_path("app.ico")
+            webview.start(func=startup, icon=str(icon) if icon.exists() else None)
         except Exception as e:
             # Fallback: log to file and try again without tray
             try:
