@@ -1,8 +1,10 @@
+import json
 import os
 import sys
 import threading
 import traceback
 import webbrowser
+from urllib.parse import urlparse
 
 import webview
 
@@ -11,6 +13,7 @@ from hotkey import HotkeyListener
 from point_store import Store, data_dir, slugify
 from ui import MAIN_HTML, POPUP_HTML
 
+import clipboard
 import llm
 import single
 import templates_registry
@@ -83,6 +86,38 @@ class Api:
         self.store.config["hotkey"] = {"modifiers": mods, "key": key}
         self.store.save_config()
         self.controller.apply_hotkey(mods, key)
+        self.controller.refresh_full()
+        return self.store.state()
+
+    def read_clipboard(self):
+        """JS-bridge entry point behind the popup's per-row "paste from
+        clipboard" button. Never raises - clipboard.read() already can't,
+        this is just the seam the frontend calls through."""
+        try:
+            return clipboard.read()
+        except Exception:
+            return {"type": "none", "value": None, "meta": {}}
+
+    def save_clipboard(self, cfg):
+        """Mirrors save_hotkey's validate-then-save shape, not
+        _save_section: unlike llm/export/appearance/science this config has
+        a side effect (registering a second global hotkey listener) that a
+        generic merge-and-save must not silently trigger."""
+        cfg = cfg or {}
+        enabled = bool(cfg.get("enabled"))
+        mods = cfg.get("modifiers") or ["ctrl", "alt"]
+        key = cfg.get("key") or "V"
+        if enabled:
+            # A disabled combo will never be registered, so a clash with
+            # another app is not a reason to refuse saving it turned off.
+            try:
+                if not HotkeyListener.probe(mods, key):
+                    return {"error": "That combination is already in use by another app."}
+            except ValueError as e:
+                return {"error": str(e)}
+        self.store.config["clipboard"] = {"enabled": enabled, "modifiers": mods, "key": key}
+        self.store.save_config()
+        self.controller.apply_clipboard_hotkey(mods, key)
         self.controller.refresh_full()
         return self.store.state()
 
@@ -441,8 +476,10 @@ class Controller:
         self.popup = None
         self.full = None
         self.popup_visible = True
+        self.full_visible = False
         self.quitting = False
         self.hotkey = None
+        self.clipboard_hotkey = None
         self.api = Api(self.store, self)
         self.tray = None
 
@@ -466,6 +503,149 @@ class Controller:
             self.hotkey.start()
         except ValueError:
             self.hotkey = None
+
+    def apply_clipboard_hotkey(self, mods=None, key=None):
+        """Mirrors apply_hotkey, but for the independent T11 auto-detect
+        combo - a second HotkeyListener instance (hotkey_id=0x4344, distinct
+        from the capture hotkey's 0x4343) that coexists with it. Off by
+        default (config.clipboard.enabled), so the common case here is just
+        stopping any previous listener and leaving it unregistered."""
+        cfg = self.store.config.get("clipboard") or {}
+        if self.clipboard_hotkey:
+            self.clipboard_hotkey.stop()
+            self.clipboard_hotkey = None
+        if not cfg.get("enabled"):
+            return
+        mods = mods or cfg.get("modifiers") or ["ctrl", "alt"]
+        key = key or cfg.get("key") or "V"
+        try:
+            self.clipboard_hotkey = HotkeyListener(mods, key, self.on_clipboard_hotkey,
+                                                   hotkey_id=0x4344)
+            self.clipboard_hotkey.start()
+        except ValueError:
+            self.clipboard_hotkey = None
+
+    def on_clipboard_hotkey(self):
+        """Ctrl+Alt+V (by default) auto-detect: fires on the Win32 hotkey
+        message-loop thread, same as toggle_popup does for the capture
+        hotkey - so every pywebview call below is a direct call guarded by
+        try/except, exactly the pattern toggle_popup/show_popup/hide_popup
+        already use from that same thread, rather than a separate dispatch
+        primitive."""
+        try:
+            data = clipboard.read()
+        except Exception:
+            data = {"type": "none", "value": None, "meta": {}}
+
+        if data.get("type") == "none":
+            # Firing the hotkey with nothing copied is a no-op, not an
+            # error - the common case is an empty reflex press, and it is
+            # not worth interrupting the user with a toast for that.
+            return
+
+        topic = self.store.last_open_topic()
+        if topic is None:
+            self._deliver_clipboard_toast("error", "No open topic — start one first", None)
+            return
+
+        # Re-verify the topic is still open right before writing: the hotkey
+        # fires on the Win32 message-loop thread, and there is a real window
+        # between last_open_topic() above and add_entry() below where the UI
+        # thread could close this exact topic. A stale reference here would
+        # otherwise deliver a clipboard entry into a topic the user just
+        # closed. add_entry() itself intentionally does not gate on status
+        # (other callers rely on writing into closed topics), so the check
+        # belongs at this call site only.
+        t = self.store.find_topic(topic["id"])
+        if not t or t.get("status") != "open":
+            self._deliver_clipboard_toast("error", "No open topic — start one first", None)
+            return
+
+        kind = data["type"]
+        try:
+            if kind == "image":
+                r = self.store.add_entry(topic["id"], "", "Clipboard image",
+                                         sources=[{"type": "image", "value": data["value"]}])
+            elif kind == "link":
+                url = data["value"]
+                host = urlparse(url).netloc or url
+                r = self.store.add_entry(topic["id"], "", host, source_link=url)
+            else:
+                r = self.store.add_entry(topic["id"], "", data["value"][:2000])
+        except Exception:
+            traceback.print_exc()
+            self._deliver_clipboard_toast("error", "Could not log the clipboard.", None)
+            return
+
+        if r.get("error"):
+            self._deliver_clipboard_toast("error", r["error"], None)
+            return
+
+        self.refresh_full()
+        entry_id = self._newest_entry_id(r, topic["id"])
+        self._deliver_clipboard_toast(kind, self._clipboard_toast_detail(kind, data),
+                                       entry_id, topic["id"])
+
+    @staticmethod
+    def _newest_entry_id(state, tid):
+        for t in state.get("topics", []):
+            if t.get("id") == tid:
+                entries = t.get("entries") or []
+                if entries:
+                    return entries[-1]["id"]
+        return None
+
+    @staticmethod
+    def _clipboard_toast_detail(kind, data):
+        if kind == "image":
+            return "Clipboard image"
+        if kind == "link":
+            return data.get("value") or ""
+        text = data.get("value") or ""
+        return text[:120] + ("…" if len(text) > 120 else "")
+
+    def _deliver_clipboard_toast(self, kind, detail, entry_id, topic_id=None):
+        """Toast delivery for the T11 auto-detect hotkey.
+
+        traymenu.py's Shell_NotifyIconW wrapper only implements NIM_ADD /
+        NIM_MODIFY / NIM_SETVERSION / NIM_DELETE - there is no balloon-
+        notification facility in this repo to reuse - so this fires the
+        frontend's clipboardToast(kind, detailText, entryId, tid) into
+        whichever webview window is already on screen, rather than building
+        a new notification layer: into the main window if it is currently
+        visible, or by briefly showing the popup (mirroring show_popup)
+        otherwise. This does not match the floating-toast mockup
+        pixel-for-pixel (there is no window-independent OS toast surface
+        here), but needs no new UI plumbing beyond the JS function
+        frontend-lead is adding.
+
+        topic_id is the 4th argument frontend-lead's Undo needs, since
+        Undo calls api.delete_entry(tid, entryId) and the JS side has no
+        other reliable way to know which topic the auto-detected entry
+        landed in. Only the success path (below, in on_clipboard_hotkey)
+        passes a real topic_id. All three error-path calls leave it at the
+        None default: Undo is never actionable when entry_id is also None
+        (nothing was logged), so both travel as null together rather than
+        pairing a real topic id with a null entry id.
+        """
+        try:
+            js = "clipboardToast(%s, %s, %s, %s)" % (
+                json.dumps(kind), json.dumps(detail), json.dumps(entry_id),
+                json.dumps(topic_id))
+        except Exception:
+            return
+        try:
+            if self.full is not None and self.full_visible:
+                self.full.evaluate_js(js)
+                return
+        except Exception:
+            pass
+        try:
+            self.show_popup()
+            if self.popup is not None:
+                self.popup.evaluate_js(js)
+        except Exception:
+            pass
 
     def toggle_popup(self):
         if self.popup is None:
@@ -511,6 +691,7 @@ class Controller:
         def _do():
             try:
                 self.full.show()
+                self.full_visible = True
                 try:
                     # bring to front and restore if minimized
                     self.full.restore()
@@ -554,6 +735,7 @@ class Controller:
         try:
             if self.full:
                 self.full.hide()
+                self.full_visible = False
         except Exception:
             pass
 
@@ -567,6 +749,11 @@ class Controller:
         if self.hotkey:
             try:
                 self.hotkey.stop()
+            except Exception:
+                pass
+        if self.clipboard_hotkey:
+            try:
+                self.clipboard_hotkey.stop()
             except Exception:
                 pass
         for w in (self.popup, self.full):
@@ -614,6 +801,7 @@ class Controller:
                 return True
             try:
                 self.full.hide()
+                self.full_visible = False
             except Exception:
                 pass
             return False
@@ -652,6 +840,10 @@ class Controller:
         def startup():
             try:
                 self.apply_hotkey()
+            except Exception:
+                traceback.print_exc()
+            try:
+                self.apply_clipboard_hotkey()
             except Exception:
                 traceback.print_exc()
             try:

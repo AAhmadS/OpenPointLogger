@@ -22,11 +22,11 @@ MOD_MAP = {
 
 
 class HotkeyListener:
-    def __init__(self, modifiers, key, on_press):
+    def __init__(self, modifiers, key, on_press, hotkey_id=0x4343):
         self.mods = self._parse_mods(modifiers)
         self.vk = self._parse_key(key)
         self.on_press = on_press
-        self._id = 0x4343
+        self._id = hotkey_id
         self._thread = None
         self._registered = False
 

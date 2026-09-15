@@ -231,6 +231,57 @@ label.mod .muted{font-weight:400}
 .meta-grid .input{font-size:12px;padding:6px 8px}
 .meta-form .row{margin-top:10px}
 
+/* --- clipboard capture: popup paste buttons, thumb chip, rich toast, hotkey switch (T10/T11) --- */
+.paste-btn{flex:none;width:28px;height:28px;border:0;background:transparent;color:var(--content-secondary);
+  border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.paste-btn:hover{color:var(--accent);background:var(--accent-tint)}
+.paste-btn svg{width:15px;height:15px}
+.thumb-chip{flex:1;display:flex;align-items:center;gap:8px;min-width:0;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--r-sm);padding:5px 8px}
+/* scoped to .thumb-chip so this doesn't collide with the unrelated bare .thumb
+   (a 64x64 <img> thumbnail) already used elsewhere in the app's own style block */
+.thumb-chip .thumb{flex:none;width:32px;height:32px;border-radius:var(--r-sm);
+  background:linear-gradient(135deg, var(--accent-tint), var(--secondary-tint));
+  border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+.thumb-chip .thumb svg{width:15px;height:15px;stroke:var(--accent)}
+.thumb-chip .thumb-meta{min-width:0;flex:1}
+.thumb-chip .thumb-meta .fn{font:600 12px var(--font-ui);color:var(--content);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.thumb-chip .thumb-meta .fs{font:11px var(--font-ui);color:var(--content-muted)}
+.xbtn{flex:none;width:20px;height:20px;border:0;background:var(--surface-2);color:var(--content-muted);
+  border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.xbtn:hover{color:var(--danger);background:var(--danger-tint)}
+.xbtn svg{width:10px;height:10px}
+
+/* the rich "logged from clipboard" toast - deliberately NOT .toast (see report) */
+.cbtoast{width:320px;max-width:calc(100vw - 32px);background:var(--surface-raised);
+  border:1px solid var(--border-strong);border-radius:var(--r-md);box-shadow:var(--shadow-3);
+  padding:13px 14px 0;overflow:hidden;pointer-events:auto;transition:var(--dur-slow) var(--ease-standard)}
+.cbtoast.out{opacity:0;transform:translateY(8px)}
+.cbtoast .row1{display:flex;align-items:flex-start;gap:10px}
+.cbtoast .ic{flex:none;width:26px;height:26px;border-radius:7px;background:var(--accent-tint);
+  display:flex;align-items:center;justify-content:center;margin-top:1px}
+.cbtoast .ic svg{width:14px;height:14px;stroke:var(--accent)}
+.cbtoast .txt{flex:1;min-width:0}
+.cbtoast .txt b{display:block;font:700 13px var(--font-display);color:var(--content)}
+.cbtoast .txt span{display:block;font:11.5px var(--font-ui);color:var(--content-secondary);margin-top:2px}
+.cbtoast .undo{flex:none;border:0;background:transparent;color:var(--accent);font:700 12px var(--font-ui);
+  cursor:pointer;padding:2px 0}
+.cbtoast .prog{height:2px;background:var(--border);margin-top:12px;position:relative}
+.cbtoast .prog i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);width:100%;
+  display:block;transition:width 4s linear}
+
+/* Settings -> Hotkeys: static key chips + on/off pill switch for the clipboard hotkey */
+.key{background:var(--surface-sunken);border:1px solid var(--border);border-radius:var(--r-sm);
+  padding:8px 12px;font:700 12px var(--font-mono)}
+.plus{color:var(--content-muted);font:12px var(--font-ui)}
+.sw{width:36px;height:21px;border-radius:999px;background:var(--surface-sunken);border:1px solid var(--border);
+  position:relative;flex:none;cursor:pointer;padding:0;transition:background .14s var(--ease-standard)}
+.sw.on{background:var(--accent);border-color:var(--accent)}
+.sw .kn{position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+  background:var(--surface-raised);transition:transform .14s var(--ease-standard)}
+.sw.on .kn{transform:translateX(15px);background:var(--accent-content)}
+
 """
 
 POPUP_HTML = """<!doctype html>
@@ -299,13 +350,16 @@ section{overflow-y:auto;flex:1}
       <div class="srcbar">
         <input id="ptLink" class="input grow" placeholder="Paste a source link…">
         <button id="ptLinkAdd" class="chip">+ Link</button>
+        <button id="ptLinkPaste" class="paste-btn" type="button" aria-label="Paste link from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
       </div>
       <div class="srcbar">
         <input id="ptStr" class="input grow" placeholder="Or a string citation…">
         <button id="ptStrAdd" class="chip">+ String</button>
+        <button id="ptStrPaste" class="paste-btn" type="button" aria-label="Paste text from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
       </div>
       <div class="attrow">
         <label class="chip">+ Screenshot<input id="ptShot" type="file" accept="image/*" hidden></label>
+        <button id="ptImgPaste" class="paste-btn" type="button" aria-label="Paste image from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
         <div id="attChips" class="chips"></div>
       </div>
       <div class="logrow">
@@ -339,6 +393,39 @@ const toast=(m,t="ok")=>{const d=document.createElement("div");d.className="toas
 const byId=i=>state.topics.find(t=>t.id===i);
 const openTopics=()=>state.topics.filter(t=>t.status==="open");
 const fmtTime=iso=>{if(!iso)return"";const d=new Date(iso);return d.toLocaleString(undefined,{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});};
+
+// Called from Python via evaluate_js("clipboardToast(...)") when the Ctrl+Alt+V
+// hotkey auto-detects and logs a clipboard source. Deliberately its own .cbtoast
+// element, not the plain toast() above - see report for why. `tid` is a 4th
+// argument beyond the original 3-arg contract; see the handback in the report.
+const CB_ICONS={
+  link:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-1 1"/><path d="M12 8a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l1-1"/></svg>',
+  image:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="9" r="1.2"/><path d="M17 13l-4-4-7 7"/></svg>',
+  text:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h12M4 9h12M4 13h8"/></svg>'
+};
+function clipboardToast(kind,detailText,entryId,tid){
+  const d=document.createElement("div");
+  d.className="cbtoast fade";
+  const headline=kind==="error"?"Couldn't log from clipboard":"Logged from clipboard";
+  d.innerHTML=`<div class="row1"><div class="ic">${CB_ICONS[kind]||CB_ICONS.text}</div>
+    <div class="txt"><b>${headline}</b><span></span></div>
+    ${entryId==null?"":'<button class="undo" type="button">Undo</button>'}</div>
+    <div class="prog"><i></i></div>`;
+  d.querySelector(".txt span").textContent=detailText; // untrusted, pre-formatted - textContent only
+  document.getElementById("toasts").appendChild(d);
+  const bar=d.querySelector(".prog i");
+  requestAnimationFrame(()=>{bar.style.width="0%";});
+  function dismiss(){d.classList.add("out");setTimeout(()=>d.remove(),280);}
+  const timer=setTimeout(dismiss,4000);
+  const undoBtn=d.querySelector(".undo");
+  if(undoBtn) undoBtn.addEventListener("click",async()=>{
+    clearTimeout(timer);
+    const r=await api.delete_entry(tid,entryId);
+    if(r&&r.error){toast(r.error,"err");return;}
+    state=r;renderMode();
+    dismiss();
+  });
+}
 
 function renderMode(){
   const opens=openTopics();
@@ -385,7 +472,7 @@ async function logPoint(){
   const sources=[];
   pLinks.forEach(v=>sources.push({type:"link",value:v}));
   pStrings.forEach(v=>sources.push({type:"string",value:v}));
-  pImages.forEach(v=>sources.push({type:"image",value:v}));
+  pImages.forEach(v=>sources.push({type:"image",value:v.value}));
   const r=await api.add_entry(topicId,subTopic,text,"","",null,sources,pKind);
   if(r.error){toast(r.error,"err");return;}
   state=r;lastTopicId=topicId;
@@ -402,7 +489,14 @@ function renderAtt(){
   const wrap=$("#attChips");const parts=[];
   pLinks.forEach((v,i)=>parts.push(`<span class="chip active" data-rm="link-${i}" title="${esc(v)}">🔗 ${esc(v.slice(0,22))} ×</span>`));
   pStrings.forEach((v,i)=>parts.push(`<span class="chip active" data-rm="str-${i}" title="${esc(v)}">“ ${esc(v.slice(0,18))} ×</span>`));
-  pImages.forEach((_,i)=>parts.push(`<span class="chip active" data-rm="img-${i}">🖼 shot ${i+1} ×</span>`));
+  // Clipboard-pasted images have no File object, so there's no real filename or
+  // size to show - the label instead reflects which control produced the image
+  // (paste vs. file-picker), tracked via img.source.
+  pImages.forEach((img,i)=>{const label=img.source==="paste"?"Pasted image":"Screenshot";parts.push(`<span class="thumb-chip">
+    <span class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 16l-5-5-9 9"/></svg></span>
+    <span class="thumb-meta"><span class="fn">${label}</span></span>
+    <button class="xbtn" data-rm="img-${i}" type="button" aria-label="Remove image"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+  </span>`);});
   wrap.innerHTML=parts.join("")||`<span class="muted" style="font-size:11.5px">add links, strings or screenshots — all will be cited</span>`;
   wrap.querySelectorAll("[data-rm]").forEach(el=>el.addEventListener("click",()=>{
     const k=el.dataset.rm;
@@ -434,13 +528,31 @@ $("#ptStrAdd").addEventListener("click",()=>{
 });
 $("#ptLink").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ptLinkAdd").click();});
 $("#ptStr").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ptStrAdd").click();});
+$("#ptImgPaste").addEventListener("click",async()=>{
+  const d=await api.read_clipboard();
+  if(d.type==="image"){pImages.push({value:d.value,source:"paste"});renderAtt();toast("Image pasted from clipboard.");}
+  else{toast("Clipboard has no image.","err");}
+});
+$("#ptLinkPaste").addEventListener("click",async()=>{
+  const d=await api.read_clipboard();
+  if(d.type==="link"){$("#ptLink").value=d.value;}
+  else if(d.type==="text"){toast("Clipboard text is not a URL.","err");}
+  else if(d.type==="image"){toast("Clipboard has an image, not a link.","err");}
+  else{toast("Clipboard is empty.","err");}
+});
+$("#ptStrPaste").addEventListener("click",async()=>{
+  const d=await api.read_clipboard();
+  if(d.type==="text"||d.type==="link"){$("#ptStr").value=d.value;}
+  else if(d.type==="image"){toast("Clipboard has an image, not text.","err");}
+  else{toast("Clipboard is empty.","err");}
+});
 $("#ptShot").addEventListener("change",e=>{
   const files=[...e.target.files]; if(!files.length) return;
   let pending=files.length;
   files.forEach(f=>{
     if(f.size>8*1024*1024){toast("Image too large (8 MB max).","err"); pending--; if(!pending) renderAtt(); return;}
     const rd=new FileReader();
-    rd.onload=()=>{pImages.push(rd.result); renderAtt(); toast("Screenshot attached ("+pImages.length+").");};
+    rd.onload=()=>{pImages.push({value:rd.result,source:"file"}); renderAtt(); toast("Screenshot attached ("+pImages.length+").");};
     rd.readAsDataURL(f);
   });
   e.target.value="";
@@ -807,6 +919,39 @@ const toast=(m,t="ok")=>{const d=document.createElement("div");d.className="toas
   document.getElementById("toasts").appendChild(d);setTimeout(()=>d.classList.add("out"),2400);setTimeout(()=>d.remove(),2800);};
 const byId=i=>state.topics.find(t=>t.id===i);
 const escTop=s=>esc(s).replace(/\\n/g,"<br>");
+
+// Called from Python via evaluate_js("clipboardToast(...)") when the Ctrl+Alt+V
+// hotkey auto-detects and logs a clipboard source. Deliberately its own .cbtoast
+// element, not the plain toast() above - see report for why. `tid` is a 4th
+// argument beyond the original 3-arg contract; see the handback in the report.
+const CB_ICONS={
+  link:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-1 1"/><path d="M12 8a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l1-1"/></svg>',
+  image:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="9" r="1.2"/><path d="M17 13l-4-4-7 7"/></svg>',
+  text:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h12M4 9h12M4 13h8"/></svg>'
+};
+function clipboardToast(kind,detailText,entryId,tid){
+  const d=document.createElement("div");
+  d.className="cbtoast fade";
+  const headline=kind==="error"?"Couldn't log from clipboard":"Logged from clipboard";
+  d.innerHTML=`<div class="row1"><div class="ic">${CB_ICONS[kind]||CB_ICONS.text}</div>
+    <div class="txt"><b>${headline}</b><span></span></div>
+    ${entryId==null?"":'<button class="undo" type="button">Undo</button>'}</div>
+    <div class="prog"><i></i></div>`;
+  d.querySelector(".txt span").textContent=detailText; // untrusted, pre-formatted - textContent only
+  document.getElementById("toasts").appendChild(d);
+  const bar=d.querySelector(".prog i");
+  requestAnimationFrame(()=>{bar.style.width="0%";});
+  function dismiss(){d.classList.add("out");setTimeout(()=>d.remove(),280);}
+  const timer=setTimeout(dismiss,4000);
+  const undoBtn=d.querySelector(".undo");
+  if(undoBtn) undoBtn.addEventListener("click",async()=>{
+    clearTimeout(timer);
+    const r=await api.delete_entry(tid,entryId);
+    if(r&&r.error){toast(r.error,"err");return;}
+    state=r;render();
+    dismiss();
+  });
+}
 function fmt(iso){if(!iso)return"—";const d=new Date(iso);return d.toLocaleString(undefined,{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}
 function fmtT(iso){if(!iso)return"";const d=new Date(iso);return d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});}
 function copyText(t){navigator.clipboard&&navigator.clipboard.writeText(t).then(()=>toast("Copied."),()=>legacyCopy(t)).catch(()=>legacyCopy(t));}
@@ -1828,7 +1973,7 @@ function settingsHtml(){
   const prov=(state.providers||{});
   const mk=(id,checked,label)=>`<label class="mod"><input type="checkbox" id="${id}" ${checked?"checked":""}> ${label}</label>`;
   const provOpts=Object.keys(prov).map(k=>`<option value="${k}" ${llm.provider===k?"selected":""}>${prov[k].label}</option>`).join("");
-  const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{};
+  const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{}, cb=c.clipboard||{};
   const styleOpts=CITE_STYLES.map(x=>`<option value="${x.id}" ${(sci.style||"numeric")===x.id?"selected":""}>${esc(x.label)}</option>`).join("");
   const styleHint=(CITE_STYLES.find(x=>x.id===(sci.style||"numeric"))||{}).hint||"";
   const tpls=state.templates||[];
@@ -1847,6 +1992,14 @@ function settingsHtml(){
         <button class="btn primary" id="hkSave">Apply hotkey</button>
       </div>
       <p class="muted" id="hkInfo"></p>
+    </div>
+    <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Log clipboard</div></div>
+      <p class="muted">Detects image, link or text and logs it to the current topic.</p>
+      <div class="row" style="align-items:center;gap:8px">
+        <span class="key">Ctrl</span><span class="plus">+</span><span class="key">Alt</span><span class="plus">+</span><span class="key">V</span>
+        <button class="sw ${cb.enabled?"on":""}" id="cbSw" type="button" role="switch" aria-checked="${cb.enabled?"true":"false"}" aria-label="Enable clipboard hotkey" style="margin-left:auto"><span class="kn"></span></button>
+      </div>
     </div>
     <div class="card glass fade">
       <div class="card-h"><div class="card-t">AI assist</div></div>
@@ -1944,6 +2097,19 @@ function bindSettings(){
     if(r.error)return toast(r.error,"err");
     hkInfo.textContent="Current: "+mods.map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+key.toUpperCase();
     toast("Hotkey updated.");
+  });
+  const cbSw=$("#cbSw");
+  if(cbSw) cbSw.addEventListener("click",async()=>{
+    const next=!cbSw.classList.contains("on");
+    cbSw.classList.toggle("on",next);cbSw.setAttribute("aria-checked",next?"true":"false");
+    const r=await api.save_clipboard({enabled:next,modifiers:["ctrl","alt"],key:"V"});
+    if(r&&r.error){
+      toast(r.error,"err");
+      cbSw.classList.toggle("on",!next);cbSw.setAttribute("aria-checked",!next?"true":"false");
+      return;
+    }
+    state=r;
+    toast("Clipboard hotkey "+(next?"enabled.":"disabled."));
   });
   const show=$("#lShow");
   show.addEventListener("click",()=>{const k=$("#lKey");k.type=k.type==="password"?"text":"password";show.textContent=k.type==="password"?"Show":"Hide";});

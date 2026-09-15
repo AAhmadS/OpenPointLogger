@@ -15,6 +15,10 @@ FMT = "%Y-%m-%dT%H:%M:%S"
 
 DEFAULT_CONFIG = {
     "hotkey": {"modifiers": ["ctrl", "alt"], "key": "P"},
+    # Off by default: unlike the capture hotkey, this one has a side effect
+    # (reading the clipboard and filing a new entry) the moment it fires, so
+    # it is opt-in rather than something every install starts doing silently.
+    "clipboard": {"enabled": False, "modifiers": ["ctrl", "alt"], "key": "V"},
     "llm": {
         "enabled": False,
         "provider": "openrouter",
@@ -233,7 +237,7 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "llm", "export", "categories", "appearance", "science"):
+                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science"):
                     if section in saved and isinstance(saved[section], dict):
                         cfg[section].update(saved[section])
             except Exception:
