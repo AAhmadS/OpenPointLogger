@@ -622,6 +622,22 @@ __BASE_CSS__
 .tb-ctx::before{content:"—";margin-right:8px;opacity:.5}
 .tb-ctx:empty::before{content:none}
 .tb-act{flex:none;display:flex;align-items:center;gap:4px}
+.tb-chip{display:none;align-items:center;gap:7px;padding:5px 11px;border-radius:var(--r-pill);
+  font:700 11px var(--font-ui);background:var(--surface-sunken);border:1px solid var(--border);
+  max-width:220px;flex:none;white-space:nowrap}
+.tb-chip.show{display:flex}
+.tb-chip .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-chip.listening{color:var(--secondary)}
+.tb-chip .dot3{width:7px;height:7px;border-radius:50%;background:var(--secondary);flex:none;
+  animation:asrPulse 1.6s ease-in-out infinite}
+@keyframes asrPulse{0%,100%{box-shadow:0 0 0 0 var(--secondary-tint)}50%{box-shadow:0 0 0 5px rgba(0,0,0,0)}}
+.tb-chip.transcribing{color:var(--accent)}
+.tb-chip .ring{width:11px;height:11px;border-radius:50%;border:2px solid var(--border-strong);
+  border-top-color:var(--accent);flex:none;animation:asrSpin .8s linear infinite}
+@keyframes asrSpin{to{transform:rotate(360deg)}}
+.tb-chip.logged{color:var(--success)}
+.tb-chip.error{color:var(--danger)}
+.tb-chip .check{width:14px;height:14px;flex:none;stroke:var(--success)}
 .tb-btn{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:9px;
   background:transparent;color:var(--content-secondary);cursor:pointer;
   transition:var(--dur-fast) var(--ease-standard)}
@@ -873,6 +889,7 @@ main{overflow-y:auto;padding:22px}
 <div class="app">
   <header class="topbar">
     <span class="tb-ctx" id="tbCtx"></span>
+    <span class="tb-chip" id="asrChip"></span>
     <span class="tb-act">
       <button class="tb-btn" id="tbTheme" title="Switch theme"><svg viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2M22 12h-2.2
@@ -1973,7 +1990,9 @@ function settingsHtml(){
   const prov=(state.providers||{});
   const mk=(id,checked,label)=>`<label class="mod"><input type="checkbox" id="${id}" ${checked?"checked":""}> ${label}</label>`;
   const provOpts=Object.keys(prov).map(k=>`<option value="${k}" ${llm.provider===k?"selected":""}>${prov[k].label}</option>`).join("");
-  const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{}, cb=c.clipboard||{};
+  const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{}, cb=c.clipboard||{}, asr=c.asr||{};
+  const asrDevs=state.asrDevices||[];
+  const asrDeviceOpts=asrDevs.length?asrDevs.map(d=>`<option value="${esc(d.id)}" ${String(asr.device)===String(d.id)?"selected":""}>${esc(d.name)}</option>`).join(""):`<option value="">Default</option>`;
   const styleOpts=CITE_STYLES.map(x=>`<option value="${x.id}" ${(sci.style||"numeric")===x.id?"selected":""}>${esc(x.label)}</option>`).join("");
   const styleHint=(CITE_STYLES.find(x=>x.id===(sci.style||"numeric"))||{}).hint||"";
   const tpls=state.templates||[];
@@ -2016,6 +2035,37 @@ function settingsHtml(){
         <button class="btn primary" id="lSave">Save settings</button>
       </div>
       <div class="row"><button class="btn ghost sm" id="lTest">Test connection</button><span class="muted" id="lTestOut"></span></div>
+    </div>
+    <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Voice logging</div></div>
+      <div class="row" style="align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Auto-log speech as notes</b>
+          <p class="muted" style="margin:3px 0 0">Listens on your microphone only while this is on. Nothing is stored until a phrase is transcribed.</p>
+        </div>
+        <button class="sw ${asr.enabled?"on":""}" id="asrSw" type="button" role="switch" aria-checked="${asr.enabled?"true":"false"}" aria-label="Enable auto-log speech as notes" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <div class="grid3" style="margin-top:12px">
+        <label>Endpoint<input id="asrEndpoint" class="input" placeholder="https://api.openai.com/v1" value="${esc(asr.endpoint||"")}"></label>
+        <label>Model<input id="asrModel" class="input" placeholder="whisper-1" value="${esc(asr.model||"whisper-1")}"></label>
+        <label>Microphone<select id="asrDevice" class="input">${asrDeviceOpts}</select></label>
+      </div>
+      <p class="muted">Any OpenAI-compatible /audio/transcriptions endpoint &mdash; OpenAI, Groq&hellip; For Groq, use <b>https://api.groq.com/openai/v1</b> with model <b>whisper-large-v3-turbo</b>.</p>
+      <div class="row">
+        <label class="grow" style="min-width:200px">API key<input id="asrKey" class="input" type="password" placeholder="sk-…" value="${esc(asr.api_key||"")}"></label>
+        <button class="btn ghost" id="asrShow">Show</button>
+        <button class="btn primary" id="asrSave">Save settings</button>
+      </div>
+      <label style="display:block;margin-top:12px">Sensitivity
+        <input id="asrSensitivity" type="range" min="0" max="100" value="${asr.sensitivity!=null?asr.sensitivity:50}" style="width:100%;accent-color:var(--accent);margin-top:6px">
+      </label>
+      <div class="row"><button class="btn ghost sm" id="asrTest">Test 5 seconds</button><span class="muted" id="asrTestOut"></span></div>
+      <div class="row" style="background:var(--accent-tint);border:1px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-top:12px;align-items:flex-start">
+        <div>
+          <b style="display:block;font-size:12.5px;margin-bottom:4px">Voice logging is strictly opt-in.</b>
+          <p class="muted" style="margin:0">Trailmark only listens to your own microphone while this switch is on &mdash; never system audio, other apps, or call/loopback audio. Turning it off immediately stops capture. Nothing is recorded to disk; only the transcribed text becomes a logged point.</p>
+        </div>
+      </div>
     </div>
     <div class="card glass fade">
       <div class="card-h"><div class="card-t">Appearance</div></div>
@@ -2075,6 +2125,38 @@ function settingsHtml(){
     </div>
   </div>`;
 }
+
+function asrState(state,detail){
+  const chip=$("#asrChip");
+  if(!chip)return;
+  chip.classList.remove("show","listening","transcribing","logged","error");
+  if(state==="off"||state==="no_topic"){
+    chip.innerHTML="";
+    return;
+  }
+  chip.classList.add("show");
+  if(state==="listening"){
+    chip.classList.add("listening");
+    chip.innerHTML='<span class="dot3"></span><span class="tx"></span>';
+    chip.querySelector(".tx").textContent="Listening";
+  }else if(state==="transcribing"){
+    chip.classList.add("transcribing");
+    chip.innerHTML='<span class="ring"></span><span class="tx"></span>';
+    chip.querySelector(".tx").textContent="Transcribing…";
+  }else if(state==="logged"){
+    chip.classList.add("logged");
+    chip.innerHTML='<svg class="check" viewBox="0 0 20 20" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-9"/></svg><span class="tx"></span>';
+    chip.querySelector(".tx").textContent=detail?('Logged · "'+detail+'"'):"Logged";
+  }else if(state==="error"){
+    chip.classList.add("error");
+    chip.innerHTML='<span class="tx"></span>';
+    chip.querySelector(".tx").textContent=detail||"Voice logging error";
+  }else{
+    chip.classList.remove("show");
+    chip.innerHTML="";
+  }
+}
+window.asrState=asrState;
 
 function bindSettings(){
   // state.categories is only populated by list_categories() - get_state() never
@@ -2144,6 +2226,53 @@ function bindSettings(){
     const k=$("#lProvider").value;
     const p=(state.providers||{})[k];
     if(p){if(!$("#lModel").value||p.model)$("#lModel").value=p.model||"";}
+  });
+
+  // --- voice logging (ASR) ---
+  if(!state.asrDevices){
+    api.list_asr_devices().then(r=>{state.asrDevices=Array.isArray(r)?r:[];render();}).catch(()=>{state.asrDevices=[];});
+  }
+  function asrCfgFromForm(){
+    const devEl=$("#asrDevice");
+    const devVal=devEl?devEl.value:"";
+    return{
+      endpoint:$("#asrEndpoint").value,
+      model:$("#asrModel").value,
+      api_key:$("#asrKey").value,
+      language:"",
+      device:devVal!==""?Number(devVal):"",
+      sensitivity:Number($("#asrSensitivity").value)||0,
+    };
+  }
+  const asrSw=$("#asrSw");
+  if(asrSw) asrSw.addEventListener("click",async()=>{
+    const next=!asrSw.classList.contains("on");
+    asrSw.classList.toggle("on",next);asrSw.setAttribute("aria-checked",next?"true":"false");
+    const cfg=asrCfgFromForm();cfg.enabled=next;
+    const r=await api.save_asr(cfg);
+    if(r&&r.error){
+      toast(r.error,"err");
+      asrSw.classList.toggle("on",!next);asrSw.setAttribute("aria-checked",!next?"true":"false");
+      return;
+    }
+    state=r;
+    toast("Voice logging "+(next?"enabled.":"disabled."));
+  });
+  const asrShow=$("#asrShow");
+  if(asrShow) asrShow.addEventListener("click",()=>{const k=$("#asrKey");k.type=k.type==="password"?"text":"password";asrShow.textContent=k.type==="password"?"Show":"Hide";});
+  const asrSaveBtn=$("#asrSave");
+  if(asrSaveBtn) asrSaveBtn.addEventListener("click",async()=>{
+    const cfg=asrCfgFromForm();cfg.enabled=asrSw?asrSw.classList.contains("on"):false;
+    const r=await api.save_asr(cfg);
+    if(r&&r.error)return toast(r.error,"err");
+    state=r;toast("Voice logging settings saved.");
+  });
+  const asrTestBtn=$("#asrTest");
+  if(asrTestBtn) asrTestBtn.addEventListener("click",async()=>{
+    const out=$("#asrTestOut");out.textContent="Testing…";
+    const r=await api.test_asr(5);
+    if(r&&r.error){out.textContent="";toast(r.error,"err");}
+    else out.textContent=(r&&r.text)?r.text:"(no speech detected)";
   });
 
   // --- scientific mode ---

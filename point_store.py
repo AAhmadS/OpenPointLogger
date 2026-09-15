@@ -45,6 +45,19 @@ DEFAULT_CONFIG = {
     "appearance": {
         "theme": "system",
     },
+    # Off by default: unlike the clipboard hotkey, enabling this starts a
+    # background microphone-capture thread the moment it's turned on - an
+    # even bigger side effect than the clipboard hotkey's, so it stays
+    # opt-in rather than something every install starts doing silently.
+    "asr": {
+        "enabled": False,
+        "endpoint": "https://api.openai.com/v1",
+        "model": "whisper-1",
+        "api_key": "",
+        "language": "",
+        "device": "",
+        "sensitivity": 50,
+    },
     # Scientific mode. Off by default: it changes how every export reads, and a
     # person keeping a reading log is not automatically writing a paper.
     "science": {
@@ -237,7 +250,7 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science"):
+                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr"):
                     if section in saved and isinstance(saved[section], dict):
                         cfg[section].update(saved[section])
             except Exception:

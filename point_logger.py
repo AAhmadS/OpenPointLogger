@@ -13,6 +13,7 @@ from hotkey import HotkeyListener
 from point_store import Store, data_dir, slugify
 from ui import MAIN_HTML, POPUP_HTML
 
+import asr
 import clipboard
 import llm
 import single
@@ -120,6 +121,43 @@ class Api:
         self.controller.apply_clipboard_hotkey(mods, key)
         self.controller.refresh_full()
         return self.store.state()
+
+    def save_asr(self, cfg):
+        """Mirrors save_clipboard's shape, not _save_section: enabling this
+        starts a background microphone-capture thread, a side effect a generic
+        merge-and-save must not silently trigger. The API key is validated for
+        shape only (a string) — never logged, never echoed into an error
+        message, never truncated-and-shown like a toast snippet."""
+        cfg = cfg or {}
+        prev = self.store.config.get("asr") or {}
+        sensitivity = cfg.get("sensitivity", prev.get("sensitivity", 50))
+        try:
+            sensitivity = int(sensitivity)
+        except (TypeError, ValueError):
+            sensitivity = 50
+        sensitivity = max(0, min(100, sensitivity))
+        merged = {
+            "enabled": bool(cfg.get("enabled")),
+            "endpoint": (str(cfg.get("endpoint") or prev.get("endpoint") or "")).strip()
+                        or "https://api.openai.com/v1",
+            "model": (str(cfg.get("model") or prev.get("model") or "")).strip() or "whisper-1",
+            "api_key": str(cfg.get("api_key")) if cfg.get("api_key") is not None else str(prev.get("api_key") or ""),
+            "language": (str(cfg.get("language") or "")).strip(),
+            "device": (str(cfg.get("device") or "")).strip(),
+            "sensitivity": sensitivity,
+        }
+        self.store.config["asr"] = merged
+        self.store.save_config()
+        self.controller.apply_asr()
+        self.controller.refresh_full()
+        return self.store.state()
+
+    def test_asr(self, seconds=5):
+        cfg = self.store.config.get("asr") or {}
+        return asr.test_capture(cfg, seconds=seconds)
+
+    def list_asr_devices(self):
+        return asr.list_devices()
 
     def save_llm(self, cfg):
         return self._save_section("llm", cfg)
@@ -480,8 +518,19 @@ class Controller:
         self.quitting = False
         self.hotkey = None
         self.clipboard_hotkey = None
+        self.asr_logger = None
+        # Guards apply_asr()'s read-modify-write of asr_logger: apply_asr is
+        # reachable concurrently from the tray thread (_toggle_voice_logging)
+        # and the pywebview JS-bridge thread (Api.save_asr). Without this,
+        # two near-simultaneous calls can each stop the same old logger, then
+        # each start a new one - the second overwrites self.asr_logger and
+        # the first's VoiceLogger is orphaned (nothing left holds a reference
+        # to stop it), leaving the microphone open after the user believes
+        # voice logging is off.
+        self._asr_lock = threading.Lock()
         self.api = Api(self.store, self)
         self.tray = None
+        self.voice_item = None
 
     def _tray_icon(self, light):
         # The tray lives on the taskbar, not on Trailmark's own surface, so it
@@ -524,6 +573,107 @@ class Controller:
             self.clipboard_hotkey.start()
         except ValueError:
             self.clipboard_hotkey = None
+
+    def apply_asr(self):
+        """Mirrors apply_clipboard_hotkey: stop whatever's running, then start
+        fresh from current config if enabled. Off by default (config.asr.enabled),
+        so the common case is just stopping any previous logger and leaving it
+        stopped.
+
+        Serialized on ``self._asr_lock`` - this can be called concurrently
+        from the tray thread and from the pywebview JS-bridge thread, and an
+        unsynchronized read-modify-write of ``self.asr_logger`` could orphan
+        a running capture thread (see the lock's own comment in __init__)."""
+        with self._asr_lock:
+            cfg = self.store.config.get("asr") or {}
+            if self.asr_logger:
+                try:
+                    self.asr_logger.stop()
+                except Exception:
+                    traceback.print_exc()
+                self.asr_logger = None
+            if not cfg.get("enabled"):
+                self.push_asr_state("off", "")
+                return
+            self.asr_logger = asr.VoiceLogger(cfg, self.on_asr_utterance, self.push_asr_state)
+            try:
+                self.asr_logger.start()
+            except Exception:
+                traceback.print_exc()
+                self.push_asr_state("error", "Could not start voice logging.")
+
+    def on_asr_utterance(self, wav_bytes):
+        """Runs on VoiceLogger's own capture thread, not the UI thread — same
+        cross-thread discipline as on_clipboard_hotkey/push_asr_state."""
+        cfg = self.store.config.get("asr") or {}
+        self.push_asr_state("transcribing", "")
+        try:
+            result = asr.transcribe(cfg, wav_bytes)
+        except Exception:
+            traceback.print_exc()
+            self.push_asr_state("error", "Transcription failed.")
+            return
+        if result.get("error"):
+            self.push_asr_state("error", result["error"])
+            return
+        self._log_asr_text(result.get("text") or "")
+
+    def _log_asr_text(self, text):
+        """Files one transcribed utterance into the last open topic. Split out
+        from on_asr_utterance so a test can drive the entry-creation path
+        without a real transcription call. Re-verifies the topic is still open
+        immediately before writing, exactly like on_clipboard_hotkey does (same
+        race: time passes between last_open_topic() and add_entry(), and the UI
+        thread could close the topic in between). A "logged" push is not
+        terminal - VoiceLogger emits "listening" again on its own once capture
+        resumes."""
+        text = (text or "").strip()
+        if not text:
+            self.push_asr_state("listening", "")
+            return
+        topic = self.store.last_open_topic()
+        if topic is None:
+            self.push_asr_state("no_topic", "No open topic")
+            return
+        t = self.store.find_topic(topic["id"])
+        if not t or t.get("status") != "open":
+            self.push_asr_state("no_topic", "No open topic")
+            return
+        try:
+            r = self.store.add_entry(topic["id"], "", text, kind="note")
+        except Exception:
+            traceback.print_exc()
+            self.push_asr_state("error", "Could not log the transcription.")
+            return
+        if r.get("error"):
+            self.push_asr_state("error", r["error"])
+            return
+        self.refresh_full()
+        detail = text[:120] + ("…" if len(text) > 120 else "")
+        self.push_asr_state("logged", detail)
+
+    def push_asr_state(self, state, detail=""):
+        """Called from VoiceLogger's capture thread (not the UI thread) as well
+        as from the UI thread itself (apply_asr's off-path). detail is
+        JSON-encoded rather than string-formatted into the JS so a transcript
+        snippet or an error message can never break out of the argument list —
+        same discipline as _deliver_clipboard_toast. Never pass the API key as
+        detail, under any state.
+        """
+        try:
+            js = "asrState(%s,%s)" % (json.dumps(state), json.dumps(detail or ""))
+        except Exception:
+            return
+        try:
+            if self.full is not None and self.full_visible:
+                self.full.evaluate_js(js)
+        except Exception:
+            pass
+        if hasattr(self, "_update_voice_tray_label"):
+            try:
+                self._update_voice_tray_label(state)
+            except Exception:
+                pass
 
     def on_clipboard_hotkey(self):
         """Ctrl+Alt+V (by default) auto-detect: fires on the Win32 hotkey
@@ -756,6 +906,11 @@ class Controller:
                 self.clipboard_hotkey.stop()
             except Exception:
                 pass
+        if self.asr_logger:
+            try:
+                self.asr_logger.stop()
+            except Exception:
+                pass
         for w in (self.popup, self.full):
             if w is None:
                 continue
@@ -819,9 +974,17 @@ class Controller:
         The actions run on the tray thread, so `quit` gets its own thread -
         it tears that very thread down."""
         item = traymenu.Item
+        asr_enabled = bool((self.store.config.get("asr") or {}).get("enabled"))
+        # No check-glyph exists in traymenu's _draw_glyph yet (mark/window/
+        # capture/hide/power only) — drawing one is real icon-drawing surface,
+        # out of scope here, so this row ships glyph=None (n/a with a reason,
+        # not a shortcut) until that glyph is added.
+        self.voice_item = item(self._voice_label(asr_enabled),
+                                self._toggle_voice_logging, glyph=None)
         items = [
             item("Open Trailmark", self.show_full, glyph="window", tone="accent"),
             item("Quick capture", self.show_popup, glyph="capture"),
+            self.voice_item,
             item("Hide windows", self.hide_all, glyph="hide"),
             item(kind="sep"),
             item("Quit", lambda: threading.Thread(target=self.quit, daemon=True).start(),
@@ -832,6 +995,34 @@ class Controller:
             icon_for_theme=self._tray_icon,
             prefers_light=system_prefers_light,
             on_activate=self.show_full)
+
+    @staticmethod
+    def _voice_label(enabled):
+        return "Voice logging: %s" % ("On" if enabled else "Off")
+
+    def _toggle_voice_logging(self):
+        """Tray click handler - runs on the tray's own thread, same as every
+        other tray action here. Flips asr.enabled through the same save_asr
+        path the Settings UI uses, so config persistence and the apply_asr()
+        side effect stay in exactly one place."""
+        cfg = dict(self.store.config.get("asr") or {})
+        cfg["enabled"] = not cfg.get("enabled")
+        self.api.save_asr(cfg)   # save_asr already calls apply_asr() + refresh_full()
+
+    def _update_voice_tray_label(self, state):
+        """Called from push_asr_state (main-thread or ASR-capture-thread) on
+        every ASR state change, so the tray label tracks reality even when
+        the state changed for a reason other than a tray click (an error, or
+        the Settings UI toggling it). Ships the minimum bar only: On/Off from
+        config. Richer state text ("Listening"/"Transcribing...") is not
+        wired in - `state` is accepted but unused for now."""
+        if not hasattr(self, "voice_item") or self.voice_item is None:
+            return
+        try:
+            enabled = bool((self.store.config.get("asr") or {}).get("enabled"))
+            self.voice_item.label = self._voice_label(enabled)
+        except Exception:
+            pass
 
     def run(self):
         self.build_windows()
@@ -844,6 +1035,10 @@ class Controller:
                 traceback.print_exc()
             try:
                 self.apply_clipboard_hotkey()
+            except Exception:
+                traceback.print_exc()
+            try:
+                self.apply_asr()
             except Exception:
                 traceback.print_exc()
             try:
