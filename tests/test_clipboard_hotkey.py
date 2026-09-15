@@ -99,6 +99,47 @@ if len(entries) == 2:
     check("text: trimmed to exactly 2000 chars", len(entries[-1]["text"]) == 2000,
           len(entries[-1]["text"]))
 
+# --- 3b. Finding 1 regression: toast must carry the entry add_entry() itself
+# just created, not entries[-1] of a state snapshot read later - a concurrent
+# write (e.g. from the JS-bridge thread) landing between the hotkey's
+# add_entry() call and any later read of "entries[-1]" must not change which
+# id the toast/Undo uses. Uses its own topic so it doesn't perturb the entry
+# counts the later checks (image routing, etc.) rely on for topic "T". "T" is
+# closed first so last_open_topic() unambiguously routes here instead of "T"
+# - both topics tie on "created" to the second, and last_open_topic()'s
+# stable sort keeps ties in original list order (T first), so with "T" still
+# open the hotkey would keep landing in "T" instead of this scratch topic.
+
+store.close_topic(tid)
+r = store.start_topic("Race-for-undo topic")
+race_undo_tid = next(t["id"] for t in r["topics"] if t["title"] == "Race-for-undo topic")
+
+toasts.clear()
+clipboard.read = lambda: {"type": "text", "value": "first entry, from the hotkey", "meta": {}}
+controller.on_clipboard_hotkey()
+entries_after_first = _entries_for(race_undo_tid)
+first_entry_id = entries_after_first[-1]["id"]
+toast_entry_id = toasts[-1][2]
+check("concurrent-write guard: toast id matches the entry the hotkey just created",
+      toast_entry_id == first_entry_id, (toast_entry_id, first_entry_id))
+
+# Simulate a concurrent JS-bridge write landing in the same topic right after
+# the hotkey's own add_entry() returned, without going through the hotkey path.
+store.add_entry(race_undo_tid, "", "second entry, logged concurrently")
+entries_after_second = _entries_for(race_undo_tid)
+second_entry_id = entries_after_second[-1]["id"]
+check("concurrent-write guard: sanity - the concurrent write really added a new last entry",
+      second_entry_id != first_entry_id, (second_entry_id, first_entry_id))
+check("concurrent-write guard: toast id still matches entry 1, not the later-arriving entry 2",
+      toast_entry_id == first_entry_id and toast_entry_id != second_entry_id,
+      (toast_entry_id, first_entry_id, second_entry_id))
+
+# Close this scratch topic and reopen "T" so it is again the sole open topic
+# for the remaining checks, which rely on "T" already holding exactly 2
+# entries (from checks 2 and 3 above).
+store.close_topic(race_undo_tid)
+store.reopen_topic(tid)
+
 # --- 4. image routing ----------------------------------------------------------
 
 png = base64.b64encode(

@@ -732,18 +732,9 @@ class Controller:
             return
 
         self.refresh_full()
-        entry_id = self._newest_entry_id(r, topic["id"])
+        entry_id = r.get("entry_id")
         self._deliver_clipboard_toast(kind, self._clipboard_toast_detail(kind, data),
                                        entry_id, topic["id"])
-
-    @staticmethod
-    def _newest_entry_id(state, tid):
-        for t in state.get("topics", []):
-            if t.get("id") == tid:
-                entries = t.get("entries") or []
-                if entries:
-                    return entries[-1]["id"]
-        return None
 
     @staticmethod
     def _clipboard_toast_detail(kind, data):

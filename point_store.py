@@ -217,7 +217,7 @@ class Store:
 
     def __init__(self):
         _migrate_legacy_data()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._topics = self._load()
         self.config = self._load_config()
 
@@ -394,20 +394,23 @@ class Store:
             return {"error": "Could not remove export: %s" % e}
 
     def find_topic(self, tid):
-        for t in self._topics:
-            if t["id"] == tid:
-                return t
-        return None
+        with self._lock:
+            for t in self._topics:
+                if t["id"] == tid:
+                    return t
+            return None
 
     def open_topics(self):
-        return [t for t in self._topics if t.get("status") == "open"]
+        with self._lock:
+            return [t for t in self._topics if t.get("status") == "open"]
 
     def last_open_topic(self):
-        opens = self.open_topics()
-        if not opens:
-            return None
-        opens.sort(key=lambda t: t.get("created") or "", reverse=True)
-        return opens[0]
+        with self._lock:
+            opens = self.open_topics()
+            if not opens:
+                return None
+            opens.sort(key=lambda t: t.get("created") or "", reverse=True)
+            return opens[0]
 
     def start_topic(self, title):
         title = str(title or "").strip()
@@ -500,97 +503,102 @@ class Store:
         return self.state()
 
     def add_entry(self, tid, subtopic, text, source_link="", source_string="", image_data=None, sources=None, kind="claim"):
-        t = self.find_topic(tid)
-        if not t:
-            return {"error": "Topic not found."}
-        text = str(text or "").strip()
-        if not text:
-            return {"error": "Write the point before logging it."}
-        e = new_entry(subtopic, text, kind)
-        # legacy single fields (kept for backward compat + tests)
-        if source_link:
-            links = source_link if isinstance(source_link, list) else [source_link]
-            for v in links:
-                v = str(v).strip()
-                if v:
-                    e["sources"].append({"id": uuid.uuid4().hex, "type": "link",
-                                         "value": v, "note": "", "added": now_iso()})
-        if source_string:
-            strs = source_string if isinstance(source_string, list) else [source_string]
-            for v in strs:
-                v = str(v).strip()
-                if v:
-                    e["sources"].append({"id": uuid.uuid4().hex, "type": "string",
-                                         "value": v, "note": "", "added": now_iso()})
-        if image_data:
-            imgs = image_data if isinstance(image_data, list) else [image_data]
-            for data_url in imgs:
-                if not data_url:
-                    continue
-                path = self._save_image(tid, e["id"], data_url)
-                if path:
-                    e["sources"].append({"id": uuid.uuid4().hex, "type": "image",
-                                         "value": str(path), "note": "", "added": now_iso()})
-        # new unified sources array (preferred for multi-citation UI)
-        if sources and isinstance(sources, list):
-            for s in sources:
-                stype = (s.get("type") or "").strip()
-                value = str(s.get("value") or "").strip()
-                if not value or stype not in ("link", "string", "image"):
-                    continue
-                if stype == "image" and value.startswith("data:"):
-                    path = self._save_image(tid, e["id"], value)
-                    if path:
-                        value = str(path)
-                    else:
+        with self._lock:
+            t = self.find_topic(tid)
+            if not t:
+                return {"error": "Topic not found."}
+            text = str(text or "").strip()
+            if not text:
+                return {"error": "Write the point before logging it."}
+            e = new_entry(subtopic, text, kind)
+            # legacy single fields (kept for backward compat + tests)
+            if source_link:
+                links = source_link if isinstance(source_link, list) else [source_link]
+                for v in links:
+                    v = str(v).strip()
+                    if v:
+                        e["sources"].append({"id": uuid.uuid4().hex, "type": "link",
+                                             "value": v, "note": "", "added": now_iso()})
+            if source_string:
+                strs = source_string if isinstance(source_string, list) else [source_string]
+                for v in strs:
+                    v = str(v).strip()
+                    if v:
+                        e["sources"].append({"id": uuid.uuid4().hex, "type": "string",
+                                             "value": v, "note": "", "added": now_iso()})
+            if image_data:
+                imgs = image_data if isinstance(image_data, list) else [image_data]
+                for data_url in imgs:
+                    if not data_url:
                         continue
-                rec = {"id": uuid.uuid4().hex, "type": stype, "value": value,
-                       "note": str(s.get("note") or "").strip(), "added": now_iso()}
-                meta = _clean_meta(s.get("meta"))
-                if meta:
-                    rec["meta"] = meta
-                e["sources"].append(rec)
-        if e["subtopic"] and e["subtopic"] not in t["subtopics"]:
-            t["subtopics"].append(e["subtopic"])
-        t["entries"].append(e)
-        self._save()
-        return self.state()
-
-    def update_entry(self, tid, eid, fields):
-        t = self.find_topic(tid)
-        if not t:
-            return {"error": "Topic not found."}
-        e = self._find_entry(t, eid)
-        if not e:
-            return {"error": "Entry not found."}
-        if "text" in fields:
-            e["text"] = str(fields.get("text") or "").strip()
-        if "kind" in fields:
-            k = str(fields.get("kind") or "").strip()
-            if k in ENTRY_KINDS:
-                e["kind"] = k
-        if "subtopic" in fields:
-            e["subtopic"] = str(fields.get("subtopic") or "").strip()
+                    path = self._save_image(tid, e["id"], data_url)
+                    if path:
+                        e["sources"].append({"id": uuid.uuid4().hex, "type": "image",
+                                             "value": str(path), "note": "", "added": now_iso()})
+            # new unified sources array (preferred for multi-citation UI)
+            if sources and isinstance(sources, list):
+                for s in sources:
+                    stype = (s.get("type") or "").strip()
+                    value = str(s.get("value") or "").strip()
+                    if not value or stype not in ("link", "string", "image"):
+                        continue
+                    if stype == "image" and value.startswith("data:"):
+                        path = self._save_image(tid, e["id"], value)
+                        if path:
+                            value = str(path)
+                        else:
+                            continue
+                    rec = {"id": uuid.uuid4().hex, "type": stype, "value": value,
+                           "note": str(s.get("note") or "").strip(), "added": now_iso()}
+                    meta = _clean_meta(s.get("meta"))
+                    if meta:
+                        rec["meta"] = meta
+                    e["sources"].append(rec)
             if e["subtopic"] and e["subtopic"] not in t["subtopics"]:
                 t["subtopics"].append(e["subtopic"])
-        self._save()
-        return self.state()
+            t["entries"].append(e)
+            self._save()
+            result = self.state()
+            result["entry_id"] = e["id"]
+            return result
+
+    def update_entry(self, tid, eid, fields):
+        with self._lock:
+            t = self.find_topic(tid)
+            if not t:
+                return {"error": "Topic not found."}
+            e = self._find_entry(t, eid)
+            if not e:
+                return {"error": "Entry not found."}
+            if "text" in fields:
+                e["text"] = str(fields.get("text") or "").strip()
+            if "kind" in fields:
+                k = str(fields.get("kind") or "").strip()
+                if k in ENTRY_KINDS:
+                    e["kind"] = k
+            if "subtopic" in fields:
+                e["subtopic"] = str(fields.get("subtopic") or "").strip()
+                if e["subtopic"] and e["subtopic"] not in t["subtopics"]:
+                    t["subtopics"].append(e["subtopic"])
+            self._save()
+            return self.state()
 
     def delete_entry(self, tid, eid):
-        t = self.find_topic(tid)
-        if not t:
-            return {"error": "Topic not found."}
-        e = self._find_entry(t, eid)
-        if not e:
-            return {"error": "Entry not found."}
-        for s in e.get("sources", []):
-            if s.get("type") == "image":
-                p = Path(s["value"])
-                if p.is_absolute() and p.exists():
-                    p.unlink(missing_ok=True)
-        t["entries"].remove(e)
-        self._save()
-        return self.state()
+        with self._lock:
+            t = self.find_topic(tid)
+            if not t:
+                return {"error": "Topic not found."}
+            e = self._find_entry(t, eid)
+            if not e:
+                return {"error": "Entry not found."}
+            for s in e.get("sources", []):
+                if s.get("type") == "image":
+                    p = Path(s["value"])
+                    if p.is_absolute() and p.exists():
+                        p.unlink(missing_ok=True)
+            t["entries"].remove(e)
+            self._save()
+            return self.state()
 
     def set_source_meta(self, tid, eid, sid, meta):
         """Attach (or clear) structured citation metadata on one source.
@@ -617,23 +625,24 @@ class Store:
         return self.state()
 
     def add_source(self, tid, eid, stype, value, note="", meta=None):
-        t = self.find_topic(tid)
-        if not t:
-            return {"error": "Topic not found."}
-        e = self._find_entry(t, eid)
-        if not e:
-            return {"error": "Entry not found."}
-        value = str(value or "").strip()
-        if not value:
-            return {"error": "Source cannot be empty."}
-        rec = {"id": uuid.uuid4().hex, "type": stype, "value": value,
-               "note": str(note or "").strip(), "added": now_iso()}
-        cleaned = _clean_meta(meta)
-        if cleaned:
-            rec["meta"] = cleaned
-        e["sources"].append(rec)
-        self._save()
-        return self.state()
+        with self._lock:
+            t = self.find_topic(tid)
+            if not t:
+                return {"error": "Topic not found."}
+            e = self._find_entry(t, eid)
+            if not e:
+                return {"error": "Entry not found."}
+            value = str(value or "").strip()
+            if not value:
+                return {"error": "Source cannot be empty."}
+            rec = {"id": uuid.uuid4().hex, "type": stype, "value": value,
+                   "note": str(note or "").strip(), "added": now_iso()}
+            cleaned = _clean_meta(meta)
+            if cleaned:
+                rec["meta"] = cleaned
+            e["sources"].append(rec)
+            self._save()
+            return self.state()
 
     def delete_source(self, tid, eid, sid):
         t = self.find_topic(tid)
