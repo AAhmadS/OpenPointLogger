@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{title}}</title>
+<style>
+/* Team Report - written to be forwarded. Whoever it lands on should see who
+   wrote it and the one-paragraph version within a second, then be able to
+   skim the rest as a stack of self-contained cards, each with its source
+   sitting right on the claim. */
+@page { size: A4; margin: 17mm 16mm; }
+
+:root{
+  --ink:#17201d; --mut:#586158; --faint:#8a9289; --rule:#dbe3dc; --bg:#fff;
+  --wash:#f2f7f4; --card:#fbfdfc; --accent:{{accent}}; --accent-wash:#e2f0ea;
+  --sans:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Cascadia Code",Consolas,"SF Mono",monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:13.5px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:800px;margin:0 auto;padding:36px 30px 60px}
+@media print{ .wrap{padding:0;max-width:none} }
+
+/* --- header: author is the second thing you see, not the last -------------- */
+header{margin:0 0 20px;padding-bottom:16px;border-bottom:2px solid var(--ink)}
+.kicker{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent)}
+h1{font-size:27px;line-height:1.2;font-weight:750;letter-spacing:-.02em;margin:6px 0 8px}
+.byline{display:flex;align-items:baseline;gap:7px;margin:0 0 2px;flex-wrap:wrap}
+.byline .by{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--accent)}
+.byline .who{font-size:15px;font-weight:700}
+.org-line{font-size:12.5px;color:var(--mut);margin:0 0 4px}
+.sub{color:var(--mut);font-size:14px;margin:6px 0 10px}
+.facts{font-size:11.5px;color:var(--mut);margin-top:8px}
+.facts b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* --- summary strip ---------------------------------------------------------- */
+.summary{background:var(--accent-wash);border-radius:10px;padding:14px 18px;
+  margin:0 0 22px;font-size:14px;color:#12362b;break-inside:avoid}
+.summary::before{content:"TL;DR";display:block;font-size:9.5px;font-weight:800;
+  letter-spacing:.12em;color:var(--accent);margin-bottom:4px}
+
+/* --- contents ---------------------------------------------------------------- */
+.toc{font-size:12.5px;line-height:1.5;margin:0 0 22px;padding:10px 14px;
+  background:var(--wash);border-radius:8px;break-inside:avoid}
+.toc .toc-t{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:6px}
+.toc ol{margin:0;padding:0;list-style:none}
+.toc li{margin:0 0 3px}
+.toc a{color:var(--ink);text-decoration:none}
+.toc a:hover{color:var(--accent)}
+
+/* --- points as cards: the wrapper the pipeline already gives each section --- */
+section.sub{
+  background:var(--card); border:1px solid var(--rule); border-radius:10px;
+  padding:16px 20px; margin:0 0 16px; break-inside:avoid;
+}
+@media print{ section.sub{ break-inside:avoid; page-break-inside:avoid } }
+section.sub:hover{border-color:var(--accent)}
+h2{font-size:16px;font-weight:700;letter-spacing:-.01em;margin:0 0 8px;
+  color:var(--ink);break-after:avoid;scroll-margin-top:20px}
+h3{font-size:13.5px;font-weight:650;margin:12px 0 4px;color:var(--mut);break-after:avoid}
+h4{font-size:12.5px;font-weight:650;margin:10px 0 3px;color:var(--mut)}
+p{margin:0 0 8px}
+section.sub>p:last-child{margin-bottom:0}
+ul,ol{margin:6px 0 10px;padding-left:20px}
+li{margin:0 0 5px}
+li>ul,li>ol{margin:4px 0 0}
+li::marker{color:var(--accent)}
+blockquote{margin:10px 0;padding:8px 14px;background:var(--wash);
+  border-left:3px solid var(--accent);border-radius:0 6px 6px 0;color:var(--mut)}
+code{font-family:var(--mono);font-size:12px;background:var(--wash);border:1px solid var(--rule);
+  padding:.5px 4px;border-radius:4px}
+pre{font-family:var(--mono);font-size:11.5px;line-height:1.5;background:#12161b;
+  color:#dfe5ec;padding:11px 13px;border-radius:8px;overflow-x:auto;break-inside:avoid}
+pre code{background:none;border:0;color:inherit;padding:0}
+hr{border:0;border-top:1px solid var(--rule);margin:16px 0}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(42,111,91,.3)}
+
+/* citations as badges, right on the claim */
+a.cite{
+  border:0;display:inline-flex;align-items:center;background:var(--accent-wash);
+  color:#124b3a;font-weight:700;font-size:10.5px;letter-spacing:.01em;
+  padding:1px 6px;border-radius:999px;vertical-align:.14em;margin:0 1px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+a.cite:hover{background:var(--accent);color:#fff}
+
+/* --- tables ------------------------------------------------------------------ */
+.md-table{width:100%;border-collapse:collapse;margin:10px 0 14px;font-size:12.5px;
+  font-variant-numeric:tabular-nums;break-inside:avoid}
+.md-table thead th{background:var(--wash);text-align:left;padding:7px 9px;font-size:10px;
+  font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);
+  border-bottom:1.5px solid var(--rule)}
+.md-table td{padding:6px 9px;border-bottom:1px solid var(--rule);vertical-align:top}
+
+/* --- figures ------------------------------------------------------------------ */
+.figures{margin-top:24px}
+.figures h2{margin-top:0}
+figure{margin:0 0 16px;break-inside:avoid}
+figure img{max-width:100%;max-height:115mm;object-fit:contain;border:1px solid var(--rule);
+  border-radius:8px;display:block}
+figcaption{font-size:11px;color:var(--mut);margin-top:5px}
+
+/* --- references ---------------------------------------------------------------- */
+.refs-h{font-size:16px;font-weight:700;margin:28px 0 10px;padding-top:14px;
+  border-top:2px solid var(--ink)}
+ol.refs{font-size:12px;line-height:1.55;padding-left:0;list-style:none;counter-reset:ref}
+ol.refs li{counter-increment:ref;padding:5px 0 5px 30px;position:relative;
+  border-bottom:1px solid var(--rule);word-break:break-word;scroll-margin-top:20px}
+ol.refs li::before{content:"[" counter(ref) "]";position:absolute;left:0;top:5px;
+  color:var(--accent);font-weight:700;font-size:11px;font-variant-numeric:tabular-nums}
+ol.refs li:target{background:var(--accent-wash);border-radius:6px}
+
+footer{margin-top:24px;padding-top:12px;border-top:1px solid var(--rule);font-size:11px;
+  color:var(--faint);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+</style></head>
+<body><div class="wrap">
+
+<header>
+  <div class="kicker">{{kicker}}</div>
+  <h1>{{title}}</h1>
+  {{#author}}<div class="byline"><span class="by">By</span> <span class="who">{{author}}</span></div>{{/author}}
+  {{#org}}<div class="org-line">{{org}}</div>{{/org}}
+  {{#subtitle}}<p class="sub">{{subtitle}}</p>{{/subtitle}}
+  <p class="facts">{{date}}{{#period}} &nbsp;·&nbsp; {{period}}{{/period}}
+    &nbsp;·&nbsp; <b>{{count_points}}</b> points &nbsp;·&nbsp; <b>{{count_sources}}</b> sources</p>
+</header>
+
+{{#summary}}<div class="summary">{{summary}}</div>{{/summary}}
+
+{{#toc}}{{toc}}{{/toc}}
+
+{{body}}
+
+{{#figures}}<div class="figures"><h2>Screenshots</h2>{{figures}}</div>{{/figures}}
+
+<h2 class="refs-h">Sources</h2>
+<ol class="refs">{{references}}</ol>
+
+<footer><span>{{footer}}</span><span>Trailmark {{app_version}}</span></footer>
+</div></body></html>

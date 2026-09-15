@@ -30,6 +30,14 @@ DEFAULT_CONFIG = {
         "engine": "",
         "dates": True,
     },
+    "categories": {
+        "items": [
+            {"id": "research", "name": "Research", "default_template": "research-roam"},
+            {"id": "business", "name": "Business", "default_template": "business-formal"},
+            {"id": "team", "name": "Team", "default_template": "team-report"},
+            {"id": "personal", "name": "Personal", "default_template": "personal-report"},
+        ]
+    },
     "appearance": {
         "theme": "system",
     },
@@ -225,7 +233,7 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "llm", "export", "appearance", "science"):
+                for section in ("hotkey", "llm", "export", "categories", "appearance", "science"):
                     if section in saved and isinstance(saved[section], dict):
                         cfg[section].update(saved[section])
             except Exception:

@@ -57,6 +57,19 @@ PLACEHOLDERS = {
 }
 
 
+#: A template that predates the categories feature (or simply doesn't set one)
+#: falls back to this map, keyed by its declared ``purpose``. Anything not
+#: listed here - including the default purpose "general" - lands in "personal",
+#: which is the safest bucket to over-populate.
+_CATEGORY_FALLBACK = {
+    "academic": "research",
+    "procedure": "research",
+    "personal": "personal",
+    "business": "business",
+    "team": "team",
+}
+
+
 class TemplateError(Exception):
     pass
 
@@ -87,6 +100,8 @@ def _read_manifest(folder):
     data.setdefault("accent", "#c97f2d")
     data.setdefault("formats", ["html", "pdf", "markdown", "docx"])
     data.setdefault("page", {"size": "A4", "margin": "18mm"})
+    if not (isinstance(data.get("category"), str) and data["category"]):
+        data["category"] = _CATEGORY_FALLBACK.get(data.get("purpose"), "personal")
     data["dir"] = str(folder)
     data["source"] = "user" if str(folder).startswith(str(user_dir())) else "builtin"
     data["has_html"] = (folder / "template.html").exists()

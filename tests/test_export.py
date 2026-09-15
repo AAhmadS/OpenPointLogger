@@ -79,6 +79,8 @@ def main():
         print("  discovered:", ", ".join(ids) or "(none)")
         check("at least the three shipped templates exist",
               {"research-roam", "personal-report", "protocol"} <= set(ids), ids)
+        check("business-formal and team-report are discoverable",
+              {"business-formal", "team-report"} <= set(ids), ids)
 
         print("\n== markdown ==")
         html = mdlite.render("## H\n\nA **bold** and `code` and [link](https://x.test) [1].\n\n"
@@ -145,6 +147,65 @@ def main():
             mf = Path(res["folder"]) / "manifest.json"
             check("%s: manifest written with topic_id" % tid,
                   mf.exists() and '"topic_id": "t1"' in mf.read_text(encoding="utf-8"))
+
+        print("\n== new builtin templates, read directly (bypassing any user-dir shadow) ==")
+        # %APPDATA%\Trailmark\templates\ can hold a same-named folder that shadows
+        # a builtin in templates.available()/load() (that's intended - see
+        # TEMPLATES.md). To check what actually shipped in this repo, build the
+        # manifest straight from templates_registry.builtin_dir() instead of going
+        # through the discovery/shadow path.
+        for tid, expected_category in (("business-formal", "business"), ("team-report", "team")):
+            folder = templates.builtin_dir() / tid
+            manifest = templates._read_manifest(folder)
+            check("%s: builtin folder has a manifest" % tid, manifest is not None, folder)
+            if manifest is None:
+                continue
+            check("%s: builtin category is %r" % (tid, expected_category),
+                  manifest.get("category") == expected_category, manifest.get("category"))
+            values = pipeline.build_values(TOPIC, ENTRIES, refs, md, manifest,
+                                           meta={"author": "A. Researcher", "org": "Trailmark",
+                                                 "summary": "A short abstract with a citation [1]."})
+            html = templates.render_shell(manifest, values)
+            check("%s: builtin renders non-empty html" % tid, bool(html.strip()))
+            check("%s: builtin render has no unfilled placeholder" % tid, "{{" not in html,
+                  [l for l in html.splitlines() if "{{" in l][:2])
+
+        print("\n== template_demo fixture, mirrored from point_logger.py ==")
+        import point_logger  # noqa: E402  (imports webview; already a project dependency)
+
+        _DEMO_TOPIC = {"id": "demo", "title": "Rust borrow checker", "status": "closed",
+                       "created": "2026-08-02T09:15:00", "closed": "2026-09-01T17:40:00"}
+        _DEMO_ENTRIES = [
+            {"id": "d1", "subtopic": "Aliasing", "created": "2026-08-02T09:20:00",
+             "text": "Two mutable borrows of the same place are rejected before monomorphisation.",
+             "sources": [{"id": "ds1", "type": "link", "value": "https://doc.rust-lang.org/nomicon/",
+                          "note": "Rustonomicon"}]},
+            {"id": "d2", "subtopic": "Aliasing", "created": "2026-08-04T11:02:00",
+             "text": "Reborrowing through &mut *x is what makes method chains work at all.",
+             "sources": [{"id": "ds2", "type": "string", "value": "Jung et al., Stacked Borrows, POPL 2020"}]},
+            {"id": "d3", "subtopic": "NLL", "created": "2026-08-11T14:33:00",
+             "text": "Non-lexical lifetimes ended the drop-at-scope-end rejection class.",
+             "sources": [{"id": "ds1", "type": "link", "value": "https://doc.rust-lang.org/nomicon/",
+                          "note": "Rustonomicon"}]},
+        ]
+        check("fixture matches point_logger._DEMO_TOPIC byte-for-byte",
+              _DEMO_TOPIC == point_logger._DEMO_TOPIC, point_logger._DEMO_TOPIC)
+        check("fixture matches point_logger._DEMO_ENTRIES byte-for-byte",
+              _DEMO_ENTRIES == point_logger._DEMO_ENTRIES, point_logger._DEMO_ENTRIES)
+
+        demo_refs, demo_cites = collect_refs(_DEMO_ENTRIES)
+        demo_md = pipeline.compose_markdown(_DEMO_TOPIC, _DEMO_ENTRIES, demo_cites, refs=demo_refs)
+        for tid in ("personal-report", "protocol", "research-roam", "business-formal", "team-report"):
+            manifest = templates.load(tid)
+            demo_values = pipeline.build_values(_DEMO_TOPIC, _DEMO_ENTRIES, demo_refs, demo_md,
+                                                manifest, meta={})
+            demo_html = templates.render_shell(manifest, demo_values)
+            check("%s: template_demo-style render is non-empty" % tid, bool(demo_html.strip()))
+            check("%s: template_demo-style render contains the sample title" % tid,
+                  "Rust borrow checker" in demo_html)
+            check("%s: template_demo-style render has no unfilled placeholder" % tid,
+                  "{{" not in demo_html,
+                  [l for l in demo_html.splitlines() if "{{" in l][:2])
 
         print("\n== polished path falls back safely ==")
         res = pipeline.export(TOPIC, ENTRIES, refs, cites, tmp / "polished",

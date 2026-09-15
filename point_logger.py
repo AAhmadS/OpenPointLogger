@@ -8,11 +8,12 @@ import webview
 
 from brand import ICON_DATA_URI, asset_path
 from hotkey import HotkeyListener
-from point_store import Store, data_dir
+from point_store import Store, data_dir, slugify
 from ui import MAIN_HTML, POPUP_HTML
 
 import llm
 import single
+import templates_registry
 import traymenu
 
 POPUP_HTML = POPUP_HTML.replace("__ICON__", ICON_DATA_URI)
@@ -38,6 +39,26 @@ def system_prefers_light():
 
 POPUP_W, POPUP_H = 462, 648
 MAIN_W, MAIN_H = 1180, 764
+
+#: Fixed sample data for the template-preview ("demo") feature. Kept identical,
+#: byte-for-byte, to the fixture tests/test_export.py uses for the same purpose
+#: - two different call sites rendering the same input is what makes the demo a
+#: meaningful preview of a real export rather than its own separate thing.
+_DEMO_TOPIC = {"id": "demo", "title": "Rust borrow checker", "status": "closed",
+               "created": "2026-08-02T09:15:00", "closed": "2026-09-01T17:40:00"}
+_DEMO_ENTRIES = [
+    {"id": "d1", "subtopic": "Aliasing", "created": "2026-08-02T09:20:00",
+     "text": "Two mutable borrows of the same place are rejected before monomorphisation.",
+     "sources": [{"id": "ds1", "type": "link", "value": "https://doc.rust-lang.org/nomicon/",
+                  "note": "Rustonomicon"}]},
+    {"id": "d2", "subtopic": "Aliasing", "created": "2026-08-04T11:02:00",
+     "text": "Reborrowing through &mut *x is what makes method chains work at all.",
+     "sources": [{"id": "ds2", "type": "string", "value": "Jung et al., Stacked Borrows, POPL 2020"}]},
+    {"id": "d3", "subtopic": "NLL", "created": "2026-08-11T14:33:00",
+     "text": "Non-lexical lifetimes ended the drop-at-scope-end rejection class.",
+     "sources": [{"id": "ds1", "type": "link", "value": "https://doc.rust-lang.org/nomicon/",
+                  "note": "Rustonomicon"}]},
+]
 
 
 class Api:
@@ -91,11 +112,121 @@ class Api:
     def open_template_dir(self):
         """Open the folder where the user's own templates live, creating it first."""
         try:
-            import templates_registry
             d = templates_registry.user_dir()
             d.mkdir(parents=True, exist_ok=True)
             os.startfile(str(d))
             return {"path": str(d)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _categories_with_count(self):
+        """The saved category list, each entry given a live ``count`` of the
+        templates currently resolving to it - computed fresh every call rather
+        than stored, since a template's category can change under it (a hand-
+        edited template.json) without any category action happening at all."""
+        counts = {}
+        for t in templates_registry.available():
+            cat = t.get("category")
+            counts[cat] = counts.get(cat, 0) + 1
+        items = self.store.config.get("categories", {}).get("items", [])
+        return [dict(c, count=counts.get(c.get("id"), 0)) for c in items]
+
+    def list_categories(self):
+        return {**self.store.state(), "categories": self._categories_with_count()}
+
+    def save_category(self, cat):
+        """Create or edit a category.
+
+        Edit (an existing ``id``): ``name`` and ``default_template`` are both
+        optional and only touched when present; a new ``default_template`` must
+        resolve to a real template or the whole call is refused unchanged.
+
+        Create (no matching ``id``): ``name`` and a *resolvable*
+        ``default_template`` are both required - unlike edit, there is no
+        existing default to fall back on. The new id is ``name`` slugified,
+        deduplicated with a ``-2``, ``-3``, ... suffix against any collision:
+        two categories sharing a display word (e.g. two teams both wanting
+        "Notes") is a normal thing to want, not an error.
+        """
+        try:
+            cat = cat or {}
+            known_ids = {t["id"] for t in templates_registry.available()}
+            items = self.store.config.setdefault("categories", {}).setdefault("items", [])
+            cid = cat.get("id")
+            existing = next((c for c in items if c.get("id") == cid), None) if cid else None
+            if existing:
+                name = str(cat.get("name") or "").strip()
+                if name:
+                    existing["name"] = name
+                new_tpl = cat.get("default_template")
+                if new_tpl:
+                    if new_tpl not in known_ids:
+                        return {"error": "Unknown template: %s" % new_tpl}
+                    existing["default_template"] = new_tpl
+            else:
+                name = str(cat.get("name") or "").strip()
+                if not name:
+                    return {"error": "Give the category a name first."}
+                default_template = cat.get("default_template")
+                if not default_template or default_template not in known_ids:
+                    return {"error": "Choose a valid default template for the new category."}
+                slug = slugify(name)
+                existing_ids = {c.get("id") for c in items}
+                candidate, n = slug, 2
+                while candidate in existing_ids:
+                    candidate = "%s-%d" % (slug, n)
+                    n += 1
+                items.append({"id": candidate, "name": name, "default_template": default_template})
+            self.store.save_config()
+            self.controller.refresh_full()
+            return {**self.store.state(), "categories": self._categories_with_count()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def delete_category(self, id):
+        """Refuses to delete the last remaining category. A missing id is a
+        no-op rather than an error - deleting something already gone leaves
+        the world in the state the caller wanted, so there is nothing to
+        report as wrong."""
+        try:
+            items = self.store.config.get("categories", {}).get("items", [])
+            if len(items) <= 1:
+                return {"error": "Can't delete the last remaining category."}
+            items[:] = [c for c in items if c.get("id") != id]
+            self.store.save_config()
+            self.controller.refresh_full()
+            return {**self.store.state(), "categories": self._categories_with_count()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def set_category_default(self, cat_id, template_id):
+        try:
+            items = self.store.config.get("categories", {}).get("items", [])
+            cat = next((c for c in items if c.get("id") == cat_id), None)
+            if not cat:
+                return {"error": "Category not found."}
+            if not any(t["id"] == template_id for t in templates_registry.available()):
+                return {"error": "Unknown template: %s" % template_id}
+            cat["default_template"] = template_id
+            self.store.save_config()
+            self.controller.refresh_full()
+            return {**self.store.state(), "categories": self._categories_with_count()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def template_demo(self, template_id):
+        """A rendered sample report for one template, for a live preview
+        before committing to it as a category default. Uses a fixed fixture
+        (module-level ``_DEMO_TOPIC``/``_DEMO_ENTRIES``) so the preview looks
+        the same for every template and never touches real data."""
+        try:
+            import pipeline
+            manifest = templates_registry.load(template_id)
+            refs, cites = Store._collect_refs(_DEMO_ENTRIES)
+            markdown = pipeline.compose_markdown(_DEMO_TOPIC, _DEMO_ENTRIES, cites, refs=refs)
+            values = pipeline.build_values(_DEMO_TOPIC, _DEMO_ENTRIES, refs, markdown, manifest, meta={})
+            html = templates_registry.render_shell(manifest, values)
+            return {"html": html}
         except Exception as e:
             return {"error": str(e)}
 

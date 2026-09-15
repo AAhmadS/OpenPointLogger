@@ -2,6 +2,7 @@
   "id": "research-roam",
   "name": "Research Roam",
   "purpose": "academic",
+  "category": "research",
   "description": "Journal-style academic typesetting: Latin Modern, a numbered abstract, tight measure, IEEE-flavoured bracket citations. Emits report.tex alongside, so you can build it with Typst, Tectonic or pdflatex if you have one installed.",
   "kicker": "Research note",
   "accent": "#1f3a5f",

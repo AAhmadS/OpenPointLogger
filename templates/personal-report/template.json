@@ -2,6 +2,7 @@
   "id": "personal-report",
   "name": "Personal Report",
   "purpose": "personal",
+  "category": "personal",
   "description": "Built for finding things again, not for impressing anyone. A sticky contents rail, dense scannable rows, every source visible next to the point it belongs to, and a key-facts strip at the top. This is the default.",
   "kicker": "Personal record",
   "accent": "#0f766e",

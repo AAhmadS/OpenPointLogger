@@ -1,0 +1,11 @@
+{
+  "id": "business-formal",
+  "name": "Business Formal",
+  "category": "business",
+  "purpose": "business",
+  "description": "A letterhead cover, formally numbered sections and a decimal reference list, sized for a client or a board — restrained rather than decorative.",
+  "kicker": "Business Report",
+  "accent": "#253d5e",
+  "formats": ["html", "pdf", "markdown", "docx"],
+  "page": { "size": "A4", "margin": "20mm" }
+}

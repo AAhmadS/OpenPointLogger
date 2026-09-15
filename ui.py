@@ -644,7 +644,8 @@ main{overflow-y:auto;padding:22px}
 .modal-back{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;
   padding:26px;background:var(--scrim);animation:fade .16s ease}
 .modal{width:min(620px,100%);max-height:calc(100vh - 52px);display:flex;flex-direction:column;
-  padding:0;border-radius:var(--r-xl);box-shadow:var(--shadow-3)}
+  padding:0;border-radius:var(--r-xl);box-shadow:var(--shadow-3);transition:width var(--dur-mid) var(--ease-standard)}
+.modal.wide{width:min(860px,100%)}
 .modal-h{display:flex;align-items:flex-start;gap:14px;padding:20px 24px 14px;
   border-bottom:1px solid var(--border)}
 .modal-h .card-t{word-break:break-word}
@@ -677,8 +678,58 @@ main{overflow-y:auto;padding:22px}
   box-shadow:0 0 0 3px var(--accent-tint)}
 .tpl-dot{flex:none;width:10px;height:10px;border-radius:3px;margin-top:4px}
 .tpl-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-.tpl-n{font-size:13.5px;font-weight:650}
+.tpl-n{font-size:13.5px;font-weight:650;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .tpl-d{font-size:11.5px;color:var(--content-muted);line-height:1.45}
+.badge.accentish{background:var(--accent-tint);color:var(--accent)}
+
+/* --- categories: pill strip above the template grid --------------------- */
+.cat-strip{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:11px}
+.cat-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:var(--r-pill);
+  border:1px solid var(--border);background:var(--surface-sunken);color:var(--content-secondary);
+  font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap}
+.cat-pill:hover{border-color:var(--border-strong);color:var(--content)}
+.cat-pill.on{border-color:var(--accent);background:var(--accent-tint);color:var(--accent)}
+.cat-pill .badge{padding:1px 7px;font-size:9.5px}
+.cat-pill.new{border-style:dashed;color:var(--content-muted)}
+.cat-pill.new:hover{color:var(--accent);border-color:var(--accent)}
+
+.cat-popover{display:flex;flex-direction:column;gap:9px;padding:13px;margin-bottom:11px;
+  border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-sunken)}
+.cat-popover .row2{display:flex;gap:9px}
+.cat-popover .row2>*{flex:1;min-width:0}
+
+/* --- categories manager: Settings -> Exports -------------------------- */
+.cat-mgr{margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
+.cat-list{display:flex;flex-direction:column}
+.cat-row{display:flex;gap:9px;align-items:center;padding:10px 0;
+  border-bottom:1px solid var(--border);flex-wrap:wrap}
+.cat-row:last-child{border-bottom:0}
+.cat-row .cat-name{flex:1;min-width:120px}
+.cat-row .cat-def-tpl{flex:1;min-width:150px}
+
+/* --- template actions (default badge / set-as-default / preview) -------- */
+.tpl-actions{display:flex;gap:11px;align-items:center;margin-top:2px}
+.tpl-set-default,.tpl-preview-btn{background:none;border:0;padding:0;font-family:inherit;
+  font-size:11px;font-weight:650;cursor:pointer;color:var(--accent);text-decoration:underline;
+  text-underline-offset:2px}
+.tpl-set-default:hover,.tpl-preview-btn:hover{color:var(--accent-hover)}
+
+/* --- template panel: pills+grid alongside an optional preview column ----- */
+.tpl-panel{display:flex;gap:16px;align-items:flex-start;min-width:0}
+.tpl-main{flex:1;min-width:0}
+/* sub-headings inside the template column ("Templates in X" / "Also
+   available") - deliberately lighter than .sec-l so they read as nested
+   under the "Template" section heading, not as a sibling of it */
+.tpl-sub-l{font-size:10.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;
+  color:var(--content-muted);margin:0 0 7px}
+.tpl-sub-l.also{margin-top:14px}
+.preview-col{flex:0 0 268px;min-width:0;display:flex;flex-direction:column;gap:8px;
+  border-left:1px solid var(--border);padding-left:16px}
+.preview-h{font-size:11.5px;font-weight:650;color:var(--content-secondary);line-height:1.4}
+.preview-frame-wrap{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;
+  background:var(--surface-raised);height:280px}
+.preview-frame-wrap iframe{width:100%;height:100%;border:0}
+.preview-empty{font-size:11.5px;color:var(--content-muted);padding:14px;text-align:center}
 
 .fmts{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .fmt-opt{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-radius:var(--r-md);
@@ -747,6 +798,7 @@ let displayLimit=20;
 // the first thing you see.
 let openGroups=null;
 let exportDialog=null;
+let catNewOpen=false; // Settings -> Exports -> Categories: "+ New category" popover open?
 const api=new Proxy({},{get:(_,p)=>{const pv=window.pywebview&&window.pywebview.api;return pv?pv[p]:(()=>Promise.resolve({error:"bridge not ready"}));}});
 
 const $=(s,r=document)=>r.querySelector(s);
@@ -979,40 +1031,176 @@ function bindExports(root){
 
 /* --- Export dialog: pick a template and the formats you want ------------- */
 
-function defaultExportOpts(){
+/* Which category the dialog should open on, in priority order:
+   1) the category of the topic's own last-used template (state.exports groups
+      are already sorted newest-export-first per topic - see point_store.py
+      list_exports - so exports[0].template is a real, load-bearing signal,
+      not a guess);
+   2) the category of the global default template (config.export.template);
+   3) the first category there is.
+   Exported as its own function (rather than folded into defaultExportOpts)
+   so the pre-selection rule can be read, and tested against fixtures, on
+   its own. */
+function defaultExportCategory(t){
+  const cats=state.categories||[];
+  if(!cats.length) return null;
+  const tplById=id=>(state.templates||[]).find(tp=>tp.id===id);
+  const grp=(state.exports||[]).find(g=>g.topic_id===t.id);
+  const lastTplId=grp&&grp.exports&&grp.exports[0]&&grp.exports[0].template;
+  let tpl=lastTplId&&tplById(lastTplId);
+  if(tpl&&cats.some(c=>c.id===tpl.category)) return tpl.category;
+  const cfgTplId=((state.config||{}).export||{}).template;
+  tpl=cfgTplId&&tplById(cfgTplId);
+  if(tpl&&cats.some(c=>c.id===tpl.category)) return tpl.category;
+  return cats[0].id;
+}
+
+function defaultExportOpts(t){
   const cfg=(state.config&&state.config.export)||{};
+  const cats=state.categories||[];
+  const catId=defaultExportCategory(t);
+  const cat=cats.find(c=>c.id===catId);
   return {
-    template: cfg.template||"personal-report",
+    template: (cat&&cat.default_template)||cfg.template||"personal-report",
+    category: catId,
     formats: (cfg.formats||["html","pdf","markdown"]).slice(),
     polish: false,
     subtitle: "",
+    previewTemplate: null,
+    previewHtml: null,
+    previewError: null,
+    previewLoading: false,
+    newCatOpen: false,
   };
+}
+
+/* --- category pill strip + "+ New category" popover ---------------------- */
+
+function catStripHtml(opts){
+  const cats=state.categories||[];
+  const pills=cats.map(c=>`<button type="button" class="cat-pill ${c.id===opts.category?"on":""}" data-cat="${esc(c.id)}">
+    ${esc(c.name)}<span class="badge count">${c.count||0}</span></button>`).join("");
+  return `<div class="cat-strip">${pills}
+    <button type="button" class="cat-pill new" data-cat-new>+ New category</button></div>`
+    + (opts.newCatOpen ? catPopoverHtml() : "");
+}
+
+function catPopoverHtml(){
+  const allTpls=state.templates||[];
+  const tplOpts=allTpls.map(tp=>`<option value="${esc(tp.id)}">${esc(tp.name)}</option>`).join("");
+  return `<div class="cat-popover">
+    <div class="sec-l" style="margin:0">New category</div>
+    <div class="row2">
+      <label><span class="cap">Name</span><input id="catName" class="input" placeholder="e.g. Client work"></label>
+      <label><span class="cap">Default template</span><select id="catDefTpl" class="input">${tplOpts}</select></label>
+    </div>
+    <div class="row" style="margin-top:2px">
+      <button type="button" class="btn primary sm" id="catCreate">Create</button>
+      <button type="button" class="btn ghost sm" id="catCancel">Cancel</button>
+    </div>
+  </div>`;
+}
+
+/* --- preview column: a sandboxed iframe rendering template_demo() -------- */
+
+function previewColHtml(opts){
+  if(!opts.previewTemplate) return "";
+  const tp=(state.templates||[]).find(x=>x.id===opts.previewTemplate);
+  const title=tp?tp.name:opts.previewTemplate;
+  let body;
+  if(opts.previewLoading) body=`<div class="preview-empty">Rendering sample…</div>`;
+  else if(opts.previewError) body=`<div class="preview-empty">${esc(opts.previewError)}</div>`;
+  else body=`<div class="preview-frame-wrap"><iframe id="mPreviewFrame" sandbox></iframe></div>`;
+  return `<div class="preview-col">
+    <div class="preview-h">Preview &mdash; ${esc(title)} &middot; sample data</div>
+    ${body}
+    <div class="row" style="margin-top:2px">
+      <button type="button" class="btn primary sm" id="mUseTpl" ${opts.previewLoading?"disabled":""}>Use this template</button>
+      <button type="button" class="btn ghost sm" id="mClosePreview">Close</button>
+    </div>
+  </div>`;
+}
+
+/* Builds the CONTENT of the modal (header + body + footer) - not the
+   modal-back/modal wrapper, which openExportDialog creates once and keeps
+   stable across re-renders so switching a category or opening the preview
+   column doesn't tear down and recreate the whole dialog. */
+/* One template card's markup - shared by both grids in the Template section
+   (the category's own grid and "Also available") so they can never diverge.
+   isDefault is passed in rather than recomputed from tp.category, because a
+   category's default_template is an assignment (set_category_default just
+   writes cat.default_template - it never touches the template's own static
+   .category field), not a fact derivable from the template alone. */
+function tplCardHtml(tp, opts, defId){
+  const on=opts.template===tp.id;
+  const isDefault=tp.id===defId;
+  return `<div class="tpl ${on?"on":""}" data-tpl="${esc(tp.id)}" tabindex="0" role="button">
+      <span class="tpl-dot" style="background:${esc(tp.accent||"")||"var(--accent)"}"></span>
+      <span class="tpl-b">
+        <span class="tpl-n">${esc(tp.name)}${isDefault?`<span class="badge accentish">Default</span>`:""}${tp.source==="user"?`<span class="badge">yours</span>`:""}</span>
+        <span class="tpl-d">${esc(tp.description||"")}</span>
+        <span class="tpl-actions">
+          ${isDefault?"":`<button type="button" class="tpl-set-default" data-set-default="${esc(tp.id)}">Set as default</button>`}
+          <button type="button" class="tpl-preview-btn" data-preview="${esc(tp.id)}">Preview</button>
+        </span>
+      </span>
+    </div>`;
 }
 
 function exportDialogHtml(t, opts, closing){
   const tpls=(state.templates||[]);
   const hasAI=state.config.llm&&state.config.llm.enabled&&(state.config.llm.api_key||"").trim()!=="";
-  const tplCards=tpls.map(tp=>{
-    const on=opts.template===tp.id;
-    return `<button class="tpl ${on?"on":""}" data-tpl="${esc(tp.id)}">
-      <span class="tpl-dot" style="background:${esc(tp.accent||"")||"var(--accent)"}"></span>
-      <span class="tpl-b"><span class="tpl-n">${esc(tp.name)}</span>
-      <span class="tpl-d">${esc(tp.description||"")}</span></span>
-      ${tp.source==="user"?`<span class="badge">yours</span>`:""}
-    </button>`;
-  }).join("")||`<p class="muted">No templates found. Settings &rarr; Exports has the folder to put them in.</p>`;
+  const cats=state.categories||[];
+  const cat=cats.find(c=>c.id===opts.category)||cats[0];
+  const defId=cat&&cat.default_template;
+  let tplPanelBody;
+  if(cat){
+    // "Templates in <cat>" is every template whose OWN category matches,
+    // union'd with whichever template is currently the category's default -
+    // without that union, a brand-new category (or one whose default was set
+    // to a template from a different category) would show its own default
+    // nowhere at all, which was the bug: the grid, and the category, looked
+    // permanently empty. "Also available" is everything left over, and is
+    // exactly how an empty category gets its first real member: every card
+    // in it still offers "Set as default".
+    const inCatIds=new Set(tpls.filter(tp=>tp.category===cat.id).map(tp=>tp.id));
+    if(defId) inCatIds.add(defId);
+    const inCat=tpls.filter(tp=>inCatIds.has(tp.id))
+                     .sort((a,b)=>(a.id===defId?0:1)-(b.id===defId?0:1));
+    const others=tpls.filter(tp=>!inCatIds.has(tp.id));
+    const primaryHtml=inCat.map(tp=>tplCardHtml(tp,opts,defId)).join("")
+      ||`<p class="muted">No templates in this category yet.</p>`;
+    const alsoHtml=others.length
+      ? `<div class="tpl-sub-l also">Also available</div>
+         <div class="tpls">${others.map(tp=>tplCardHtml(tp,opts,defId)).join("")}</div>`
+      : "";
+    tplPanelBody=`<div class="tpl-sub-l">Templates in ${esc(cat.name)}</div>
+      <div class="tpls">${primaryHtml}</div>
+      ${alsoHtml}`;
+  }else{
+    // No category exists at all (the backend refuses to let the last one be
+    // deleted, so this is only reachable before list_categories() has ever
+    // resolved) - fall back to the old unfiltered flat list.
+    tplPanelBody=tpls.length
+      ? `<div class="tpls">${tpls.map(tp=>tplCardHtml(tp,opts,null)).join("")}</div>`
+      : `<p class="muted">No templates found. Settings &rarr; Exports has the folder to put them in.</p>`;
+  }
   const fmt=(k,label,note)=>`<label class="fmt-opt ${opts.formats.includes(k)?"on":""}">
     <input type="checkbox" data-fmt="${k}" ${opts.formats.includes(k)?"checked":""}>
     <span><b>${label}</b><span class="muted">${note}</span></span></label>`;
-  return `<div class="modal-back" id="mBack"><div class="modal glass">
-    <div class="modal-h">
+  return `<div class="modal-h">
       <div><div class="card-t">${closing?"Close &amp; export":"Export"} &mdash; ${esc(t.title)}</div>
       <p class="muted" style="margin:4px 0 0">${t.entries.length} point${t.entries.length===1?"":"s"} will be written into the template you pick.</p></div>
       <button class="btn ghost sm" id="mX">Cancel</button>
     </div>
     <div class="modal-b">
+      <div class="sec-l">Category</div>
+      ${catStripHtml(opts)}
       <div class="sec-l">Template</div>
-      <div class="tpls">${tplCards}</div>
+      <div class="tpl-panel">
+        <div class="tpl-main">${tplPanelBody}</div>
+        ${previewColHtml(opts)}
+      </div>
       <div class="sec-l">Formats</div>
       <div class="fmts">
         ${fmt("html","HTML","one self-contained file")}
@@ -1034,8 +1222,7 @@ function exportDialogHtml(t, opts, closing){
     <div class="modal-f">
       <span class="muted" id="mHint">Reports land in your exports folder and appear in the Exports tab.</span>
       <button class="btn primary" id="mGo">Export</button>
-    </div>
-  </div></div>`;
+    </div>`;
 }
 
 const STAGE_LABEL={compose:"Compose",ground:"Check citations",fill:"Fill template",
@@ -1051,73 +1238,204 @@ function renderStages(active, done){
   }).join("");
 }
 
-function openExportDialog(t, closing){
-  exportDialog=defaultExportOpts();
+async function openExportDialog(t, closing){
+  // Categories/templates need to be fresh before the dialog can pre-select a
+  // category (defaultExportOpts reads state.categories/state.templates), so
+  // this always re-fetches first. Measured against the real app this is a
+  // single local pywebview round-trip - no visible delay before the dialog
+  // appears - so there is no debounce/cache here; revisit if that changes.
+  try{
+    const r=await api.list_categories();
+    if(r&&!r.error) state=r;
+  }catch(e){ /* fall through on whatever state we already have */ }
+
+  exportDialog=defaultExportOpts(t);
   const host=document.createElement("div");
-  host.innerHTML=exportDialogHtml(t, exportDialog, closing);
+  host.innerHTML=`<div class="modal-back" id="mBack"><div class="modal glass" id="mModal"></div></div>`;
   const back=host.firstElementChild;
+  const modalEl=back.querySelector("#mModal");
   document.body.appendChild(back);
   const close=()=>{back.remove(); exportDialog=null;};
-
-  back.querySelector("#mX").addEventListener("click",close);
   back.addEventListener("mousedown",e=>{if(e.target===back)close();});
-  back.querySelectorAll("[data-tpl]").forEach(b=>b.addEventListener("click",()=>{
-    exportDialog.template=b.dataset.tpl;
-    back.querySelectorAll("[data-tpl]").forEach(x=>x.classList.toggle("on",x===b));
-  }));
-  back.querySelectorAll("[data-fmt]").forEach(cb=>cb.addEventListener("change",()=>{
-    const k=cb.dataset.fmt;
-    const i=exportDialog.formats.indexOf(k);
-    if(cb.checked&&i<0) exportDialog.formats.push(k);
-    if(!cb.checked&&i>=0) exportDialog.formats.splice(i,1);
-    cb.closest(".fmt-opt").classList.toggle("on",cb.checked);
-  }));
 
-  back.querySelector("#mGo").addEventListener("click",async()=>{
-    const go=back.querySelector("#mGo"), hint=back.querySelector("#mHint");
-    exportDialog.polish=back.querySelector("#mPolish").checked;
-    exportDialog.subtitle=back.querySelector("#mSub").value;
-    if(!exportDialog.formats.length) return toast("Pick at least one format.","err");
-    go.disabled=true; go.textContent="Exporting…";
-    hint.textContent=exportDialog.polish
-      ? "Asking the model for the prose, then rendering."
-      : "Rendering. The PDF step starts a short-lived browser process.";
-
-    // The stages are shown optimistically: the pipeline runs synchronously in
-    // Python, so there is no progress channel back. Nothing here claims a stage
-    // succeeded -- the result decides that.
-    const order=Object.keys(STAGE_LABEL);
-    let i=0; const done=[];
-    renderStages(order[0],done);
-    const tick=setInterval(()=>{
-      if(i<order.length-1){done.push(order[i]); i++; renderStages(order[i],done);}
-    },700);
-
-    const opts={template:exportDialog.template,formats:exportDialog.formats,
-                subtitle:exportDialog.subtitle};
-    let r;
-    try{
-      if(closing){
-        const c=await api.close_topic(t.id);
-        if(c.error){clearInterval(tick); go.disabled=false; go.textContent="Export"; return toast(c.error,"err");}
-        state=c;
-      }
-      r=exportDialog.polish ? await api.export_topic_polished(t.id,opts)
-                            : await api.export_topic(t.id,opts);
-    }finally{ clearInterval(tick); }
-
-    if(r&&r.error&&!(r.files&&Object.keys(r.files).length)){
-      go.disabled=false; go.textContent="Export";
-      return toast(r.error,"err");
+  function renderBody(){
+    // Various bridge calls elsewhere (get_state(), init(), refreshFromBridge())
+    // replace `state` wholesale with a payload that has no `categories` key -
+    // only list_categories() populates it - so if one of those runs while this
+    // dialog is still open (e.g. after #mGo's own state=await api.get_state()
+    // on the very last export) the strip would go blank on the next re-render.
+    // Same self-healing guard as bindSettings() uses for the same reason.
+    if(!state.categories||!state.categories.length){
+      api.list_categories().then(r=>{if(r&&!r.error){state=r; renderBody();}}).catch(()=>{});
     }
-    renderStages(null, order);
-    const wasPolish=exportDialog.polish;
-    state=await api.get_state();
-    openGroups=groupSet(); if(r.topic_id) openGroups.add(r.topic_id);
-    if(closing) tab="closed";
-    close(); render();
-    showExportToast(r, wasPolish);
-  });
+    modalEl.classList.toggle("wide", !!exportDialog.previewTemplate);
+    modalEl.innerHTML=exportDialogHtml(t, exportDialog, closing);
+    // r.html from api.template_demo is a complete standalone document, so it
+    // is handed to the iframe as a srcdoc PROPERTY assignment here - never
+    // string-concatenated into the template above and never innerHTML'd.
+    const frame=modalEl.querySelector("#mPreviewFrame");
+    if(frame&&exportDialog.previewHtml) frame.srcdoc=exportDialog.previewHtml;
+    bindBody();
+  }
+
+  function bindBody(){
+    modalEl.querySelector("#mX").addEventListener("click",close);
+
+    modalEl.querySelectorAll("[data-tpl]").forEach(b=>{
+      const pick=()=>{
+        exportDialog.template=b.dataset.tpl;
+        modalEl.querySelectorAll("[data-tpl]").forEach(x=>x.classList.toggle("on",x===b));
+      };
+      b.addEventListener("click",pick);
+      // .tpl is a div (it now hosts nested "Set as default"/"Preview" buttons,
+      // and a <button> cannot nest a <button>), so Enter/Space activation -
+      // free on a real button - is wired by hand here for keyboard/AT users.
+      b.addEventListener("keydown",e=>{
+        if(e.key==="Enter"||e.key===" "){ e.preventDefault(); pick(); }
+      });
+    });
+
+    modalEl.querySelectorAll("[data-fmt]").forEach(cb=>cb.addEventListener("change",()=>{
+      const k=cb.dataset.fmt;
+      const i=exportDialog.formats.indexOf(k);
+      if(cb.checked&&i<0) exportDialog.formats.push(k);
+      if(!cb.checked&&i>=0) exportDialog.formats.splice(i,1);
+      cb.closest(".fmt-opt").classList.toggle("on",cb.checked);
+    }));
+
+    // Subtitle/polish are synced into exportDialog as they change (not only
+    // at #mGo time) because a category switch, a "set default" or opening a
+    // preview all rebuild this innerHTML - without this, whatever the user
+    // had typed or ticked would be silently discarded on the next re-render.
+    const subEl=modalEl.querySelector("#mSub");
+    if(subEl) subEl.addEventListener("input",()=>{exportDialog.subtitle=subEl.value;});
+    const polishEl=modalEl.querySelector("#mPolish");
+    if(polishEl) polishEl.addEventListener("change",()=>{exportDialog.polish=polishEl.checked;});
+
+    // --- category pills -----------------------------------------------
+    modalEl.querySelectorAll("[data-cat]").forEach(b=>b.addEventListener("click",()=>{
+      const cat=(state.categories||[]).find(c=>c.id===b.dataset.cat);
+      if(!cat) return;
+      exportDialog.category=cat.id;
+      exportDialog.template=cat.default_template;
+      exportDialog.previewTemplate=null; exportDialog.previewHtml=null; exportDialog.previewError=null;
+      exportDialog.newCatOpen=false;
+      renderBody();
+    }));
+    const newCatBtn=modalEl.querySelector("[data-cat-new]");
+    if(newCatBtn) newCatBtn.addEventListener("click",()=>{
+      exportDialog.newCatOpen=!exportDialog.newCatOpen;
+      renderBody();
+    });
+    const catCancel=modalEl.querySelector("#catCancel");
+    if(catCancel) catCancel.addEventListener("click",()=>{
+      exportDialog.newCatOpen=false;
+      renderBody();
+    });
+    const catCreate=modalEl.querySelector("#catCreate");
+    if(catCreate) catCreate.addEventListener("click",async()=>{
+      const name=(modalEl.querySelector("#catName").value||"").trim();
+      const defTpl=modalEl.querySelector("#catDefTpl").value;
+      if(!name) return toast("Name the category first.","err");
+      if(!defTpl) return toast("Pick a default template.","err");
+      const beforeIds=new Set((state.categories||[]).map(c=>c.id));
+      const r=await api.save_category({name, default_template:defTpl});
+      if(r.error) return toast(r.error,"err");
+      state=r;
+      const created=(state.categories||[]).find(c=>!beforeIds.has(c.id));
+      exportDialog.category=created?created.id:((state.categories||[])[0]||{}).id;
+      exportDialog.template=created?created.default_template:exportDialog.template;
+      exportDialog.newCatOpen=false;
+      renderBody();
+      toast("Category created.");
+    });
+
+    // --- set-as-default / preview, per template card -------------------
+    modalEl.querySelectorAll("[data-set-default]").forEach(b=>b.addEventListener("click",async e=>{
+      e.stopPropagation();
+      const tplId=b.dataset.setDefault;
+      if(!exportDialog.category) return;
+      const r=await api.set_category_default(exportDialog.category, tplId);
+      if(r.error) return toast(r.error,"err");
+      state=r;
+      renderBody();
+      toast("Default template updated.");
+    }));
+    modalEl.querySelectorAll("[data-preview]").forEach(b=>b.addEventListener("click",async e=>{
+      e.stopPropagation();
+      const tplId=b.dataset.preview;
+      exportDialog.previewTemplate=tplId;
+      exportDialog.previewHtml=null; exportDialog.previewError=null; exportDialog.previewLoading=true;
+      renderBody();
+      const r=await api.template_demo(tplId);
+      if(exportDialog.previewTemplate!==tplId) return; // user moved on meanwhile
+      exportDialog.previewLoading=false;
+      if(r.error){ exportDialog.previewError=r.error; }
+      else{ exportDialog.previewHtml=r.html; }
+      renderBody();
+    }));
+    const useTpl=modalEl.querySelector("#mUseTpl");
+    if(useTpl) useTpl.addEventListener("click",()=>{
+      exportDialog.template=exportDialog.previewTemplate;
+      exportDialog.previewTemplate=null; exportDialog.previewHtml=null; exportDialog.previewError=null;
+      renderBody();
+    });
+    const closePreview=modalEl.querySelector("#mClosePreview");
+    if(closePreview) closePreview.addEventListener("click",()=>{
+      exportDialog.previewTemplate=null; exportDialog.previewHtml=null; exportDialog.previewError=null;
+      renderBody();
+    });
+
+    modalEl.querySelector("#mGo").addEventListener("click",async()=>{
+      const go=modalEl.querySelector("#mGo"), hint=modalEl.querySelector("#mHint");
+      exportDialog.polish=modalEl.querySelector("#mPolish").checked;
+      exportDialog.subtitle=modalEl.querySelector("#mSub").value;
+      if(!exportDialog.formats.length) return toast("Pick at least one format.","err");
+      go.disabled=true; go.textContent="Exporting…";
+      hint.textContent=exportDialog.polish
+        ? "Asking the model for the prose, then rendering."
+        : "Rendering. The PDF step starts a short-lived browser process.";
+
+      // The stages are shown optimistically: the pipeline runs synchronously in
+      // Python, so there is no progress channel back. Nothing here claims a stage
+      // succeeded -- the result decides that.
+      const order=Object.keys(STAGE_LABEL);
+      let i=0; const done=[];
+      renderStages(order[0],done);
+      const tick=setInterval(()=>{
+        if(i<order.length-1){done.push(order[i]); i++; renderStages(order[i],done);}
+      },700);
+
+      // category is UI-only (it drives the grid filter/pre-selection above);
+      // export_topic/export_topic_polished only ever take template/formats/subtitle.
+      const opts={template:exportDialog.template,formats:exportDialog.formats,
+                  subtitle:exportDialog.subtitle};
+      let r;
+      try{
+        if(closing){
+          const c=await api.close_topic(t.id);
+          if(c.error){clearInterval(tick); go.disabled=false; go.textContent="Export"; return toast(c.error,"err");}
+          state=c;
+        }
+        r=exportDialog.polish ? await api.export_topic_polished(t.id,opts)
+                              : await api.export_topic(t.id,opts);
+      }finally{ clearInterval(tick); }
+
+      if(r&&r.error&&!(r.files&&Object.keys(r.files).length)){
+        go.disabled=false; go.textContent="Export";
+        return toast(r.error,"err");
+      }
+      renderStages(null, order);
+      const wasPolish=exportDialog.polish;
+      state=await api.get_state();
+      openGroups=groupSet(); if(r.topic_id) openGroups.add(r.topic_id);
+      if(closing) tab="closed";
+      close(); render();
+      showExportToast(r, wasPolish);
+    });
+  }
+
+  renderBody();
 }
 
 function detailHtml(t){
@@ -1458,6 +1776,50 @@ function showExportToast(ex, isPolished=false){
     e.preventDefault(); api.open_path(a.dataset.p);}));
 }
 
+/* --- Settings -> Exports -> Categories: list + inline management -------- */
+
+function catNewFormHtml(){
+  const allTpls=state.templates||[];
+  const tplOpts=allTpls.map(tp=>`<option value="${esc(tp.id)}">${esc(tp.name)}</option>`).join("");
+  return `<div class="cat-popover">
+    <div class="sec-l" style="margin:0">New category</div>
+    <div class="row2">
+      <label><span class="cap">Name</span><input id="sCatName" class="input" placeholder="e.g. Client work"></label>
+      <label><span class="cap">Default template</span><select id="sCatDefTpl" class="input">${tplOpts}</select></label>
+    </div>
+    <div class="row" style="margin-top:2px">
+      <button type="button" class="btn primary sm" id="sCatCreate">Create</button>
+      <button type="button" class="btn ghost sm" id="sCatCancel">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function categoriesHtml(){
+  const cats=state.categories||[];
+  const tpls=state.templates||[];
+  const tplOpts=selId=>tpls.map(tp=>`<option value="${esc(tp.id)}" ${tp.id===selId?"selected":""}>${esc(tp.name)}</option>`).join("");
+  const rows=cats.map(c=>{
+    const n=c.count||0;
+    return `<div class="cat-row" data-cat-row="${esc(c.id)}">
+      <input class="input cat-name" value="${esc(c.name)}">
+      <select class="input cat-def-tpl">${tplOpts(c.default_template)}</select>
+      <span class="badge count">${n} template${n===1?"":"s"}</span>
+      <button type="button" class="btn ghost sm cat-rename">Rename</button>
+      <button type="button" class="btn danger sm cat-delete" ${cats.length<=1?"disabled":""}
+        title="${cats.length<=1?"At least one category is required.":"Delete this category"}">Delete</button>
+    </div>`;
+  }).join("");
+  return `<div class="cat-mgr">
+    <div class="sec-l" style="margin-top:0">Categories</div>
+    <p class="muted">Group your templates so the export dialog can suggest the right default for each kind of report.</p>
+    <div class="cat-list">${rows || `<p class="muted">No categories yet.</p>`}</div>
+    <div class="row" style="margin-top:10px">
+      <button type="button" class="btn ghost sm" id="catNewBtn">+ New category</button>
+    </div>
+    ${catNewOpen ? catNewFormHtml() : ""}
+  </div>`;
+}
+
 function settingsHtml(){
   const c=state.config||{};
   const hk=c.hotkey||{};
@@ -1552,6 +1914,7 @@ function settingsHtml(){
       <b>{{title}}</b>, <b>{{body}}</b>, <b>{{references}}</b> and friends, which Trailmark fills in.
       Drop your folder next to the built-ins and it shows up in the dialog. The full field list and a
       prompt you can hand to an AI assistant to write one for you are in <b>TEMPLATES.md</b> in the app folder.</p>
+      ${categoriesHtml()}
     </div>
     <div class="card glass fade">
       <div class="card-h"><div class="card-t">Data &amp; privacy</div></div>
@@ -1561,6 +1924,12 @@ function settingsHtml(){
 }
 
 function bindSettings(){
+  // state.categories is only populated by list_categories() - get_state() never
+  // touches it, so on a fresh app load (Settings opened before any export dialog)
+  // the Categories list below would render empty forever without this.
+  if(!state.categories){
+    api.list_categories().then(r=>{if(r&&!r.error){state=r;render();}}).catch(()=>{});
+  }
   const hkInfo=$("#hkInfo");
   api.get_config().then(c=>{
     const hk=c.hotkey||{};
@@ -1669,6 +2038,58 @@ function bindSettings(){
         : "No PDF engine found — install Edge or Chrome.";
     }).catch(()=>{});
   }
+
+  // --- categories ---
+  bindCategories();
+}
+
+function bindCategories(){
+  const mgr=$(".cat-mgr");
+  if(!mgr) return;
+
+  mgr.querySelectorAll(".cat-row").forEach(row=>{
+    const id=row.dataset.catRow;
+    row.querySelector(".cat-def-tpl").addEventListener("change",async e=>{
+      const r=await api.set_category_default(id, e.target.value);
+      if(r.error) return toast(r.error,"err");
+      state=r; renderMain(); toast("Default template updated.");
+    });
+    row.querySelector(".cat-rename").addEventListener("click",async()=>{
+      const name=(row.querySelector(".cat-name").value||"").trim();
+      if(!name) return toast("Name the category first.","err");
+      const r=await api.save_category({id, name});
+      if(r.error) return toast(r.error,"err");
+      state=r; renderMain(); toast("Category renamed.");
+    });
+    row.querySelector(".cat-delete").addEventListener("click",async()=>{
+      if(!confirm("Delete this category? Its templates keep working, but stop suggesting a default here.")) return;
+      const r=await api.delete_category(id);
+      if(r.error) return toast(r.error,"err");
+      state=r; renderMain(); toast("Category deleted.");
+    });
+  });
+
+  const newBtn=mgr.querySelector("#catNewBtn");
+  if(newBtn) newBtn.addEventListener("click",()=>{
+    catNewOpen=!catNewOpen;
+    renderMain();
+  });
+  const cancelBtn=mgr.querySelector("#sCatCancel");
+  if(cancelBtn) cancelBtn.addEventListener("click",()=>{
+    catNewOpen=false;
+    renderMain();
+  });
+  const createBtn=mgr.querySelector("#sCatCreate");
+  if(createBtn) createBtn.addEventListener("click",async()=>{
+    const name=(mgr.querySelector("#sCatName").value||"").trim();
+    const defTpl=mgr.querySelector("#sCatDefTpl").value;
+    if(!name) return toast("Name the category first.","err");
+    if(!defTpl) return toast("Pick a default template.","err");
+    const r=await api.save_category({name, default_template:defTpl});
+    if(r.error) return toast(r.error,"err");
+    state=r; catNewOpen=false; renderMain();
+    toast("Category created.");
+  });
 }
 
 /* --- theme -------------------------------------------------------------- */

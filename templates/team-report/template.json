@@ -1,0 +1,11 @@
+{
+  "id": "team-report",
+  "name": "Team Report",
+  "category": "team",
+  "purpose": "team",
+  "description": "Shared with a team and attributed by author: a summary strip up top, points read as cards, and every citation shown as a badge next to the claim it backs.",
+  "kicker": "Team Report",
+  "accent": "#2a6f5b",
+  "formats": ["html", "pdf", "markdown", "docx"],
+  "page": { "size": "A4", "margin": "17mm 16mm" }
+}
