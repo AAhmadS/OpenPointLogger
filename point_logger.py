@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 import sys
 import threading
 import traceback
@@ -17,8 +18,18 @@ import asr
 import clipboard
 import llm
 import single
+import telegram_bridge
 import templates_registry
 import traymenu
+
+#: Excludes 0/O/1/I - the pairing code is read off a phone screen and typed
+#: back, so the characters most often confused with each other are dropped
+#: rather than relying on the user to tell them apart.
+_PAIRING_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+
+def _new_pairing_code():
+    return "".join(secrets.choice(_PAIRING_ALPHABET) for _ in range(6))
 
 POPUP_HTML = POPUP_HTML.replace("__ICON__", ICON_DATA_URI)
 MAIN_HTML = MAIN_HTML.replace("__ICON__", ICON_DATA_URI)
@@ -158,6 +169,59 @@ class Api:
 
     def list_asr_devices(self):
         return asr.list_devices()
+
+    def save_telegram(self, cfg):
+        """Mirrors save_asr's shape, not _save_section: enabling this starts
+        a background polling thread against the Telegram Bot API, a side
+        effect a generic merge-and-save must not silently trigger. The bot
+        token is validated for shape only (a string) - never logged, never
+        echoed into an error message, never truncated-and-shown like a
+        toast snippet. Never returns the raw token: the return value is
+        self.store.state(), which already masks it."""
+        cfg = cfg or {}
+        prev = self.store.config.get("telegram") or {}
+        merged = {
+            "enabled": bool(cfg.get("enabled")),
+            "token": str(cfg.get("token")).strip() if cfg.get("token") is not None else str(prev.get("token") or ""),
+            "chat_id": prev.get("chat_id"),
+            "username": prev.get("username", ""),
+            "pairing_code": prev.get("pairing_code") or _new_pairing_code(),
+            "topic_id": cfg.get("topic_id", prev.get("topic_id")),
+        }
+        self.store.config["telegram"] = merged
+        self.store.save_config()
+        self.controller.apply_telegram()
+        self.controller.refresh_full()
+        return self.store.state()
+
+    def telegram_regenerate_code(self):
+        cfg = dict(self.store.config.get("telegram") or {})
+        cfg["pairing_code"] = _new_pairing_code()
+        self.store.config["telegram"] = cfg
+        self.store.save_config()
+        return self.store.state()
+
+    def telegram_unpair(self):
+        cfg = dict(self.store.config.get("telegram") or {})
+        cfg["chat_id"] = None
+        cfg["username"] = ""
+        cfg["pairing_code"] = _new_pairing_code()
+        self.store.config["telegram"] = cfg
+        self.store.save_config()
+        self.controller.apply_telegram()
+        self.controller.refresh_full()
+        return self.store.state()
+
+    def telegram_status(self):
+        cfg = self.store.config.get("telegram") or {}
+        _token, source = telegram_bridge.load_token(self.store.config)
+        return {
+            "state": self.controller.telegram_state,
+            "detail": self.controller.telegram_detail,
+            "username": cfg.get("username", ""),
+            "pairing_code": cfg.get("pairing_code", ""),
+            "token_source": source,
+        }
 
     def save_llm(self, cfg):
         return self._save_section("llm", cfg)
@@ -528,6 +592,14 @@ class Controller:
         # to stop it), leaving the microphone open after the user believes
         # voice logging is off.
         self._asr_lock = threading.Lock()
+        self.telegram_bridge = None
+        self.telegram_state = "off"
+        self.telegram_detail = ""
+        # Mirrors _asr_lock: apply_telegram is reachable concurrently from
+        # the pywebview JS-bridge thread (Api.save_telegram/telegram_unpair)
+        # and from startup() - same orphaned-thread risk as apply_asr if
+        # unsynchronized.
+        self._telegram_lock = threading.Lock()
         self.api = Api(self.store, self)
         self.tray = None
         self.voice_item = None
@@ -674,6 +746,147 @@ class Controller:
                 self._update_voice_tray_label(state)
             except Exception:
                 pass
+
+    def apply_telegram(self):
+        """Mirrors apply_asr: stop whatever's running, then start fresh from
+        current config if enabled and a token is actually available (config
+        or .env). Idempotent and safe to call repeatedly - the common case
+        (disabled, or already running with unchanged config) is just
+        stopping any previous bridge and, if enabled, starting a new one.
+
+        Serialized on self._telegram_lock for the same read-modify-write
+        race apply_asr's own lock guards against (see its comment in
+        __init__) - reachable concurrently from the JS-bridge thread
+        (save_telegram/telegram_unpair) and from startup().
+        """
+        with self._telegram_lock:
+            cfg = self.store.config.get("telegram") or {}
+            if self.telegram_bridge:
+                try:
+                    self.telegram_bridge.stop()
+                except Exception:
+                    traceback.print_exc()
+                self.telegram_bridge = None
+            if not cfg.get("enabled"):
+                self.push_telegram_state("off", "")
+                return
+            token, _source = telegram_bridge.load_token(self.store.config)
+            if not token:
+                self.push_telegram_state("error", "No bot token configured.")
+                return
+            transport = telegram_bridge.UrllibTransport(token)
+            bridge = telegram_bridge.TelegramBridge(
+                transport, lambda: self.store.config, self._telegram_merge_cfg,
+                self.push_telegram_state, self.on_telegram_message,
+                get_open_topics=self.store.open_topics)
+            try:
+                bridge.start()
+            except Exception:
+                traceback.print_exc()
+                self.push_telegram_state("error", "Could not start the Telegram bridge.")
+                return
+            self.telegram_bridge = bridge
+            if cfg.get("chat_id"):
+                self.push_telegram_state("paired", cfg.get("username") or "")
+            else:
+                self.push_telegram_state("waiting", "")
+
+    def _telegram_merge_cfg(self, updates):
+        """The save_cfg callback handed to TelegramBridge: merges the given
+        fields (chat_id/username on pairing, topic_id on a /topic switch)
+        into config["telegram"] and persists. Runs on the bridge's own
+        polling thread, not the UI thread - evaluate_js calls downstream
+        (via push_telegram_state/refresh_full) follow the same
+        try/except-guarded, full_visible-gated discipline as every other
+        cross-thread call in this file."""
+        cfg = dict(self.store.config.get("telegram") or {})
+        cfg.update(updates or {})
+        self.store.config["telegram"] = cfg
+        self.store.save_config()
+        self.refresh_full()
+        if "chat_id" in (updates or {}):
+            if cfg.get("chat_id"):
+                self.push_telegram_state("paired", cfg.get("username") or "")
+            else:
+                self.push_telegram_state("waiting", "")
+
+    def on_telegram_message(self, kind, payload):
+        """The on_message callback wired into TelegramBridge by
+        apply_telegram. Runs on the bridge's own polling thread, not the UI
+        thread - same cross-thread discipline as on_clipboard_hotkey /
+        on_asr_utterance.
+
+        Topic resolution mirrors _log_asr_text: prefer
+        config.telegram.topic_id while that topic is still open, else fall
+        back to the last open topic; report "no open topic" and log nothing
+        if neither resolves. kind ("note"/"link"/"photo") is the message
+        shape TelegramBridge classified, not point_store's claim/note/quote
+        entry kind - a link keeps the same default entry kind ("claim") the
+        T11 clipboard-hotkey link path uses, and only text/photo are filed
+        as point_store "note" entries, for consistency with that existing
+        capture path.
+
+        Unlike the ASR/clipboard paths, this always returns a reply string -
+        TelegramBridge sends it back to the chat as the sender's only
+        feedback that anything happened.
+        """
+        cfg = self.store.config.get("telegram") or {}
+        topic = None
+        tid = cfg.get("topic_id")
+        if tid:
+            t = self.store.find_topic(tid)
+            if t and t.get("status") == "open":
+                topic = t
+        if topic is None:
+            topic = self.store.last_open_topic()
+        if topic is None:
+            self.push_telegram_state("no_topic", "No open topic")
+            return "No open topic on the desktop — start one first"
+
+        text = payload.get("text", "")
+        try:
+            if kind == "link":
+                r = self.store.add_entry(topic["id"], "", text,
+                                         source_link=payload.get("source_link", ""))
+            elif kind == "photo":
+                r = self.store.add_entry(topic["id"], "", text,
+                                         sources=payload.get("sources"), kind="note")
+            else:
+                r = self.store.add_entry(topic["id"], "", text, kind="note")
+        except Exception:
+            traceback.print_exc()
+            self.push_telegram_state("error", "Could not log the message.")
+            return "Could not log that — try again."
+
+        if r.get("error"):
+            self.push_telegram_state("error", r["error"])
+            return "Could not log that: %s" % r["error"]
+
+        self.refresh_full()
+        detail = text[:120] + ("…" if len(text) > 120 else "")
+        self.push_telegram_state("logged", detail)
+        return "Logged to '%s'" % topic.get("title", "")
+
+    def push_telegram_state(self, state, detail=""):
+        """Called from TelegramBridge's polling thread as well as from the
+        UI thread itself (apply_telegram's off/error paths) - same
+        discipline as push_asr_state: both args are JSON-encoded
+        independently so a topic title or error string can never break out
+        of the argument list, and the whole call is wrapped in try/except.
+        Never pass the bot token as detail, under any state. Also records
+        state/detail on the controller so Api.telegram_status can answer
+        without a push channel of its own."""
+        self.telegram_state = state
+        self.telegram_detail = detail or ""
+        try:
+            js = "telegramState(%s,%s)" % (json.dumps(state), json.dumps(detail or ""))
+        except Exception:
+            return
+        try:
+            if self.full is not None and self.full_visible:
+                self.full.evaluate_js(js)
+        except Exception:
+            pass
 
     def on_clipboard_hotkey(self):
         """Ctrl+Alt+V (by default) auto-detect: fires on the Win32 hotkey
@@ -902,6 +1115,11 @@ class Controller:
                 self.asr_logger.stop()
             except Exception:
                 pass
+        if self.telegram_bridge:
+            try:
+                self.telegram_bridge.stop()
+            except Exception:
+                pass
         for w in (self.popup, self.full):
             if w is None:
                 continue
@@ -1030,6 +1248,10 @@ class Controller:
                 traceback.print_exc()
             try:
                 self.apply_asr()
+            except Exception:
+                traceback.print_exc()
+            try:
+                self.apply_telegram()
             except Exception:
                 traceback.print_exc()
             try:

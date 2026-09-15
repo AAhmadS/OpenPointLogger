@@ -66,6 +66,17 @@ DEFAULT_CONFIG = {
         "separate_notes": True,
         "require_source_for_claims": False,
     },
+    # Off by default: pairing exposes a Telegram bot as a second, remote way
+    # to file entries, and starts a background polling thread the moment it's
+    # turned on - the same reasoning as asr/clipboard above.
+    "telegram": {
+        "enabled": False,
+        "token": "",
+        "chat_id": None,
+        "username": "",
+        "pairing_code": "",
+        "topic_id": None,
+    },
 }
 
 #: what a logged point *is*. The distinction only matters in scientific mode,
@@ -250,7 +261,7 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr"):
+                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr", "telegram"):
                     if section in saved and isinstance(saved[section], dict):
                         cfg[section].update(saved[section])
             except Exception:
@@ -265,7 +276,18 @@ class Store:
 
     def state(self):
         topics = sorted(self._topics, key=lambda t: t.get("closed") or t.get("created") or "", reverse=True)
-        return {"topics": topics, "config": self.config, "providers": PROVIDERS,
+        # Shallow-copy config and swap in a masked telegram section: the raw
+        # bot token must never reach the JS bridge (this return value is
+        # handed straight to the frontend). Copying just the "telegram" key
+        # - not self.config itself - means every other section (including
+        # the pre-existing unmasked asr.api_key / llm.api_key, a gap this
+        # slice does not touch) keeps referencing the live dict unchanged.
+        config = dict(self.config)
+        tg = dict(config.get("telegram") or {})
+        tg["token_set"] = bool(tg.get("token"))
+        tg["token"] = ""
+        config["telegram"] = tg
+        return {"topics": topics, "config": config, "providers": PROVIDERS,
                 "exports": self.list_exports(), "templates": self.list_templates()}
 
     def list_templates(self):
