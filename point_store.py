@@ -258,16 +258,12 @@ class Store:
         Exports written before manifests existed are still listed: the topic is
         recovered from the folder-name slug so old reports do not vanish from the
         tab, they just group under a slug instead of a topic id.
+
+        The manifest's ``files`` key, when present, is authoritative about which
+        files belong to the export - it reflects what the user actually asked
+        for. Only exports with no manifest, or an old manifest written before it
+        recorded ``files``, fall back to globbing every ``report.*`` on disk.
         """
-        files = {}
-        for kind, name in (("html", "report.html"), ("markdown", "report.md"),
-                           ("pdf", "report.pdf"), ("docx", "report.docx"),
-                           ("latex", "report.tex")):
-            p = folder / name
-            if p.exists():
-                files[kind] = str(p)
-        if not files:
-            return None
         mf = folder / "manifest.json"
         doc = {}
         if mf.exists():
@@ -275,6 +271,22 @@ class Store:
                 doc = json.loads(mf.read_text(encoding="utf-8"))
             except Exception:
                 doc = {}
+        manifest_files = doc.get("files")
+        files = {}
+        if isinstance(manifest_files, dict):
+            for kind, name in manifest_files.items():
+                p = folder / name
+                if p.exists():
+                    files[kind] = str(p)
+        else:
+            for kind, name in (("html", "report.html"), ("markdown", "report.md"),
+                               ("pdf", "report.pdf"), ("docx", "report.docx"),
+                               ("latex", "report.tex")):
+                p = folder / name
+                if p.exists():
+                    files[kind] = str(p)
+        if not files:
+            return None
         newest = max((Path(p).stat().st_mtime for p in files.values()), default=0)
         slug = re.sub(r"_\d{8}_\d{6}(?:-\d+)?$", "", folder.name)
         legacy_polished = slug.endswith("_polished")

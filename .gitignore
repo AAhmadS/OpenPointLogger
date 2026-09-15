@@ -1,6 +1,7 @@
 # user data — never committed
 points.json
 config.json
+.env
 attachments/
 exports/
 

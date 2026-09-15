@@ -575,6 +575,11 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
         elif not done:
             result["errors"].append("PDF: this template has no HTML shell to render from.")
 
+    # report.html only ever existed as the source pdf_render renders from; once
+    # the PDF is out the door, don't leave it behind unless it was requested.
+    if "html" not in formats and "pdf" in result["files"] and html_path.exists():
+        html_path.unlink()
+
     if "docx" in formats:
         try:
             import docx_writer

@@ -237,7 +237,7 @@ POPUP_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Trailmark · Quick capture</title><style>
 __BASE_CSS__
-body{user-select:none}
+header,button,label{user-select:none}
 .win{display:flex;flex-direction:column;height:100vh;padding:12px;gap:10px}
 header{display:flex;align-items:center;gap:9px;padding:9px 12px}
 header img{width:auto;height:26px;object-fit:contain}
@@ -261,7 +261,7 @@ section{overflow-y:auto;flex:1}
 .recent b{color:var(--content);font-weight:600}
 </style></head><body>
 <div class="win">
-  <header class="glass">
+  <header class="glass pywebview-drag-region">
     <img src="__ICON__" alt="">
     <div class="tt"><div class="app">Trailmark</div><div class="hk" id="hkLabel"></div></div>
     <button id="openApp" class="chip accent" title="Open the main window">Open app</button>
@@ -312,7 +312,7 @@ section{overflow-y:auto;flex:1}
         <button id="ptGo" class="btn primary">Log point</button>
         <button id="ptHide" class="btn ghost">Hide</button>
       </div>
-      <div class="hint">Enter logs · Esc hides · hotkey toggles · Open app to review</div>
+      <div class="hint">Alt+Enter logs · Esc hides · hotkey toggles · Open app to review</div>
       <div class="recent" id="recent"></div>
     </div>
   </section>
@@ -452,7 +452,7 @@ if(ptKinds) ptKinds.addEventListener("click",e=>{
 });
 $("#ptGo").addEventListener("click",logPoint);
 $("#ptText").addEventListener("keydown",e=>{
-  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();logPoint();}
+  if(e.altKey && e.key==="Enter"){e.preventDefault();logPoint();}
 });
 $("#openApp").addEventListener("click",async()=>{
   $("#openApp").textContent="Opening…";
@@ -505,10 +505,6 @@ __BASE_CSS__
    and Windows snap. This strip is the designed top bar living under real chrome. */
 .topbar{grid-column:1/-1;display:flex;align-items:center;gap:10px;height:44px;
   padding:0 4px;-webkit-user-select:none;user-select:none}
-.tb-mark{flex:none;width:20px;height:22px;display:grid;place-items:center}
-.tb-mark svg{width:auto;height:19px}
-.tb-title{font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.2px;
-  white-space:nowrap}
 .tb-ctx{font-size:12px;color:var(--content-secondary);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;min-width:0;flex:1}
 .tb-ctx::before{content:"—";margin-right:8px;opacity:.5}
@@ -713,8 +709,6 @@ main{overflow-y:auto;padding:22px}
 </style></head><body>
 <div class="app">
   <header class="topbar">
-    <span class="tb-mark"><svg viewBox="0 0 1349 1568" fill="var(--accent)" aria-hidden="true"><rect x="0" y="0" width="1347" height="279" rx="46"/><rect x="597" y="180" width="147" height="1388" rx="46"/><rect x="206" y="679" width="392" height="138" rx="46"/><rect x="206" y="984" width="392" height="139" rx="46"/><rect x="744" y="1259" width="395" height="140" rx="46"/></svg></span>
-    <span class="tb-title">Trailmark</span>
     <span class="tb-ctx" id="tbCtx"></span>
     <span class="tb-act">
       <button class="tb-btn" id="tbTheme" title="Switch theme"><svg viewBox="0 0 24 24">

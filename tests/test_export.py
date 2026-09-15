@@ -5,9 +5,11 @@ It writes into a temp folder and prints a pass/fail line per check. Nothing here
 touches your real %APPDATA% data.
 """
 
+import json
 import shutil
 import sys
 import tempfile
+import unittest.mock
 import zipfile
 from pathlib import Path
 
@@ -152,6 +154,34 @@ def main():
               any("Fell back" in w for w in res.get("warnings", [])), res.get("warnings"))
         body = Path(res["files"]["markdown"]).read_text(encoding="utf-8")
         check("fallback kept the real content", "Polonius" in body)
+
+        print("\n== pdf-only export doesn't leak report.html ==")
+        res = pipeline.export(TOPIC, ENTRIES, refs, cites, tmp / "pdf-only",
+                              template_id="personal-report", formats=("pdf",),
+                              meta={"author": "A. Researcher", "org": "Trailmark",
+                                    "summary": "A **short** abstract with a citation [1]."})
+        check("pdf-only: pdf produced", "pdf" in res.get("files", {}), res.get("errors"))
+        out_dir = Path(res["folder"])
+        leaked = [p.name for p in out_dir.glob("*.html")]
+        check("pdf-only: no report.html left behind", not leaked, leaked)
+        mf = out_dir / "manifest.json"
+        mf_files = (json.loads(mf.read_text(encoding="utf-8")).get("files", {})
+                    if mf.exists() else {})
+        check("pdf-only: manifest files lists only pdf",
+              mf_files == {"pdf": "report.pdf"}, mf_files)
+
+        print("\n== pdf-only export with pdf rendering failure preserves report.html ==")
+        with unittest.mock.patch("pdf_render.render_tex_to_pdf", side_effect=RuntimeError("LaTeX unavailable")), \
+             unittest.mock.patch("pdf_render.render_html_to_pdf", side_effect=RuntimeError("PDF engine unavailable")):
+            res = pipeline.export(TOPIC, ENTRIES, refs, cites, tmp / "pdf-fail",
+                                  template_id="personal-report", formats=("pdf",),
+                                  meta={"author": "A. Researcher", "org": "Trailmark",
+                                        "summary": "A **short** abstract with a citation [1]."})
+        check("pdf-fail: pdf NOT in result files (failed)", "pdf" not in res.get("files", {}))
+        check("pdf-fail: error logged", any("PDF:" in e for e in res.get("errors", [])), res.get("errors"))
+        out_dir = Path(res["folder"])
+        html_files = [p.name for p in out_dir.glob("*.html")]
+        check("pdf-fail: report.html preserved when pdf fails", "report.html" in html_files, html_files)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

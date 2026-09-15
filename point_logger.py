@@ -465,7 +465,7 @@ class Controller:
         bg = self.window_bg()
         self.popup = webview.create_window(
             "Trailmark · Quick capture", html=POPUP_HTML, js_api=self.api,
-            width=POPUP_W, height=POPUP_H, frameless=True, easy_drag=True,
+            width=POPUP_W, height=POPUP_H, frameless=True, easy_drag=False,
             on_top=True, resizable=False, hidden=True, background_color=bg)
         self.popup_visible = False
         self.full = webview.create_window(
