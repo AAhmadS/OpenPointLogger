@@ -4,7 +4,7 @@ project: Trailmark (formerly OpenPointLogger)
 generated: 2026-09-15
 generated_by: project-cartographer
 branch: main
-last_updated: 2026-09-22 by delivery-orchestrator after slice F (772f811); exe rebuild pending
+last_updated: 2026-09-22 by delivery-orchestrator after slice F (772f811), map commit 10b46b9, exe rebuilt + relaunched
 schema_version: 1
 phase: build
 phase_evidence: >
@@ -194,6 +194,12 @@ commit SHA by anyone scanning this report).
   commit: 772f811
   verified: "PM re-ran all 9 tests/test_*.py after the commit (each exit 0, venv python); node --check on both extracted ui.py script blocks exit 0; staged diff scanned for token-shaped literals: 0; viewed shot-telegram-paired.png (card + chip match app/telegram-bridge.html). qa-lead found 1 Critical before commit (transient no_topic/logged pushes were persisted as connection state, hiding Unpair) - fixed and re-verified by builder-lead. Cosmetic leftover: Unpair uses an inline style instead of a .btn.danger-ghost class."
 
+- id: BUILD
+  title: "Rebuilt dist/Trailmark.exe from 772f811 (+ committed map 10b46b9), installed to %LOCALAPPDATA%/Programs/Trailmark, relaunched"
+  importance: high
+  commit: n/a (build artifact; Trailmark.spec is gitignored by *.spec)
+  verified: "PyInstaller 6.22.2 via .venv python, exit 0, hook-sounddevice.py processed, exe 33,853,231 bytes; both Trailmark processes stopped, file copied, SHA256 of dist and installed exe equal; relaunched 2026-09-22 08:45, still alive after 109 s; HotkeyListener.probe reports Ctrl+Alt+P and Ctrl+Alt+V both HELD by another process (the running app). Not exercised by hand: voice logging and Telegram polling against live services from the packaged exe."
+
 ## workstreams.todo
 
 - id: T18
@@ -360,7 +366,6 @@ commit SHA by anyone scanning this report).
 
 ## recommended_next
 
-1. Rebuild dist/Trailmark.exe from 772f811, reinstall to %LOCALAPPDATA%\Programs\Trailmark, relaunch, confirm both hotkeys are held (done at the end of this run - see workstreams.done)
 2. Owner review of the design pages written this run (app/categories-templates, clipboard-capture, asr-mode, telegram-bridge; platform/account-profile, plan-picker, mobile-capture-topics, website-landing) - post-hoc per the working agreement
 3. Small follow-ups surfaced by qa: category-create double-submit guard, unsaved-rename discard, template_demo ignoring scientific-mode style, ASR device index 0 / Test-5-seconds using saved config, Unpair danger-ghost class; a sweep-sized batch
 4. T18-T24 only after the owner answers the questions in .claude/gates/platform-expansion.yaml (do not build)
