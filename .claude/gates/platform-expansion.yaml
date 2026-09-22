@@ -1,0 +1,145 @@
+slice: platform-expansion
+report_ref: .claude/PROJECT_STATE.md#T17
+spec_ref: .claude/PRODUCT_SPEC.md
+gates:
+  - id: G0.4
+    name: page/surface matrix accepted
+    status: unmeasured
+    kind: human
+    owner: null
+    evidence: ""
+    question: >
+      Do you accept the V1 surface inventory in .claude/PRODUCT_SPEC.md §4 — Windows 10,
+      Linux 10, Android 6, iOS 6, website 12, Telegram 7 — including the cuts listed in §4.7
+      (/pricing folded into /#pricing, /docs later, /topics/[id] later, no /signup,
+      /reset-password or /verify under passwordless auth, /admin and /settings/team later),
+      and the four matrix-shaping calls it makes (passwordless auth, desktop-hosted Telegram
+      bot in V1, no export on mobile in V1, Free never needs an account)?
+    recommended: >
+      Accept as drafted; overrule any single cut or call by naming it, and the spec is
+      amended before stage 1 starts (PRODUCT_SPEC.md §9, decisions D-6, D-7, D-8, D-11, D-12).
+    note: >
+      PRODUCT_SPEC.md now exists (stage 0 draft). It cannot be marked pass until the owner
+      accepts the surface inventory across all six targets. The open questions that blocked
+      even a draft (what Pro/Plus include; whether a backend is needed) are answered in the
+      spec as labelled RECOMMENDATIONS, not as facts; the gates below carry each one.
+  - id: G2.5
+    name: design direction accepted
+    status: unmeasured
+    kind: human
+    owner: null
+    evidence: ""
+    question: >
+      Once G0.4 is accepted, may the new surfaces (desktop W8–W10, mobile M1–M6, website
+      S1–S12, Telegram T1–T7 as numbered in PRODUCT_SPEC.md §4) be drafted as pages in the
+      "Trailmark Design System" Claude Design project, and will you review them there before
+      any implementation?
+    recommended: >
+      Yes, after G0.4 and before T18–T24; draft the website landing and the mobile Capture
+      screen first because they fix the visual language every other surface inherits
+      (PRODUCT_SPEC.md §9, D-13).
+    note: >
+      No design pages exist yet in the "Trailmark Design System" project in the separate
+      Claude Design tool (its URL is the one the owner gave in their request; a design-tool
+      project URL, not a repo commit) for accounts/profile, plan picker, or any mobile screen.
+      Owner's stated rule is design-first for new surfaces; this gate cannot be resolved before
+      those pages are drafted and reviewed.
+  - id: business-decision-plans
+    name: Pro/Plus tier contents defined
+    status: unmeasured
+    kind: human
+    owner: null
+    evidence: ""
+    question: >
+      What does Free include, what does Pro at $5 include (and is the $5 per month?), what
+      will Plus include, is there a usage cap on any hosted AI feature, must Free users ever
+      create an account, and does the iOS app sell Pro through in-app purchase or web only?
+    recommended: >
+      Free = everything the desktop does today, local, BYO keys, no account; Pro = $5/month
+      (assumed period) for accounts + sync + Android/iOS + web capture inbox + a hosted AI
+      polish/summary quota (cap not established); Plus = hosted ASR + team sharing, later.
+      Web-only checkout in V1. Alternatives A1–A4 in PRODUCT_SPEC.md §5.3; decisions D-1,
+      D-9, D-11.
+    note: "What does Pro ($5) include that Free does not? What is Plus (\"coming soon\")? Not answered anywhere in the backlog text or repo. A recommended split now exists in PRODUCT_SPEC.md §5.2, labelled as a recommendation."
+  - id: business-decision-hosted-provider
+    name: hosted LLM/ASR provider for non-BYO-key tiers chosen
+    status: unmeasured
+    kind: human
+    owner: null
+    evidence: ""
+    question: >
+      Which LLM provider and model should Trailmark call, with a server-held key, for Pro
+      users who do not bring their own key, and at what monthly cap per user? And which ASR
+      provider for the Plus auto-transcription mode?
+    recommended: >
+      LLM: reuse the default the app already ships (OpenRouter with deepseek/deepseek-v4-flash,
+      the PROVIDERS default in point_store.py) behind a server-held key; set the cap from the
+      provider's per-token price — the number is yours to state. ASR: not established; no
+      ASR code exists yet (T12–T14), decide it with the D3 design pass (PRODUCT_SPEC.md §9,
+      D-2, D-3).
+    note: "T20 in PROJECT_STATE.md depends on this. No provider or usage-cap decision has been made."
+  - id: business-decision-sync-backend
+    name: accounts/sync backend architecture chosen
+    status: unmeasured
+    kind: human
+    owner: null
+    evidence: ""
+    question: >
+      Managed BaaS (Supabase-style Postgres + auth + storage), a self-hosted FastAPI +
+      Postgres + S3 monolith, or a local-first per-device op log — and which region, whether
+      screenshots sync in V1, and whether exports sync?
+    recommended: >
+      Managed BaaS for hosting with the local-first op log (LWW + tombstones) as the sync data
+      model on top, so the desktop's points.json stays the source of truth and the Free tier
+      needs no server; sync text and attachments, do not sync exports (regenerable); region
+      not established (PRODUCT_SPEC.md §6, decisions D-4, D-16).
+    note: "The current app has zero backend/server code. Multi-device sync and accounts require standing up one; the stack (managed vs self-hosted, which cloud) is undecided. Three options with trade-offs are in PRODUCT_SPEC.md §6."
+  - id: mobile-framework-choice
+    name: Android/iOS implementation approach chosen
+    status: unmeasured
+    kind: human
+    owner: null
+    evidence: ""
+    question: >
+      React Native with Expo, Flutter, or native Kotlin + Swift for the Android and iOS apps
+      (one decision for both)? And should the website's /capture page ship first as an
+      installable PWA on Android as a bridge?
+    recommended: >
+      React Native + Expo — one codebase, TypeScript is the closest fit to the tokenised
+      HTML/CSS design system so tokens are shared rather than translated, and EAS removes the
+      signing/store-submission chore for a solo developer. Flutter is the credible alternative;
+      native is not recommended at this team size. Yes to the PWA bridge on Android
+      (PRODUCT_SPEC.md §7, decisions D-5, D-10).
+    note: "React Native vs Flutter vs native (per-platform) undecided; affects T21 and T22 jointly, best decided once. Options compared in PRODUCT_SPEC.md §7."
+  - id: G8.5
+    name: go-live sign-off
+    status: unmeasured
+    kind: human
+    owner: null
+    evidence: ""
+    question: >
+      Not yet askable. When a slice of the expansion is ready to serve real users, do you
+      sign off on going live?
+    recommended: >
+      Nothing to recommend yet; two prerequisites already visible are the terms and privacy
+      text (S9, S10) and the billing-provider account (T19), both not established
+      (PRODUCT_SPEC.md §9, D-14, D-15).
+    note: "Not reached. Listed for completeness per the 4 named human gates in build-protocol.md; nothing in this slice is near shipping."
+  - id: billing-provider-account
+    name: payment provider account and keys supplied
+    status: unmeasured
+    kind: human
+    owner: null
+    evidence: ""
+    question: "Which payment provider will Trailmark use for Pro ($5), and who creates the account and supplies the live/test keys? (T19 in PROJECT_STATE.md is human_gate: action — an agent cannot create this.)"
+    recommended: "Not established. Stripe Checkout + Customer Portal is the least code for a solo developer; the owner must create the account. Keys live outside the repo (.env or Settings), never committed."
+    note: "Added by delivery-orchestrator 2026-09-15 on the product-cartographer's D-15 suggestion so T19's action gate travels in a file."
+notes: >
+  Every status here is unmeasured, which is the legal default per
+  ~/.claude/rules/stage-gates.yaml and ~/.claude/rules/build-protocol.md — it blocks nothing
+  and is not a claim of progress. This file exists so the human decisions blocking T17-T24 in
+  PROJECT_STATE.md travel as a file, not as prose that gets compressed away up the agent tree.
+  The `question:` and `recommended:` lines were added by product-cartographer on 2026-09-15
+  from the stage-0 draft in .claude/PRODUCT_SPEC.md; they are recommendations, not decisions,
+  and the status of each gate is unchanged. Two decisions in PRODUCT_SPEC.md §9 have no gate
+  id here (D-14 terms/privacy text, D-15 billing-provider account); the lead may add them.

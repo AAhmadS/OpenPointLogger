@@ -1,0 +1,4 @@
+- [Trailmark test suite shape](project_trailmark_testing.md) — plain FAILS-list scripts, run each separately with real exit codes, scratchpad not `/` for temp files
+- [Trailmark project context](project_trailmark_context.md) — pre-PMF single-dev desktop app, phase build, design-first rule blocks multi-platform slices
+- [Commit attribution override](feedback_commit_attribution_override.md) — a task's explicit commit trailer spec wins over the ambient session attribution reminder
+- [Resolver scratchpad path false positive](feedback_resolver_scratchpad_path_false_positive.md) — session-UUID temp paths misread as commit hashes; verify the file by hand, don't treat as fabrication
