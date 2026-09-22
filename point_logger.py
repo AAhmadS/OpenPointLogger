@@ -55,6 +55,31 @@ def system_prefers_light():
 POPUP_W, POPUP_H = 462, 648
 MAIN_W, MAIN_H = 1180, 764
 
+_HWND_TOPMOST, _HWND_NOTOPMOST = -1, -2
+_SWP_NOSIZE, _SWP_NOMOVE, _SWP_NOACTIVATE = 0x0001, 0x0002, 0x0010
+
+
+def _set_topmost(hwnd, topmost):
+    """Assert or drop HWND_TOPMOST on a window, from any thread.
+
+    This exists because `window.on_top = True` is not safe off the UI thread.
+    pythonnet keeps the GIL while it runs a .NET property setter, the
+    setter's SetWindowPos then blocks until the window's own thread services
+    it, and right after the UI thread dispatches a js_api call it is itself
+    waiting for the GIL - so the "+" button in the topbar wedged the whole
+    app. ctypes drops the GIL for the duration of a foreign call, which is
+    the one thing that makes the identical SetWindowPos safe here.
+    """
+    if not hwnd:
+        return
+    try:
+        import ctypes
+        ctypes.windll.user32.SetWindowPos(
+            int(hwnd), _HWND_TOPMOST if topmost else _HWND_NOTOPMOST, 0, 0, 0, 0,
+            _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE)
+    except Exception:
+        pass
+
 #: Fixed sample data for the template-preview ("demo") feature. Kept identical,
 #: byte-for-byte, to the fixture tests/test_export.py uses for the same purpose
 #: - two different call sites rendering the same input is what makes the demo a
@@ -109,6 +134,11 @@ class Api:
             return clipboard.read()
         except Exception:
             return {"type": "none", "value": None, "meta": {}}
+
+    def take_clipboard_capture(self):
+        """JS-bridge entry point behind the popup's clipboardCaptured():
+        collects what the Ctrl+Alt+V hotkey read, exactly once."""
+        return self.controller.take_clipboard_capture()
 
     def save_clipboard(self, cfg):
         """Mirrors save_hotkey's validate-then-save shape, not
@@ -577,6 +607,13 @@ class Controller:
         self.store = Store()
         self.popup = None
         self.full = None
+        self.popup_hwnd = 0
+        self.full_hwnd = 0
+        # What Ctrl+Alt+V last read off the clipboard, until the popup
+        # collects it. Written on the hotkey thread, read on the JS-bridge
+        # thread, hence the lock.
+        self._pending_clip = None
+        self._clip_lock = threading.Lock()
         self.popup_visible = True
         self.full_visible = False
         self.quitting = False
@@ -626,11 +663,10 @@ class Controller:
             self.hotkey = None
 
     def apply_clipboard_hotkey(self, mods=None, key=None):
-        """Mirrors apply_hotkey, but for the independent T11 auto-detect
+        """Mirrors apply_hotkey, but for the independent clipboard-capture
         combo - a second HotkeyListener instance (hotkey_id=0x4344, distinct
-        from the capture hotkey's 0x4343) that coexists with it. Off by
-        default (config.clipboard.enabled), so the common case here is just
-        stopping any previous listener and leaving it unregistered."""
+        from the capture hotkey's 0x4343) that coexists with it. Registered
+        whenever config.clipboard.enabled is set, which is the default."""
         cfg = self.store.config.get("clipboard") or {}
         if self.clipboard_hotkey:
             self.clipboard_hotkey.stop()
@@ -729,7 +765,7 @@ class Controller:
         as from the UI thread itself (apply_asr's off-path). detail is
         JSON-encoded rather than string-formatted into the JS so a transcript
         snippet or an error message can never break out of the argument list —
-        same discipline as _deliver_clipboard_toast. Never pass the API key as
+        same discipline as push_telegram_state. Never pass the API key as
         detail, under any state.
         """
         try:
@@ -889,117 +925,41 @@ class Controller:
             pass
 
     def on_clipboard_hotkey(self):
-        """Ctrl+Alt+V (by default) auto-detect: fires on the Win32 hotkey
-        message-loop thread, same as toggle_popup does for the capture
-        hotkey - so every pywebview call below is a direct call guarded by
-        try/except, exactly the pattern toggle_popup/show_popup/hide_popup
-        already use from that same thread, rather than a separate dispatch
-        primitive."""
+        """Ctrl+Alt+V (by default): read whatever was last copied and hand it
+        to the quick-capture popup as a pending source. Nothing is written
+        to the store - the hotkey fills the form, the user writes the point
+        and logs it. Fires on the Win32 hotkey message-loop thread, same as
+        toggle_popup, so the pywebview calls below are direct and guarded.
+
+        The payload is parked on the controller and pulled by the popup
+        (Api.take_clipboard_capture) rather than pushed through
+        evaluate_js: an image is a multi-megabyte data URL, and a bridge
+        return is the path that already carries those for the per-row
+        paste buttons."""
         try:
             data = clipboard.read()
         except Exception:
             data = {"type": "none", "value": None, "meta": {}}
-
-        if data.get("type") == "none":
-            # Firing the hotkey with nothing copied is a no-op, not an
-            # error - the common case is an empty reflex press, and it is
-            # not worth interrupting the user with a toast for that.
-            return
-
-        topic = self.store.last_open_topic()
-        if topic is None:
-            self._deliver_clipboard_toast("error", "No open topic — start one first", None)
-            return
-
-        # Re-verify the topic is still open right before writing: the hotkey
-        # fires on the Win32 message-loop thread, and there is a real window
-        # between last_open_topic() above and add_entry() below where the UI
-        # thread could close this exact topic. A stale reference here would
-        # otherwise deliver a clipboard entry into a topic the user just
-        # closed. add_entry() itself intentionally does not gate on status
-        # (other callers rely on writing into closed topics), so the check
-        # belongs at this call site only.
-        t = self.store.find_topic(topic["id"])
-        if not t or t.get("status") != "open":
-            self._deliver_clipboard_toast("error", "No open topic — start one first", None)
-            return
-
-        kind = data["type"]
+        kind = data.get("type") or "none"
+        value = data.get("value") if kind != "none" else None
+        if kind == "text" and isinstance(value, str):
+            value = value[:2000]
+        with self._clip_lock:
+            self._pending_clip = {"type": kind, "value": value}
+        self.show_popup()
         try:
-            if kind == "image":
-                r = self.store.add_entry(topic["id"], "", "Clipboard image",
-                                         sources=[{"type": "image", "value": data["value"]}])
-            elif kind == "link":
-                url = data["value"]
-                host = urlparse(url).netloc or url
-                r = self.store.add_entry(topic["id"], "", host, source_link=url)
-            else:
-                r = self.store.add_entry(topic["id"], "", data["value"][:2000])
-        except Exception:
-            traceback.print_exc()
-            self._deliver_clipboard_toast("error", "Could not log the clipboard.", None)
-            return
-
-        if r.get("error"):
-            self._deliver_clipboard_toast("error", r["error"], None)
-            return
-
-        self.refresh_full()
-        entry_id = r.get("entry_id")
-        self._deliver_clipboard_toast(kind, self._clipboard_toast_detail(kind, data),
-                                       entry_id, topic["id"])
-
-    @staticmethod
-    def _clipboard_toast_detail(kind, data):
-        if kind == "image":
-            return "Clipboard image"
-        if kind == "link":
-            return data.get("value") or ""
-        text = data.get("value") or ""
-        return text[:120] + ("…" if len(text) > 120 else "")
-
-    def _deliver_clipboard_toast(self, kind, detail, entry_id, topic_id=None):
-        """Toast delivery for the T11 auto-detect hotkey.
-
-        traymenu.py's Shell_NotifyIconW wrapper only implements NIM_ADD /
-        NIM_MODIFY / NIM_SETVERSION / NIM_DELETE - there is no balloon-
-        notification facility in this repo to reuse - so this fires the
-        frontend's clipboardToast(kind, detailText, entryId, tid) into
-        whichever webview window is already on screen, rather than building
-        a new notification layer: into the main window if it is currently
-        visible, or by briefly showing the popup (mirroring show_popup)
-        otherwise. This does not match the floating-toast mockup
-        pixel-for-pixel (there is no window-independent OS toast surface
-        here), but needs no new UI plumbing beyond the JS function
-        frontend-lead is adding.
-
-        topic_id is the 4th argument frontend-lead's Undo needs, since
-        Undo calls api.delete_entry(tid, entryId) and the JS side has no
-        other reliable way to know which topic the auto-detected entry
-        landed in. Only the success path (below, in on_clipboard_hotkey)
-        passes a real topic_id. All three error-path calls leave it at the
-        None default: Undo is never actionable when entry_id is also None
-        (nothing was logged), so both travel as null together rather than
-        pairing a real topic id with a null entry id.
-        """
-        try:
-            js = "clipboardToast(%s, %s, %s, %s)" % (
-                json.dumps(kind), json.dumps(detail), json.dumps(entry_id),
-                json.dumps(topic_id))
-        except Exception:
-            return
-        try:
-            if self.full is not None and self.full_visible:
-                self.full.evaluate_js(js)
-                return
-        except Exception:
-            pass
-        try:
-            self.show_popup()
             if self.popup is not None:
-                self.popup.evaluate_js(js)
+                self.popup.evaluate_js("clipboardCaptured()")
         except Exception:
             pass
+
+    def take_clipboard_capture(self):
+        """Hand the parked hotkey payload to the popup, once. A second call
+        (or a call with nothing parked) answers type "none" so the popup
+        can never attach the same capture twice."""
+        with self._clip_lock:
+            data, self._pending_clip = self._pending_clip, None
+        return data or {"type": "none", "value": None}
 
     def toggle_popup(self):
         if self.popup is None:
@@ -1011,7 +971,7 @@ class Controller:
                 self.popup.hide()
                 self.popup_visible = False
             else:
-                self.popup.on_top = True
+                _set_topmost(self.popup_hwnd, True)
                 self.popup.show()
                 self.popup_visible = True
                 self.popup.evaluate_js("popupShown()")
@@ -1031,7 +991,7 @@ class Controller:
         if self.popup is None:
             return
         try:
-            self.popup.on_top = True
+            _set_topmost(self.popup_hwnd, True)
             self.popup.show()
             self.popup_visible = True
             self.popup.evaluate_js("popupShown()")
@@ -1051,15 +1011,9 @@ class Controller:
                     self.full.restore()
                 except Exception:
                     pass
-                try:
-                    self.full.minimize = False
-                except Exception:
-                    pass
-                try:
-                    self.full.on_top = True
-                    self.full.on_top = False
-                except Exception:
-                    pass
+                # topmost-then-not is the reliable "bring to front" on Windows
+                _set_topmost(self.full_hwnd, True)
+                _set_topmost(self.full_hwnd, False)
                 try:
                     self.full.evaluate_js("window.focus();")
                 except Exception:
@@ -1171,11 +1125,26 @@ class Controller:
             return False
 
         def on_full_shown():
+            self.full_hwnd = self._native_hwnd(self.full)
             self.refresh_full()
 
+        def on_popup_shown():
+            # Runs on the UI thread, which is the only place reading the
+            # form's Handle is free of cross-thread traffic. `hidden=True`
+            # windows still fire this once, during creation.
+            self.popup_hwnd = self._native_hwnd(self.popup)
+
         self.popup.events.closing += on_popup_closing
+        self.popup.events.shown += on_popup_shown
         self.full.events.closing += on_full_closing
         self.full.events.shown += on_full_shown
+
+    @staticmethod
+    def _native_hwnd(window):
+        try:
+            return int(window.native.Handle.ToInt64())
+        except Exception:
+            return 0
 
     def build_tray(self):
         """The notification-area icon, with the menu Trailmark draws itself.

@@ -394,37 +394,42 @@ const byId=i=>state.topics.find(t=>t.id===i);
 const openTopics=()=>state.topics.filter(t=>t.status==="open");
 const fmtTime=iso=>{if(!iso)return"";const d=new Date(iso);return d.toLocaleString(undefined,{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});};
 
-// Called from Python via evaluate_js("clipboardToast(...)") when the Ctrl+Alt+V
-// hotkey auto-detects and logs a clipboard source. Deliberately its own .cbtoast
-// element, not the plain toast() above - see report for why. `tid` is a 4th
-// argument beyond the original 3-arg contract; see the handback in the report.
+// Ctrl+Alt+V. Python parks what it read off the clipboard and calls this;
+// the popup pulls it over the bridge and attaches it as a pending source -
+// the same chips the paste buttons produce. Nothing is logged until the
+// user writes the point: the hotkey fills the form, it does not file.
 const CB_ICONS={
   link:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-1 1"/><path d="M12 8a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l1-1"/></svg>',
   image:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="9" r="1.2"/><path d="M17 13l-4-4-7 7"/></svg>',
   text:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h12M4 9h12M4 13h8"/></svg>'
 };
-function clipboardToast(kind,detailText,entryId,tid){
+async function clipboardCaptured(){
+  let d=null;
+  try{d=await api.take_clipboard_capture();}catch(e){d=null;}
+  if(!d||d.error){cbToast("error","Couldn't read the clipboard.");return;}
+  let detail="";
+  if(d.type==="image"){pImages.push({value:d.value,source:"paste"});detail="Image attached as a source.";}
+  else if(d.type==="link"){if(!pLinks.includes(d.value))pLinks.push(d.value);detail=d.value;}
+  else if(d.type==="text"){pStrings.push(d.value);detail=d.value.slice(0,120)+(d.value.length>120?"…":"");}
+  else{cbToast("error","Clipboard is empty.");return;}
+  renderAtt();
+  cbToast(d.type,detail);
+  const el=$("#ptText");if(el)el.focus();
+}
+// Its own .cbtoast element rather than toast(): it carries an icon for the
+// detected kind and the (untrusted) clipboard excerpt as textContent.
+function cbToast(kind,detailText){
   const d=document.createElement("div");
   d.className="cbtoast fade";
-  const headline=kind==="error"?"Couldn't log from clipboard":"Logged from clipboard";
+  const headline=kind==="error"?"Nothing to attach":"Attached from clipboard — write the point, then log";
   d.innerHTML=`<div class="row1"><div class="ic">${CB_ICONS[kind]||CB_ICONS.text}</div>
-    <div class="txt"><b>${headline}</b><span></span></div>
-    ${entryId==null?"":'<button class="undo" type="button">Undo</button>'}</div>
+    <div class="txt"><b>${headline}</b><span></span></div></div>
     <div class="prog"><i></i></div>`;
-  d.querySelector(".txt span").textContent=detailText; // untrusted, pre-formatted - textContent only
+  d.querySelector(".txt span").textContent=detailText;
   document.getElementById("toasts").appendChild(d);
   const bar=d.querySelector(".prog i");
   requestAnimationFrame(()=>{bar.style.width="0%";});
-  function dismiss(){d.classList.add("out");setTimeout(()=>d.remove(),280);}
-  const timer=setTimeout(dismiss,4000);
-  const undoBtn=d.querySelector(".undo");
-  if(undoBtn) undoBtn.addEventListener("click",async()=>{
-    clearTimeout(timer);
-    const r=await api.delete_entry(tid,entryId);
-    if(r&&r.error){toast(r.error,"err");return;}
-    state=r;renderMode();
-    dismiss();
-  });
+  setTimeout(()=>{d.classList.add("out");setTimeout(()=>d.remove(),280);},4000);
 }
 
 function renderMode(){
@@ -583,9 +588,9 @@ function boot(){
     state=r;
     const cfg=r.config||{};
     applyTheme((cfg.appearance||{}).theme||"system");
-    const mods=cfg.hotkey&&cfg.hotkey.modifiers||["ctrl","alt"];
-    const key=cfg.hotkey&&cfg.hotkey.key||"P";
-    $("#hkLabel").textContent=mods.map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+key+" toggles";
+    const combo=h=>(h.modifiers||["ctrl","alt"]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+(h.key||"P");
+    const cb=cfg.clipboard||{};
+    $("#hkLabel").textContent=combo(cfg.hotkey||{})+" toggles"+(cb.enabled?" · "+combo({modifiers:cb.modifiers,key:cb.key||"V"})+" attaches the clipboard":"");
     $("#liveDot").hidden=r.topics.filter(t=>t.status==="open").length===0;
     renderMode();
     setTimeout(()=>{const el=$("#ptText");if(el)el.focus();},150);
@@ -937,38 +942,6 @@ const toast=(m,t="ok")=>{const d=document.createElement("div");d.className="toas
 const byId=i=>state.topics.find(t=>t.id===i);
 const escTop=s=>esc(s).replace(/\\n/g,"<br>");
 
-// Called from Python via evaluate_js("clipboardToast(...)") when the Ctrl+Alt+V
-// hotkey auto-detects and logs a clipboard source. Deliberately its own .cbtoast
-// element, not the plain toast() above - see report for why. `tid` is a 4th
-// argument beyond the original 3-arg contract; see the handback in the report.
-const CB_ICONS={
-  link:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-1 1"/><path d="M12 8a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l1-1"/></svg>',
-  image:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="9" r="1.2"/><path d="M17 13l-4-4-7 7"/></svg>',
-  text:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h12M4 9h12M4 13h8"/></svg>'
-};
-function clipboardToast(kind,detailText,entryId,tid){
-  const d=document.createElement("div");
-  d.className="cbtoast fade";
-  const headline=kind==="error"?"Couldn't log from clipboard":"Logged from clipboard";
-  d.innerHTML=`<div class="row1"><div class="ic">${CB_ICONS[kind]||CB_ICONS.text}</div>
-    <div class="txt"><b>${headline}</b><span></span></div>
-    ${entryId==null?"":'<button class="undo" type="button">Undo</button>'}</div>
-    <div class="prog"><i></i></div>`;
-  d.querySelector(".txt span").textContent=detailText; // untrusted, pre-formatted - textContent only
-  document.getElementById("toasts").appendChild(d);
-  const bar=d.querySelector(".prog i");
-  requestAnimationFrame(()=>{bar.style.width="0%";});
-  function dismiss(){d.classList.add("out");setTimeout(()=>d.remove(),280);}
-  const timer=setTimeout(dismiss,4000);
-  const undoBtn=d.querySelector(".undo");
-  if(undoBtn) undoBtn.addEventListener("click",async()=>{
-    clearTimeout(timer);
-    const r=await api.delete_entry(tid,entryId);
-    if(r&&r.error){toast(r.error,"err");return;}
-    state=r;render();
-    dismiss();
-  });
-}
 function fmt(iso){if(!iso)return"—";const d=new Date(iso);return d.toLocaleString(undefined,{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}
 function fmtT(iso){if(!iso)return"";const d=new Date(iso);return d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});}
 function copyText(t){navigator.clipboard&&navigator.clipboard.writeText(t).then(()=>toast("Copied."),()=>legacyCopy(t)).catch(()=>legacyCopy(t));}
@@ -2014,7 +1987,7 @@ function settingsHtml(){
     </div>
     <div class="card glass fade">
       <div class="card-h"><div class="card-t">Log clipboard</div></div>
-      <p class="muted">Detects image, link or text and logs it to the current topic.</p>
+      <p class="muted">Opens quick capture with the clipboard attached — an image, a link or text is detected and added as a source. You write the point and log it.</p>
       <div class="row" style="align-items:center;gap:8px">
         <span class="key">Ctrl</span><span class="plus">+</span><span class="key">Alt</span><span class="plus">+</span><span class="key">V</span>
         <button class="sw ${cb.enabled?"on":""}" id="cbSw" type="button" role="switch" aria-checked="${cb.enabled?"true":"false"}" aria-label="Enable clipboard hotkey" style="margin-left:auto"><span class="kn"></span></button>

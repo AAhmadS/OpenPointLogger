@@ -15,10 +15,9 @@ FMT = "%Y-%m-%dT%H:%M:%S"
 
 DEFAULT_CONFIG = {
     "hotkey": {"modifiers": ["ctrl", "alt"], "key": "P"},
-    # Off by default: unlike the capture hotkey, this one has a side effect
-    # (reading the clipboard and filing a new entry) the moment it fires, so
-    # it is opt-in rather than something every install starts doing silently.
-    "clipboard": {"enabled": False, "modifiers": ["ctrl", "alt"], "key": "V"},
+    # On by default - the owner asked for this combo specifically. It only
+    # fires on an explicit three-key chord, and Settings turns it off.
+    "clipboard": {"enabled": True, "modifiers": ["ctrl", "alt"], "key": "V"},
     "llm": {
         "enabled": False,
         "provider": "openrouter",
