@@ -311,7 +311,7 @@ def _multipart_body(fields, files):
 def transcribe(cfg, wav_bytes):
     """POST wav_bytes to <endpoint>/audio/transcriptions. Pure function, no device access.
 
-    cfg keys: endpoint (default "https://api.openai.com/v1", trailing slash
+    cfg keys: endpoint (default "https://openrouter.ai/api/v1", trailing slash
     stripped), model (default "whisper-1"), api_key, language (sent only if
     truthy). Works unmodified against any provider that speaks the same
     OpenAI-shaped multipart contract (e.g. Groq's
@@ -322,7 +322,7 @@ def transcribe(cfg, wav_bytes):
     HTTPError/generic-exception handling shape. The API key is never
     included in a returned error string.
     """
-    endpoint = (cfg.get("endpoint") or "https://api.openai.com/v1").strip().rstrip("/")
+    endpoint = (cfg.get("endpoint") or "https://openrouter.ai/api/v1").strip().rstrip("/")
     model = (cfg.get("model") or "").strip() or "whisper-1"
     api_key = (cfg.get("api_key") or "").strip()
     language = (cfg.get("language") or "").strip()

@@ -1,145 +1,283 @@
 slice: platform-expansion
 report_ref: .claude/PROJECT_STATE.md#T17
 spec_ref: .claude/PRODUCT_SPEC.md
+answered: 2026-09-22
+answered_by: owner
+answer_note: >
+  The owner answered the 20-question set on 2026-09-22 in the session transcript.
+  Decisions are recorded below as `pass` with the answer in `evidence`. Questions the
+  owner explicitly deferred to pre-shipping stay `unmeasured` - that is the legal
+  terminal state per ~/.claude/rules/build-protocol.md and it is NOT a claim of
+  progress. Nothing here was inferred: an answer the owner did not give is marked
+  not established, never filled in from the `recommended:` line.
+
 gates:
   - id: G0.4
     name: page/surface matrix accepted
-    status: unmeasured
+    status: pass
     kind: human
-    owner: null
-    evidence: ""
+    owner: owner
+    evidence: >
+      Owner 2026-09-22, answer 14: "for now linux and ios should be held (we focus on
+      telegram, desktop, and android). But yes, plan sounds." Surface inventory in
+      PRODUCT_SPEC.md §4 accepted, with two amendments:
+      (a) V1 targets are Windows desktop, Android, Telegram, website. iOS (§4 6 screens)
+      and Linux (§4 10 screens) are HELD - not cut, not scheduled.
+      (b) Website scope narrowed by answer 13 - see gate website-scope below.
     question: >
-      Do you accept the V1 surface inventory in .claude/PRODUCT_SPEC.md §4 — Windows 10,
-      Linux 10, Android 6, iOS 6, website 12, Telegram 7 — including the cuts listed in §4.7
-      (/pricing folded into /#pricing, /docs later, /topics/[id] later, no /signup,
-      /reset-password or /verify under passwordless auth, /admin and /settings/team later),
+      Do you accept the V1 surface inventory in .claude/PRODUCT_SPEC.md §4 - Windows 10,
+      Linux 10, Android 6, iOS 6, website 12, Telegram 7 - including the cuts listed in §4.7
       and the four matrix-shaping calls it makes (passwordless auth, desktop-hosted Telegram
       bot in V1, no export on mobile in V1, Free never needs an account)?
-    recommended: >
-      Accept as drafted; overrule any single cut or call by naming it, and the spec is
-      amended before stage 1 starts (PRODUCT_SPEC.md §9, decisions D-6, D-7, D-8, D-11, D-12).
     note: >
-      PRODUCT_SPEC.md now exists (stage 0 draft). It cannot be marked pass until the owner
-      accepts the surface inventory across all six targets. The open questions that blocked
-      even a draft (what Pro/Plus include; whether a backend is needed) are answered in the
-      spec as labelled RECOMMENDATIONS, not as facts; the gates below carry each one.
+      The four matrix-shaping calls were accepted implicitly with "plan sounds" and were
+      not individually contested. "Free never needs an account" is additionally covered by
+      business-decision-plans, which the owner deferred - if that deferral later changes the
+      answer, this gate is re-opened, not patched.
+
+  - id: website-scope
+    name: website surface redefined
+    status: pass
+    kind: human
+    owner: owner
+    evidence: >
+      Owner 2026-09-22, answer 13: "on website, people will only have account and a history
+      and trajectory of their tasks. We will provide them with a dashboard."
+      The website is therefore NOT a capture surface in V1. In scope: marketing landing,
+      auth, dashboard (history + trajectory of topics), account/billing settings, terms,
+      privacy. Out of scope: /capture, and with it the "web capture inbox" that
+      PRODUCT_SPEC.md §5.2 listed under Pro.
+    question: superseded - this gate records an answer the original question set did not anticipate.
+    assumption: >
+      "trajectory" is read as the time-course of a topic: how a topic accumulated points,
+      when it opened and closed, and how it progressed - i.e. a per-topic timeline plus
+      cross-topic activity over time. NOT established as the owner's exact meaning; it is
+      the reading PRODUCT_SPEC.md §4 will be amended to, and it is cheap to correct.
+    note: >
+      This also retires the "PWA bridge on Android first" half of mobile-framework-choice:
+      there is no web capture page left to wrap.
+
   - id: G2.5
     name: design direction accepted
-    status: unmeasured
+    status: n/a
     kind: human
-    owner: null
-    evidence: ""
+    owner: owner
+    evidence: >
+      n/a by the owner's standing working agreement (~/.claude/CLAUDE.md): "Don't ask me to
+      arbitrate a visual or aesthetic direction: derive it from whatever material exists,
+      commit, and state the reasoning in a line or two so I can push back cheaply."
+      Direction is therefore derived from the existing "Trailmark Design System" Claude
+      Design project (tokens, components, and the app/ + platform/ pages already drafted
+      there) and committed by the agent; the owner reviews the pages post-hoc in that tool.
     question: >
-      Once G0.4 is accepted, may the new surfaces (desktop W8–W10, mobile M1–M6, website
-      S1–S12, Telegram T1–T7 as numbered in PRODUCT_SPEC.md §4) be drafted as pages in the
-      "Trailmark Design System" Claude Design project, and will you review them there before
-      any implementation?
-    recommended: >
-      Yes, after G0.4 and before T18–T24; draft the website landing and the mobile Capture
-      screen first because they fix the visual language every other surface inherits
-      (PRODUCT_SPEC.md §9, D-13).
+      (Original) may the new surfaces be drafted as pages in the design project, and will
+      you review them there before implementation?
     note: >
-      No design pages exist yet in the "Trailmark Design System" project in the separate
-      Claude Design tool (its URL is the one the owner gave in their request; a design-tool
-      project URL, not a repo commit) for accounts/profile, plan picker, or any mobile screen.
-      Owner's stated rule is design-first for new surfaces; this gate cannot be resolved before
-      those pages are drafted and reviewed.
+      n/a is a decision, not a fact, and is not interchangeable with unmeasured. The gate is
+      not being skipped - it is delegated, in writing, by a standing instruction.
+
   - id: business-decision-plans
-    name: Pro/Plus tier contents defined
+    name: Pro/Plus tier contents, caps, account rules, iOS purchase route
     status: unmeasured
     kind: human
-    owner: null
-    evidence: ""
+    owner: owner
+    deferred_to: pre-ship
+    evidence: >
+      Owner 2026-09-22, answers 2-5: "for now we do not focus on their differences. Keep
+      this question as something we need to answer pre-shipping" (and the same for the
+      usage cap, the Free-account rule, and the iOS purchase route).
+      DECIDED: the Pro price is $5 per month (answer 1).
+      NOT ESTABLISHED: what Free vs Pro vs Plus each include; whether there is a usage cap
+      on any hosted AI feature and what it is; whether Free users must ever create an
+      account; whether iOS sells Pro via in-app purchase or web-only checkout.
     question: >
-      What does Free include, what does Pro at $5 include (and is the $5 per month?), what
-      will Plus include, is there a usage cap on any hosted AI feature, must Free users ever
-      create an account, and does the iOS app sell Pro through in-app purchase or web only?
-    recommended: >
-      Free = everything the desktop does today, local, BYO keys, no account; Pro = $5/month
-      (assumed period) for accounts + sync + Android/iOS + web capture inbox + a hosted AI
-      polish/summary quota (cap not established); Plus = hosted ASR + team sharing, later.
-      Web-only checkout in V1. Alternatives A1–A4 in PRODUCT_SPEC.md §5.3; decisions D-1,
-      D-9, D-11.
-    note: "What does Pro ($5) include that Free does not? What is Plus (\"coming soon\")? Not answered anywhere in the backlog text or repo. A recommended split now exists in PRODUCT_SPEC.md §5.2, labelled as a recommendation."
+      What does Free include, what does Pro at $5/month include, what will Plus include,
+      is there a usage cap on any hosted AI feature, must Free users ever create an account,
+      and does the iOS app sell Pro through in-app purchase or web only?
+    blocks: [T19, T20]
+    note: >
+      The hosted-AI monthly cap was moved here from business-decision-hosted-provider: the
+      provider is a technical choice and is now decided, the cap is a pricing choice and is
+      not. iOS purchase route is doubly moot while iOS is held (G0.4).
+
   - id: business-decision-hosted-provider
     name: hosted LLM/ASR provider for non-BYO-key tiers chosen
-    status: unmeasured
+    status: pass
     kind: human
-    owner: null
-    evidence: ""
+    owner: owner
+    evidence: >
+      Owner 2026-09-22, answers 7-8. LLM: OpenRouter with deepseek/deepseek-v4-flash -
+      the default the app already ships (point_store.py PROVIDERS), behind a server-held
+      key for Pro users who bring no key of their own. ASR: "local ASR should be compatible,
+      openai is good, but for now we will default use openrouter and whisper" - so
+      OpenRouter + whisper-1, with OpenAI-direct remaining a supported endpoint.
+      Applied in code the same day: point_store.py DEFAULT_CONFIG.asr.endpoint and
+      asr.py's fallback are now https://openrouter.ai/api/v1 (model whisper-1);
+      ui.py's endpoint placeholder follows.
+      Verified, not assumed: OpenRouter launched /api/v1/audio/transcriptions in July 2026
+      and it accepts OpenAI-style multipart/form-data, which is the exact request shape
+      asr.py already builds - so this is a base-URL change, not a client rewrite.
+      Source: https://openrouter.ai/blog/announcements/announcing-audio-apis/ and
+      https://openrouter.ai/docs/guides/overview/multimodal/stt (read 2026-09-22 via search
+      summary; openrouter.ai could not be fetched directly from this network).
     question: >
       Which LLM provider and model should Trailmark call, with a server-held key, for Pro
-      users who do not bring their own key, and at what monthly cap per user? And which ASR
-      provider for the Plus auto-transcription mode?
-    recommended: >
-      LLM: reuse the default the app already ships (OpenRouter with deepseek/deepseek-v4-flash,
-      the PROVIDERS default in point_store.py) behind a server-held key; set the cap from the
-      provider's per-token price — the number is yours to state. ASR: not established; no
-      ASR code exists yet (T12–T14), decide it with the D3 design pass (PRODUCT_SPEC.md §9,
-      D-2, D-3).
-    note: "T20 in PROJECT_STATE.md depends on this. No provider or usage-cap decision has been made."
+      users who do not bring their own key? And which ASR provider for hosted transcription?
+    note: >
+      The per-user monthly cap that used to share this gate now lives in
+      business-decision-plans, deferred to pre-ship. No cap is implied by this pass.
+
   - id: business-decision-sync-backend
     name: accounts/sync backend architecture chosen
-    status: unmeasured
+    status: pass
     kind: human
-    owner: null
-    evidence: ""
+    owner: owner
+    evidence: >
+      Owner 2026-09-22, answers 9-11. Architecture: managed BaaS (Supabase-style Postgres +
+      auth + storage). Sync data model: the local-first op log (last-write-wins +
+      tombstones) recommended in PRODUCT_SPEC.md §6 sits on top, so the desktop's
+      points.json stays the source of truth and the Free tier needs no server.
+      Screenshots/attachments DO sync; exports do NOT (regenerable).
+      NOT ESTABLISHED: region / data residency - owner answered "not important for now"
+      (answer 10), which defers the choice; it does not select one.
     question: >
-      Managed BaaS (Supabase-style Postgres + auth + storage), a self-hosted FastAPI +
-      Postgres + S3 monolith, or a local-first per-device op log — and which region, whether
-      screenshots sync in V1, and whether exports sync?
-    recommended: >
-      Managed BaaS for hosting with the local-first op log (LWW + tombstones) as the sync data
-      model on top, so the desktop's points.json stays the source of truth and the Free tier
-      needs no server; sync text and attachments, do not sync exports (regenerable); region
-      not established (PRODUCT_SPEC.md §6, decisions D-4, D-16).
-    note: "The current app has zero backend/server code. Multi-device sync and accounts require standing up one; the stack (managed vs self-hosted, which cloud) is undecided. Three options with trade-offs are in PRODUCT_SPEC.md §6."
+      Managed BaaS, self-hosted FastAPI + Postgres + S3, or a local-first per-device op log -
+      and which region, whether screenshots sync in V1, and whether exports sync?
+    note: >
+      Region stays unmeasured. It becomes live again before any real user data is stored,
+      and it interacts with the owner's own jurisdiction - see gate go-live.
+
   - id: mobile-framework-choice
     name: Android/iOS implementation approach chosen
+    status: pass
+    kind: human
+    owner: owner
+    evidence: >
+      Owner 2026-09-22, answer 12 ("your recommendation sounds"): React Native + Expo, one
+      codebase - chosen so the mobile app imports the design system's tokens rather than
+      translating them, and so EAS handles signing for a solo developer.
+      Scope amendment, answer 14: iOS is HELD; this decision currently applies to Android
+      only, and stands for iOS whenever it is unheld.
+      Distribution, answer 16: "No, we will publish them locally first" - there is no Google
+      Play and no Apple Developer account. Android V1 ships as a directly-installed APK
+      (Expo/EAS can still build it); store submission is out of scope.
+      The "PWA bridge on Android" half of this question is retired by website-scope: the
+      website has no capture page to wrap.
+    question: React Native + Expo, Flutter, or native Kotlin + Swift?
+    note: >
+      Sideloading has consequences the store path would have handled: no automatic updates,
+      an "unknown sources" prompt for every installer, and self-managed signing keys whose
+      loss means no in-place upgrade path. These are build-time concerns for T21, recorded
+      here so they are not rediscovered late.
+
+  - id: billing-provider-account
+    name: payment provider account and keys supplied
     status: unmeasured
     kind: human
-    owner: null
-    evidence: ""
+    owner: owner
+    deferred_to: pre-ship
+    evidence: >
+      Owner 2026-09-22, answer 6: deferred to pre-shipping. No provider chosen, no account
+      created, no keys supplied. An agent cannot create this account (T19 is human_gate:
+      action).
     question: >
-      React Native with Expo, Flutter, or native Kotlin + Swift for the Android and iOS apps
-      (one decision for both)? And should the website's /capture page ship first as an
-      installable PWA on Android as a bridge?
+      Which payment provider will Trailmark use for Pro ($5/month), and who creates the
+      account and supplies the live/test keys?
+    blocks: [T19]
+    note: >
+      Worth surfacing at decision time, not now: the owner's stated legal name is Chantex
+      and the domain is .ir - payment-provider availability by jurisdiction is a real
+      constraint on this choice and is not established.
+
+  - id: legal-text-terms-privacy
+    name: terms and privacy text
+    status: unmeasured
+    kind: human
+    owner: agent-drafts-owner-accepts
+    evidence: >
+      Owner 2026-09-22, answer 18: "Draft it. Based on the standards." So the drafting is
+      delegated to the agent; acceptance is not. Nothing drafted yet.
+      Supplied by the owner and usable in the text: legal/company name "Chantex" (answer 19),
+      site trailmark.chantex.ir (answer 17).
+    question: Do you accept the drafted terms and privacy text?
+    blocks: [G8.5]
+    note: >
+      Added 2026-09-22 - this is PRODUCT_SPEC.md §9 D-14, which previously had no gate id.
+      A drafted-by-agent legal document is a starting point for a human, not legal advice;
+      the draft will say so where it is uncertain rather than inventing jurisdiction
+      specifics.
+
+  - id: telegram-network-reachability
+    name: api.telegram.org unreachable from the owner's network
+    status: blocked
+    kind: human
+    owner: owner
+    evidence: >
+      MEASURED 2026-09-22 on the owner's machine, literal output:
+        token source: env | length: 46 | value: NEVER PRINTED
+        getMe FAILED (transport): URLError <urlopen error _ssl.c:983: The handshake
+          operation timed out>
+        DNS resolves -> ['10.10.34.36']
+        TCP connect 10.10.34.36:443 FAILED after 5.21s: ConnectionRefusedError
+          [WinError 10061] No connection could be made because the target machine
+          actively refused it
+        CONTROL openrouter.ai:443 TLS OK in 0.39s -> TLSv1.3
+      api.telegram.org resolves to a private RFC1918 address (10.10.34.36) that refuses
+      the connection, while a control host on the same machine completes TLS in 0.39s.
+      That is DNS-level interception, not a fault in telegram_bridge.py.
+      The token itself was NEVER validated - the request never reached Telegram - so
+      whether the .env token is accepted by Telegram is NOT ESTABLISHED.
+    question: >
+      Telegram is one of the three V1 focus platforms but is unreachable from this network.
+      Should telegram_bridge.py grow proxy support (HTTP/SOCKS5, configured in Settings),
+      or will the bridge only ever run behind a system-wide VPN?
     recommended: >
-      React Native + Expo — one codebase, TypeScript is the closest fit to the tokenised
-      HTML/CSS design system so tokens are shared rather than translated, and EAS removes the
-      signing/store-submission chore for a solo developer. Flutter is the credible alternative;
-      native is not recommended at this team size. Yes to the PWA bridge on Android
-      (PRODUCT_SPEC.md §7, decisions D-5, D-10).
-    note: "React Native vs Flutter vs native (per-platform) undecided; affects T21 and T22 jointly, best decided once. Options compared in PRODUCT_SPEC.md §7."
+      Add proxy support to telegram_bridge.py. It is a small change - the module makes every
+      call through one UrllibTransport class using stdlib urllib, so a ProxyHandler opener
+      built from a Settings field covers all of it - and it makes the feature testable on
+      the owner's own machine, which a system VPN does not guarantee.
+    blocks: [T15, T16]
+    note: >
+      Added 2026-09-22 by the main session after the owner authorised a live getMe check
+      (answer 15). The bridge code is complete and unit-tested; it has never once exchanged
+      a packet with Telegram.
+
   - id: G8.5
     name: go-live sign-off
     status: unmeasured
     kind: human
-    owner: null
+    owner: owner
     evidence: ""
     question: >
       Not yet askable. When a slice of the expansion is ready to serve real users, do you
       sign off on going live?
     recommended: >
-      Nothing to recommend yet; two prerequisites already visible are the terms and privacy
-      text (S9, S10) and the billing-provider account (T19), both not established
-      (PRODUCT_SPEC.md §9, D-14, D-15).
-    note: "Not reached. Listed for completeness per the 4 named human gates in build-protocol.md; nothing in this slice is near shipping."
-  - id: billing-provider-account
-    name: payment provider account and keys supplied
-    status: unmeasured
-    kind: human
-    owner: null
-    evidence: ""
-    question: "Which payment provider will Trailmark use for Pro ($5), and who creates the account and supplies the live/test keys? (T19 in PROJECT_STATE.md is human_gate: action — an agent cannot create this.)"
-    recommended: "Not established. Stripe Checkout + Customer Portal is the least code for a solo developer; the owner must create the account. Keys live outside the repo (.env or Settings), never committed."
-    note: "Added by delivery-orchestrator 2026-09-15 on the product-cartographer's D-15 suggestion so T19's action gate travels in a file."
+      Nothing to recommend yet. Visible prerequisites: legal-text-terms-privacy,
+      billing-provider-account, business-decision-plans, the sync region left unmeasured in
+      business-decision-sync-backend, and telegram-network-reachability if Telegram is to
+      work for anyone other than the owner.
+    note: "Not reached."
+
+supplied_facts:
+  domain: trailmark.chantex.ir
+  domain_note: >
+    A subdomain of chantex.ir, which the owner already holds (answer 17). No DNS record,
+    TLS certificate or host has been checked or created - the name is recorded, not verified.
+  legal_name: Chantex
+  legal_name_note: >
+    Owner-supplied (answer 19) for billing and the legal pages. No registry lookup was
+    performed; this is the owner's word, recorded as such.
+  telegram_token: >
+    Present in .env under the misspelled key TELEGROM_BOT, resolved by
+    telegram_bridge.load_token as source "env", 46 characters. Confirmed by the owner as the
+    intended token (answer 15). Value never printed, logged, toasted or committed; .env is
+    gitignored. Its validity against Telegram is unverified - see
+    telegram-network-reachability.
+
 notes: >
-  Every status here is unmeasured, which is the legal default per
-  ~/.claude/rules/stage-gates.yaml and ~/.claude/rules/build-protocol.md — it blocks nothing
-  and is not a claim of progress. This file exists so the human decisions blocking T17-T24 in
-  PROJECT_STATE.md travel as a file, not as prose that gets compressed away up the agent tree.
-  The `question:` and `recommended:` lines were added by product-cartographer on 2026-09-15
-  from the stage-0 draft in .claude/PRODUCT_SPEC.md; they are recommendations, not decisions,
-  and the status of each gate is unchanged. Two decisions in PRODUCT_SPEC.md §9 have no gate
-  id here (D-14 terms/privacy text, D-15 billing-provider account); the lead may add them.
+  Statuses in use here: `pass` = the owner decided it; `n/a` = it does not apply, with a
+  reason; `unmeasured` = not established, which blocks nothing and is never a failure;
+  `blocked` = measured, and the measurement is bad news. An owner answer of "we will decide
+  this before shipping" produces `unmeasured` with `deferred_to: pre-ship`, never `pass` -
+  filling a required field with a plausible answer nobody gave is the exact failure mode
+  ~/.claude/rules/evidence-resolvers.md exists to prevent.

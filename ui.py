@@ -2024,7 +2024,7 @@ function settingsHtml(){
         <button class="sw ${asr.enabled?"on":""}" id="asrSw" type="button" role="switch" aria-checked="${asr.enabled?"true":"false"}" aria-label="Enable auto-log speech as notes" style="flex:none"><span class="kn"></span></button>
       </div>
       <div class="grid3" style="margin-top:12px">
-        <label>Endpoint<input id="asrEndpoint" class="input" placeholder="https://api.openai.com/v1" value="${esc(asr.endpoint||"")}"></label>
+        <label>Endpoint<input id="asrEndpoint" class="input" placeholder="https://openrouter.ai/api/v1" value="${esc(asr.endpoint||"")}"></label>
         <label>Model<input id="asrModel" class="input" placeholder="whisper-1" value="${esc(asr.model||"whisper-1")}"></label>
         <label>Microphone<select id="asrDevice" class="input">${asrDeviceOpts}</select></label>
       </div>

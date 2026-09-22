@@ -4,7 +4,7 @@ project: Trailmark (formerly OpenPointLogger)
 generated: 2026-09-15
 generated_by: project-cartographer
 branch: main
-last_updated: 2026-09-22 by delivery-orchestrator after slice F (772f811), map commit 10b46b9, exe rebuilt + relaunched
+last_updated: 2026-09-22 by main session: owner answered the 20-question decision set; gates resolved, PRODUCT_SPEC amended (§0.1), ASR default moved to OpenRouter, Trailmark.spec un-ignored
 schema_version: 1
 phase: build
 phase_evidence: >
@@ -197,7 +197,7 @@ commit SHA by anyone scanning this report).
 - id: BUILD
   title: "Rebuilt dist/Trailmark.exe from 772f811 (+ committed map 10b46b9), installed to %LOCALAPPDATA%/Programs/Trailmark, relaunched"
   importance: high
-  commit: n/a (build artifact; Trailmark.spec is gitignored by *.spec)
+  commit: n/a (build artifact; Trailmark.spec itself is now tracked - .gitignore carries a !Trailmark.spec exception as of 2026-09-22)
   verified: "PyInstaller 6.22.2 via .venv python, exit 0, hook-sounddevice.py processed, exe 33,853,231 bytes; both Trailmark processes stopped, file copied, SHA256 of dist and installed exe equal; relaunched 2026-09-22 08:45, still alive after 109 s; HotkeyListener.probe reports Ctrl+Alt+P and Ctrl+Alt+V both HELD by another process (the running app). Not exercised by hand: voice logging and Telegram polling against live services from the packaged exe."
 
 ## workstreams.todo
@@ -209,8 +209,8 @@ commit SHA by anyone scanning this report).
   depends_on: []
   agents: [db-lead, backend-lead]
   skills: []
-  human_gate: decision
-  note: "No backend exists today; this is greenfield. Needs the contract-first approach (OpenAPI + DBML) per build-protocol.md section 4."
+  human_gate: none
+  note: "UNBLOCKED 2026-09-22. Backend = managed BaaS (Supabase-style), owner decision; auth, Postgres and object storage come with it, so the greenfield surface is the schema and the sync op log, not a server. Still needs stage 1 first: openapi.yaml + schema.dbml before any endpoint, per build-protocol.md section 4. Region not established - pick at provisioning."
 
 - id: T19
   title: "Billing integration for Free/Pro $5/Plus tiers"
@@ -220,7 +220,8 @@ commit SHA by anyone scanning this report).
   agents: [backend-lead]
   skills: []
   human_gate: action
-  note: "Requires a human to supply a payment-provider account and live keys; an agent cannot create this."
+  status: blocked
+  note: "STILL BLOCKED. Price is fixed at $5/month for Pro (owner, 2026-09-22) but tier contents, the Free-account rule and the payment provider are all deferred to pre-ship; no provider account exists. Gates business-decision-plans + billing-provider-account. Do not build."
 
 - id: T20
   title: "Hosted API-key service for users who don't bring their own key"
@@ -230,47 +231,50 @@ commit SHA by anyone scanning this report).
   agents: [ai-engineering-lead, backend-lead]
   skills: []
   human_gate: decision
-  note: "Requires choosing which LLM/ASR provider Trailmark resells access to, and at what usage cap per tier — a cost/business decision, not a technical one."
+  status: blocked
+  note: "PARTLY RESOLVED. Provider is decided: OpenRouter, deepseek/deepseek-v4-flash for LLM and whisper-1 for ASR (owner, 2026-09-22; already the shipped defaults). The usage cap per tier is deferred to pre-ship, and that is the number the service is built around, so this stays blocked."
 
 - id: T21
-  title: "Android app"
+  title: "Android app (React Native + Expo, sideloaded APK)"
   importance: medium
-  force: later
+  force: scheduled
   depends_on: [T18]
   agents: [frontend-lead]
   skills: []
-  human_gate: decision
-  note: "No mobile code, spec, or framework choice exists yet (React Native / Flutter / native unresolved)."
+  human_gate: none
+  note: "Framework decided 2026-09-22: React Native + Expo (owner accepted the recommendation). Distribution is a directly-installed APK - the owner has no Play developer account and will publish locally first, so no store listing, no store review, and in-app purchase is not available on this route. Blocked only on the stage-1 contract."
 
 - id: T22
   title: "iOS app"
   importance: medium
-  force: later
-  depends_on: [T18]
+  force: held
+  status: held
+  depends_on: [T18, T21]
   agents: [frontend-lead]
   skills: []
   human_gate: decision
-  note: "Same framework decision as T21 should be made once, jointly."
+  note: "HELD by owner 2026-09-22 (\"for now linux and ios should be held\"). Parked, not cut. When it resumes it inherits T21's React Native + Expo codebase, but needs an Apple Developer account (none exists) and an answer on the purchase route, both deferred. Do not start."
 
 - id: T23
   title: "Linux desktop build"
   importance: low
-  force: later
+  force: held
+  status: held
   depends_on: []
   agents: [python-engineer]
   skills: []
   human_gate: none
-  note: "pywebview supports a GTK/Qt backend on Linux; PyInstaller packaging (currently Windows-only Trailmark.spec) would need a Linux spec. Lower cost than mobile since the codebase is already Python/pywebview."
+  note: "HELD by owner 2026-09-22. Technically the cheapest surface left (pywebview has a GTK/Qt backend; it needs a Linux PyInstaller spec and a non-Win32 hotkey path), but out of scope for V1. Do not start."
 
 - id: T24
-  title: "Marketing/product website"
+  title: "Website: landing, auth, and the history/trajectory dashboard"
   importance: medium
-  force: later
-  depends_on: []
+  force: scheduled
+  depends_on: [T18]
   agents: [frontend-lead]
   skills: []
   human_gate: review
-  note: "Stage-0 bucket A (acquisition/marketing) per build-protocol.md; can proceed in parallel with mobile once T17's product spec exists."
+  note: "RESCOPED 2026-09-22. The owner: \"on website, people will only have account and a history and trajectory of their tasks. We will provide them with a dashboard.\" So: buckets A (landing/pricing), B (auth), C-read-only (dashboard: history + trajectory of topics), D (account/billing), E (terms/privacy). NO capture surface on the web - no /capture, no web quick-log, no PWA capture bridge. Capture stays desktop + Android + Telegram. \"Trajectory\" is read as how a topic developed over time (points per topic over time, movement between categories); that reading is an assumption flagged in PRODUCT_SPEC.md section 0.1, not an owner statement."
 
 ## challenges
 
@@ -292,7 +296,12 @@ commit SHA by anyone scanning this report).
 - id: C3
   risk: "Platform-expansion slice (T17-T24) has no backend, no chosen mobile framework, and no billing decision — starting implementation before the human decisions in T17/T18/T19/T20 land wastes the largest amount of work in this backlog"
   severity: High
-  mitigation: "Do not let builder-lead schedule T18-T24 until the human_gate: decision items on T17/T18/T20 and the human_gate: action item on T19 are explicitly resolved; keep them as blocked in the report until then."
+  mitigation: "PARTLY DISCHARGED 2026-09-22. T18, T21 and T24 are released for work once the stage-1 contract exists; T22 and T23 are held by the owner; T19 and T20 stay blocked on the deferred business decisions. The rule survives for those two: do not let a lead schedule billing or hosted-key work until business-decision-plans and billing-provider-account leave unmeasured."
+
+- id: C6
+  risk: "api.telegram.org is unreachable from the owner's network - DNS returns the private address 10.10.34.36 and the TCP connect is actively refused (WinError 10061) after 5.21 s, while a control host completed TLS in 0.39 s on the same machine. T15/T16 are committed and unit-tested but have NEVER exchanged a packet with Telegram, and the .env token has therefore never been validated."
+  severity: High
+  mitigation: "Add proxy support to telegram_bridge.py: every outbound call goes through one UrllibTransport class on stdlib urllib, so a ProxyHandler-built opener fed from a Settings field covers the whole module. Alternative is a system-wide VPN, which needs no code but is outside the app. Owner decision recorded as gate telegram-network-reachability. Until then, no Telegram claim may be reported as working - only as unit-tested."
 
 - id: C4
   risk: "ASR mode introduces a new class of always-listening background behavior with privacy/consent implications the owner hasn't specified"
@@ -324,6 +333,7 @@ commit SHA by anyone scanning this report).
 - step: T17 platform-expansion product decision
   why: "Business questions (Pro tier contents, hosted-provider choice, sync backend architecture) are commercial calls the repo cannot answer; this is stage-0 build-protocol gate G0.4"
   kind: decision
+  status: "ANSWERED 2026-09-22 in part. G0.4 accepted; hosted provider, sync backend, mobile framework, surface matrix and website scope all decided. Tier contents, usage cap, Free-account rule, iOS purchase route and payment provider deferred to pre-ship - those remain open and keep T19/T20 blocked."
 
 - step: D5 platform design direction
   why: "Build-protocol gate G2.5 (design direction accepted) is a named human gate, not delegable"
@@ -340,6 +350,15 @@ commit SHA by anyone scanning this report).
 - step: T21/T22 mobile framework choice
   why: "React Native vs. Flutter vs. native affects both apps; a one-time architecture decision best made by the owner or escalated once, not decided twice independently"
   kind: decision
+  status: "RESOLVED 2026-09-22: React Native + Expo, distributed as a sideloaded APK. iOS held."
+
+- step: Telegram network reachability
+  why: "api.telegram.org is intercepted on the owner's network (measured). Whether Trailmark grows a proxy setting or the owner runs a VPN is the owner's call; only they know the network"
+  kind: decision
+
+- step: Terms of service and privacy policy
+  why: "Agent drafts to standards for Chantex / trailmark.chantex.ir, but publishing legal text binding a real company is the owner's signature, not an agent's"
+  kind: review
 
 ## agent_skill_matrix
 
@@ -364,8 +383,56 @@ commit SHA by anyone scanning this report).
 - when: "Anything touching the .env Telegram token or billing keys"
   agent_or_skill: "security-lead review before merge, regardless of posture"
 
+## owner_decisions_2026_09_22
+
+The owner answered the open-decision set. Full record with statuses:
+`.claude/gates/platform-expansion.yaml`; spec amendments: `.claude/PRODUCT_SPEC.md` §0.1.
+Summary of what changed for planning:
+
+- **V1 targets are desktop + Android + Telegram + website.** iOS (T22) and Linux (T23) are
+  HELD — parked by the owner, not cut, not scheduled.
+- **Website is not a capture surface.** It is: marketing landing, auth, dashboard showing
+  history + trajectory of topics, account/billing, terms, privacy. This removes the web
+  capture inbox and the Android-PWA bridge from the plan.
+- **Sync = managed BaaS** (Supabase-style) with a local-first op log as the data model.
+  Screenshots sync; exports do not. Region: still not established.
+- **Mobile = React Native + Expo**, distributed as a directly-installed APK — the owner has
+  no Play or Apple developer account and will "publish locally first".
+- **Hosted AI = OpenRouter** for both LLM (`deepseek/deepseek-v4-flash`) and ASR
+  (`whisper-1`). Applied in code the same day.
+- **Deferred to pre-ship, still `unmeasured`:** tier contents, hosted-AI usage cap, whether
+  Free ever needs an account, iOS purchase route, payment provider. These keep T19 and T20
+  blocked. Only the $5/month price is fixed.
+- **Supplied:** domain `trailmark.chantex.ir`, legal name `Chantex`, `.env` token confirmed.
+- **Terms + privacy:** agent drafts to standards, owner accepts (new gate).
+
+### New blocker — Telegram unreachable from the owner's network
+
+Measured 2026-09-22 with the owner's authorisation: `api.telegram.org` resolves to
+`10.10.34.36`, a private address that refuses the connection; a control host completed TLS in
+0.39 s on the same machine. DNS-level interception, not a code fault. **The `.env` token was
+never validated — the request never reached Telegram.** T15/T16 are committed and unit-tested
+but have never exchanged a packet with Telegram. Gate `telegram-network-reachability`
+(status `blocked`) carries the decision: add proxy support to `telegram_bridge.py`, or rely
+on a system-wide VPN. Recommended: proxy support — every call goes through one
+`UrllibTransport` class on stdlib urllib, so a `ProxyHandler` opener fed from a Settings
+field covers the whole module.
+
 ## recommended_next
 
 2. Owner review of the design pages written this run (app/categories-templates, clipboard-capture, asr-mode, telegram-bridge; platform/account-profile, plan-picker, mobile-capture-topics, website-landing) - post-hoc per the working agreement
 3. Small follow-ups surfaced by qa: category-create double-submit guard, unsaved-rename discard, template_demo ignoring scientific-mode style, ASR device index 0 / Test-5-seconds using saved config, Unpair danger-ghost class; a sweep-sized batch
-4. T18-T24 only after the owner answers the questions in .claude/gates/platform-expansion.yaml (do not build)
+4. Telegram proxy support in telegram_bridge.py — the one thing standing between a
+   finished, tested bridge and a bridge that works for the owner. Blocked on the owner
+   choosing proxy-vs-VPN (gate telegram-network-reachability)
+5. STAGE 1 — contract-first, now UNBLOCKED for the V1 targets: openapi.yaml (OpenAPI 3.1) +
+   schema.dbml covering accounts/auth, the local-first op-log sync, and the dashboard read
+   model. Per build-protocol.md §4 this is what lets backend, website and Android proceed as
+   concurrent heads instead of a serial chain. Scope it to what the decided gates cover —
+   NOT billing, NOT hosted-key issuance
+6. T18 (accounts + auth on managed BaaS) and T24 (website: landing, auth, dashboard) after
+   stage 1; T21 (Android, RN+Expo, APK distribution) after the contract exists
+7. Terms + privacy draft (gate legal-text-terms-privacy) — agent drafts, owner accepts
+8. STILL BLOCKED, do not build: T19 (billing) and T20 (hosted keys) pending
+   business-decision-plans + billing-provider-account; T22 (iOS) and T23 (Linux) HELD by
+   owner decision

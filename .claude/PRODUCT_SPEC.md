@@ -6,8 +6,9 @@ workstream: T17 (see .claude/PROJECT_STATE.md)
 stage: 0 — product shape
 generated: 2026-09-15
 generated_by: product-cartographer
-status: DRAFT — awaiting owner acceptance (gate G0.4 in .claude/gates/platform-expansion.yaml)
-stage_1_contract: NOT WRITTEN — blocked on the open decisions in §9. No openapi.yaml, no schema.dbml.
+status: ACCEPTED WITH AMENDMENTS 2026-09-22 — see §0.1 (gate G0.4 = pass in .claude/gates/platform-expansion.yaml)
+amended: 2026-09-22
+stage_1_contract: NOT WRITTEN — now unblocked for the V1 targets; see §0.1. No openapi.yaml, no schema.dbml yet.
 schema_version: 1
 ---
 
@@ -29,6 +30,58 @@ schema_version: 1
   - `proposed:<ns>.<name>` — a name reserved for the stage-1 contract. **It resolves to
     nothing yet.** It is written down so every row has a claim to test at stage 1, not as
     evidence that anything exists.
+
+### 0.1 Amendments — owner decisions of 2026-09-22
+
+The owner answered the open-decision set on 2026-09-22. The answers are recorded verbatim,
+with their status, in `.claude/gates/platform-expansion.yaml`. **Where this section conflicts
+with §4–§9 below, this section wins**; the original text is left in place unedited so the
+reasoning that produced it stays readable.
+
+| # | Decision | Effect on this spec |
+|---|---|---|
+| 1 | Pro is **$5 per month** | §5.2 price confirmed |
+| 2–5 | Tier contents, hosted-AI cap, Free-account rule, iOS purchase route — **deferred to pre-ship** | §5.2/§5.3 stay RECOMMENDATIONS; `business-decision-plans` stays `unmeasured` |
+| 6 | Payment provider — **deferred to pre-ship** | T19 still blocked |
+| 7 | Hosted LLM = **OpenRouter + `deepseek/deepseek-v4-flash`** | §5.2 hosted-AI row decided; matches the shipped default |
+| 8 | Hosted ASR = **OpenRouter + `whisper-1`**, OpenAI-direct still supported | applied in code 2026-09-22: `point_store.py` asr default, `asr.py` fallback, `ui.py` placeholder |
+| 9 | Sync = **managed BaaS** (Supabase-style) | §6 option B selected, with §6's local-first op log as the data model on top |
+| 10 | Region — **"not important for now"** | stays **not established**; re-opens before real user data is stored |
+| 11 | **Screenshots sync; exports do not** | §6 confirmed |
+| 12 | Mobile = **React Native + Expo** | §7 recommendation selected |
+| 13 | **Website is not a capture surface** | §4.5 superseded — see below |
+| 14 | **iOS and Linux are HELD**; V1 = desktop + Android + Telegram + website | §4.2 and §4.4 are parked, not cut |
+| 15 | `.env` `TELEGROM_BOT` is the intended token | confirmed; see the reachability finding below |
+| 16 | **No Play Store, no Apple Developer account** — "publish locally first" | Android V1 = directly-installed APK; §4.3 distribution row changes |
+| 17 | Domain = **trailmark.chantex.ir** | §4.5 host fixed (name recorded, DNS/TLS unverified) |
+| 18 | Terms + privacy — **agent drafts to standards, owner accepts** | new gate `legal-text-terms-privacy` |
+| 19 | Legal/company name = **Chantex** | for billing and legal pages |
+| 20 | Un-ignore `Trailmark.spec` | done — `.gitignore` now carries `!Trailmark.spec` |
+
+**§4.5 Website — superseded.** The owner's words: *"on website, people will only have account
+and a history and trajectory of their tasks. We will provide them with a dashboard."* The V1
+website is therefore **marketing landing · auth · dashboard (history + trajectory) ·
+account/billing settings · terms · privacy**. There is **no `/capture` page**, which also
+removes the "web capture inbox" that §5.2 listed under Pro, and retires the Android-PWA
+bridge in §7 (there is nothing left to wrap).
+
+*Assumption, cheap to correct:* "trajectory" is read as the time-course of a topic — when it
+opened and closed, how points accumulated, how it progressed — i.e. a per-topic timeline plus
+cross-topic activity over time. This is an interpretation, not the owner's stated definition.
+
+**New blocker, measured not assumed: Telegram is unreachable from the owner's network.** With
+the owner's authorisation a live `getMe` was attempted on 2026-09-22. `api.telegram.org`
+resolves to `10.10.34.36` — a private address that refuses the connection — while a control
+host completed TLS in 0.39 s on the same machine. That is DNS-level interception, not a fault
+in `telegram_bridge.py`. **The token was never validated, because the request never reached
+Telegram.** Telegram is one of the three V1 focus platforms, so this is tracked as gate
+`telegram-network-reachability` (status `blocked`) and it gates T15/T16 in practice even
+though both are committed and unit-tested.
+
+**What this unblocks.** Stage 1 (OpenAPI 3.1 + DBML) can now start for the V1 targets: the
+surface matrix is accepted, the sync architecture is chosen, and the client list is fixed at
+desktop + Android + website + Telegram. It cannot cover billing (T19) or hosted-key issuance
+(T20) — those still depend on `business-decision-plans` and `billing-provider-account`.
 
 ---
 

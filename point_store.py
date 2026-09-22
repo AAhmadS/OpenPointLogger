@@ -50,7 +50,11 @@ DEFAULT_CONFIG = {
     # opt-in rather than something every install starts doing silently.
     "asr": {
         "enabled": False,
-        "endpoint": "https://api.openai.com/v1",
+        # OpenRouter rather than OpenAI direct, to match the llm section's
+        # default and keep one key for both. Its /audio/transcriptions
+        # endpoint accepts the same OpenAI-style multipart body asr.py
+        # already sends, so pointing the base URL here is the whole change.
+        "endpoint": "https://openrouter.ai/api/v1",
         "model": "whisper-1",
         "api_key": "",
         "language": "",
