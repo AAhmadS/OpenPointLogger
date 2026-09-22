@@ -642,6 +642,9 @@ __BASE_CSS__
 @keyframes asrSpin{to{transform:rotate(360deg)}}
 .tb-chip.logged{color:var(--success)}
 .tb-chip.error{color:var(--danger)}
+.tb-chip.tg-waiting{color:var(--accent)}
+.tb-chip.tg-paired{color:var(--success)}
+.tb-chip.tg-error{color:var(--danger)}
 .tb-chip .check{width:14px;height:14px;flex:none;stroke:var(--success)}
 .tb-btn{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:9px;
   background:transparent;color:var(--content-secondary);cursor:pointer;
@@ -895,6 +898,7 @@ main{overflow-y:auto;padding:22px}
   <header class="topbar">
     <span class="tb-ctx" id="tbCtx"></span>
     <span class="tb-chip" id="asrChip"></span>
+    <span class="tb-chip" id="tgChip"></span>
     <span class="tb-act">
       <button class="tb-btn" id="tbTheme" title="Switch theme"><svg viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2M22 12h-2.2
@@ -1963,7 +1967,8 @@ function settingsHtml(){
   const prov=(state.providers||{});
   const mk=(id,checked,label)=>`<label class="mod"><input type="checkbox" id="${id}" ${checked?"checked":""}> ${label}</label>`;
   const provOpts=Object.keys(prov).map(k=>`<option value="${k}" ${llm.provider===k?"selected":""}>${prov[k].label}</option>`).join("");
-  const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{}, cb=c.clipboard||{}, asr=c.asr||{};
+  const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{}, cb=c.clipboard||{}, asr=c.asr||{}, tg=c.telegram||{};
+  const tgStatus=state.telegramStatus||{state:"off",detail:"",username:"",pairing_code:tg.pairing_code||"",token_source:"none"};
   const asrDevs=state.asrDevices||[];
   const asrDeviceOpts=asrDevs.length?asrDevs.map(d=>`<option value="${esc(d.id)}" ${String(asr.device)===String(d.id)?"selected":""}>${esc(d.name)}</option>`).join(""):`<option value="">Default</option>`;
   const styleOpts=CITE_STYLES.map(x=>`<option value="${x.id}" ${(sci.style||"numeric")===x.id?"selected":""}>${esc(x.label)}</option>`).join("");
@@ -2038,6 +2043,37 @@ function settingsHtml(){
           <b style="display:block;font-size:12.5px;margin-bottom:4px">Voice logging is strictly opt-in.</b>
           <p class="muted" style="margin:0">Trailmark only listens to your own microphone while this switch is on &mdash; never system audio, other apps, or call/loopback audio. Turning it off immediately stops capture. Nothing is recorded to disk; only the transcribed text becomes a logged point.</p>
         </div>
+      </div>
+    </div>
+    <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Telegram bridge</div></div>
+      <p class="muted">Accept points from Telegram via a private bot pairing. Messages arrive as quick captures with the sender as the source.</p>
+      <div class="row" style="align-items:center;gap:8px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Accept points from Telegram</b>
+        </div>
+        <button class="sw ${tg.enabled?"on":""}" id="tgSw" type="button" role="switch" aria-checked="${tg.enabled?"true":"false"}" aria-label="Enable Telegram bridge" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <div style="margin-top:12px;padding:12px;border-radius:var(--r-md);background:var(--surface-sunken);">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">Status: <span id="tgStatusRow">${tgStatus.state==="off"?"Off":tgStatus.state==="waiting"?"Waiting for pairing":tgStatus.state==="paired"?"Paired with @"+esc(tgStatus.username||tg.username||""):tgStatus.state==="error"?"Error: "+esc(tgStatus.detail||""):"Unknown"}</span></div>
+      </div>
+      <div style="margin-top:12px;padding:14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-sunken);">
+        <div style="font-size:11.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--content-muted);margin-bottom:8px">Pairing code</div>
+        <div id="tgPairCode" style="font-size:18px;font-family:var(--font-mono);font-weight:700;letter-spacing:2px;text-align:center;padding:10px;background:var(--surface);border-radius:var(--r-sm);margin-bottom:10px;word-break:break-all">${esc(tg.pairing_code||"")}</div>
+        <div style="display:flex;gap:8px;justify-content:center">
+          <button class="btn ghost sm" id="tgCopyCode">Copy</button>
+          <button class="btn ghost sm" id="tgRegenCode">Regenerate</button>
+        </div>
+        <div style="font-size:11px;color:var(--content-secondary);margin-top:10px;text-align:center;line-height:1.5">Open the Trailmark bot and send <b>/start ${esc(tg.pairing_code||"")}</b></div>
+      </div>
+      <div style="margin-top:12px">
+        <label style="display:flex;flex-direction:column;gap:6px">Bot token<input id="tgToken" class="input" type="password" placeholder="${tg.token_set||tgStatus.token_source==="env"?"Paste a new token to replace":"Paste a bot token from @BotFather"}"></label>
+        ${tg.token_set||tgStatus.token_source==="env"?`<div class="muted" style="margin-top:2px">•••• token set (from ${tgStatus.token_source==="env"?"env":"config"})</div>`:""}
+        <div class="muted" style="margin-top:8px">Loaded from .env or entered here; never leaves this machine. The packaged app does not bundle .env — put it next to Trailmark.exe or in %APPDATA%\\Trailmark.</div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" id="tgSave">Save</button>
+        ${tgStatus.state==="paired"?'<button class="btn ghost" id="tgUnpair" style="background:var(--danger-tint);color:var(--danger);border-color:var(--danger)">Unpair</button>':""}
       </div>
     </div>
     <div class="card glass fade">
@@ -2131,6 +2167,34 @@ function asrState(state,detail){
 }
 window.asrState=asrState;
 
+function telegramState(st,detail){
+  const chip=$("#tgChip");
+  if(chip){
+    chip.classList.remove("show","tg-waiting","tg-paired","tg-error");
+    if(st==="waiting"||st==="paired"||st==="error"){
+      chip.classList.add("show");
+      if(st==="waiting"){chip.classList.add("tg-waiting");chip.innerHTML='<span class="tx"></span>';chip.querySelector(".tx").textContent="Telegram: waiting for pairing";}
+      else if(st==="paired"){chip.classList.add("tg-paired");chip.innerHTML='<span class="tx"></span>';chip.querySelector(".tx").textContent="Telegram: paired"+(detail?(" · "+detail):"");}
+      else if(st==="error"){chip.classList.add("tg-error");chip.innerHTML='<span class="tx"></span>';chip.querySelector(".tx").textContent="Telegram: "+(detail||"error");}
+    }else{
+      chip.innerHTML="";
+    }
+  }
+  const row=$("#tgStatusRow");
+  if(row){
+    let label;
+    if(st==="off")label="Off"; else if(st==="waiting")label="Waiting for pairing";
+    else if(st==="paired")label="Paired with @"+(detail||"");
+    else if(st==="error")label="Error: "+(detail||"");
+    else label=null;
+    if(label!==null) row.textContent=label;
+  }
+  if(st==="off"||st==="waiting"||st==="paired"||st==="error"){
+    state.telegramStatus=Object.assign({},state.telegramStatus||{},{state:st,detail:detail});
+  }
+}
+window.telegramState=telegramState;
+
 function bindSettings(){
   // state.categories is only populated by list_categories() - get_state() never
   // touches it, so on a fresh app load (Settings opened before any export dialog)
@@ -2205,6 +2269,11 @@ function bindSettings(){
   if(!state.asrDevices){
     api.list_asr_devices().then(r=>{state.asrDevices=Array.isArray(r)?r:[];render();}).catch(()=>{state.asrDevices=[];});
   }
+
+  // --- Telegram bridge ---
+  if(!state.telegramStatus){
+    api.telegram_status().then(r=>{state.telegramStatus=r;render();}).catch(()=>{});
+  }
   function asrCfgFromForm(){
     const devEl=$("#asrDevice");
     const devVal=devEl?devEl.value:"";
@@ -2246,6 +2315,50 @@ function bindSettings(){
     const r=await api.test_asr(5);
     if(r&&r.error){out.textContent="";toast(r.error,"err");}
     else out.textContent=(r&&r.text)?r.text:"(no speech detected)";
+  });
+
+  // --- Telegram bridge ---
+  const tgSw=$("#tgSw");
+  if(tgSw) tgSw.addEventListener("click",async()=>{
+    const next=!tgSw.classList.contains("on");
+    tgSw.classList.toggle("on",next);tgSw.setAttribute("aria-checked",next?"true":"false");
+    const r=await api.save_telegram({enabled:next});
+    if(r&&r.error){
+      toast(r.error,"err");
+      tgSw.classList.toggle("on",!next);tgSw.setAttribute("aria-checked",!next?"true":"false");
+      return;
+    }
+    state=r;
+    toast("Telegram bridge "+(next?"enabled.":"disabled."));
+  });
+  const tgSaveBtn=$("#tgSave");
+  if(tgSaveBtn) tgSaveBtn.addEventListener("click",async()=>{
+    const cfg={enabled:$("#tgSw").classList.contains("on")};
+    const tokenVal=$("#tgToken").value.trim();
+    if(tokenVal!=="") cfg.token=tokenVal;
+    const r=await api.save_telegram(cfg);
+    if(r&&r.error)return toast(r.error,"err");
+    state=r;$("#tgToken").value="";render();toast("Telegram settings saved.");
+  });
+  const tgCopyCodeBtn=$("#tgCopyCode");
+  if(tgCopyCodeBtn) tgCopyCodeBtn.addEventListener("click",()=>{
+    const codeEl=$("#tgPairCode");
+    const code=(codeEl?codeEl.textContent:"").trim();
+    if(!code){toast("No pairing code available.","err");return;}
+    copyText(code);
+  });
+  const tgRegenCodeBtn=$("#tgRegenCode");
+  if(tgRegenCodeBtn) tgRegenCodeBtn.addEventListener("click",async()=>{
+    const r=await api.telegram_regenerate_code();
+    if(r&&r.error)return toast(r.error,"err");
+    state=r;render();toast("New pairing code generated.");
+  });
+  const tgUnpairBtn=$("#tgUnpair");
+  if(tgUnpairBtn) tgUnpairBtn.addEventListener("click",async()=>{
+    if(!confirm("Unpair this Telegram account? You will need a new pairing code to reconnect."))return;
+    const r=await api.telegram_unpair();
+    if(r&&r.error)return toast(r.error,"err");
+    state=r;render();toast("Telegram account unpaired.");
   });
 
   // --- scientific mode ---
