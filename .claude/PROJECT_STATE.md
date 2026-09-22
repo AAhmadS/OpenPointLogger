@@ -194,6 +194,24 @@ commit SHA by anyone scanning this report).
   commit: 772f811
   verified: "PM re-ran all 9 tests/test_*.py after the commit (each exit 0, venv python); node --check on both extracted ui.py script blocks exit 0; staged diff scanned for token-shaped literals: 0; viewed shot-telegram-paired.png (card + chip match app/telegram-bridge.html). qa-lead found 1 Critical before commit (transient no_topic/logged pushes were persisted as connection state, hiding Unpair) - fixed and re-verified by builder-lead. Cosmetic leftover: Unpair uses an inline style instead of a .btn.danger-ghost class."
 
+- id: DECISIONS (owner answers of 2026-09-22)
+  title: "Turned the owner's 20 answers into the gate file, the spec amendment and this map; switched hosted ASR to OpenRouter; un-ignored Trailmark.spec; drafted terms + privacy"
+  importance: high
+  commit: 3973a50, af7b738
+  verified: "9/9 tests/test_*.py exit 0 on both commits (test_asr grew a 4th section, 27 checks); node --check on both extracted ui.py script blocks exit 0; staged diffs scanned for token-shaped literals: 0 on both; .claude/gates/platform-expansion.yaml parses under PyYAML with 11 gates. Found and fixed on the second pass: Api.save_asr() held a THIRD copy of the ASR endpoint default still pointing at api.openai.com, so a cleared Settings field silently reverted to OpenAI - now pinned by test. Not verified: nothing was tested against OpenRouter's live /audio/transcriptions endpoint; its existence and OpenAI-compatible multipart shape come from a web-search summary of OpenRouter's docs, not from a request this session made."
+
+- id: LEGAL (drafts)
+  title: "docs/legal/terms.md, privacy.md and README.md - drafted, NOT in force"
+  importance: medium
+  commit: af7b738
+  verified: "Grounded against the tree rather than a template: the 'no telemetry' claim is backed by a grep showing exactly four modules open a network connection (asr.py, citation.py, llm.py, telegram_bridge.py), each gated on a user-supplied credential; the plaintext-key disclosure reflects point_store.py, where state() masks only telegram.token and leaves llm.api_key / asr.api_key unmasked in config.json. Every unestablished fact is an explicit [TO SUPPLY: ...] marker - jurisdiction, forum, address, contacts, retention periods, sync vendor and region, payment provider, all of terms.md section 7. NO LAWYER HAS READ THESE. Gate legal-text-terms-privacy stays unmeasured; drafting was delegated, acceptance was not."
+
+- id: BUILD2
+  title: "Rebuilt dist/Trailmark.exe from af7b738, installed to %LOCALAPPDATA%/Programs/Trailmark, relaunched"
+  importance: high
+  commit: n/a (build artifact)
+  verified: "PyInstaller exit 0 via .venv python; processes stopped, copied, SHA256 of dist and installed exe equal (127BA7F6A7C1D0BF164B1439243E37AAAF19A67A4E58F1CF07848F888A5932B9), 33,853,297 bytes; relaunched 2026-09-22 22:35, both processes alive at the 25 s check; HotkeyListener.probe reports Ctrl+Alt+P and Ctrl+Alt+V both HELD by another process (the running app). An earlier build this session from 3973a50 was installed and then superseded by this one because of the save_asr fix. Not exercised by hand from the packaged exe: voice logging, and Telegram polling - which cannot be exercised at all from this network, see C6."
+
 - id: BUILD
   title: "Rebuilt dist/Trailmark.exe from 772f811 (+ committed map 10b46b9), installed to %LOCALAPPDATA%/Programs/Trailmark, relaunched"
   importance: high
