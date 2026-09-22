@@ -180,7 +180,7 @@ class Api:
         merged = {
             "enabled": bool(cfg.get("enabled")),
             "endpoint": (str(cfg.get("endpoint") or prev.get("endpoint") or "")).strip()
-                        or "https://api.openai.com/v1",
+                        or "https://openrouter.ai/api/v1",
             "model": (str(cfg.get("model") or prev.get("model") or "")).strip() or "whisper-1",
             "api_key": str(cfg.get("api_key")) if cfg.get("api_key") is not None else str(prev.get("api_key") or ""),
             "language": (str(cfg.get("language") or "")).strip(),

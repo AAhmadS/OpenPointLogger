@@ -196,9 +196,20 @@ gates:
     owner: agent-drafts-owner-accepts
     evidence: >
       Owner 2026-09-22, answer 18: "Draft it. Based on the standards." So the drafting is
-      delegated to the agent; acceptance is not. Nothing drafted yet.
-      Supplied by the owner and usable in the text: legal/company name "Chantex" (answer 19),
-      site trailmark.chantex.ir (answer 17).
+      delegated to the agent; acceptance is not.
+      DRAFTED 2026-09-22: docs/legal/terms.md (15 sections), docs/legal/privacy.md
+      (13 sections), docs/legal/README.md explaining what must be filled before publishing.
+      Both carry a NOT IN FORCE banner. Supplied facts used: legal/company name "Chantex"
+      (answer 19), site trailmark.chantex.ir (answer 17), Pro at USD 5/month (answer 1).
+      Grounded in the code rather than a template: the "no telemetry" claim is backed by
+      the fact that only four modules in the tree open a network connection (asr.py,
+      citation.py, llm.py, telegram_bridge.py) and each is off until the user supplies a
+      credential; the plaintext-api_key disclosure in privacy.md §2 reflects
+      point_store.py, where config.json holds llm.api_key and asr.api_key unmasked.
+      Every fact not established is an explicit [TO SUPPLY: ...] marker, not a guess -
+      jurisdiction, forum, registered address, contact addresses, retention periods, the
+      sync vendor and region, the payment provider, and everything in terms.md §7.
+      STATUS STAYS unmeasured: a draft is not an acceptance, and no lawyer has read it.
     question: Do you accept the drafted terms and privacy text?
     blocks: [G8.5]
     note: >

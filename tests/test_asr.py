@@ -237,6 +237,61 @@ t2 = c.store.find_topic(tid)
 entries2 = t2.get("entries", []) if t2 else []
 check("no new entry created once the topic is closed", len(entries2) == 1, len(entries2))
 
+# ---------------------------------------------------------------------------
+# 4. The hosted-ASR default is OpenRouter, in all three places it is written
+# ---------------------------------------------------------------------------
+# The owner picked OpenRouter for both LLM and ASR so one key covers both. The
+# endpoint default is spelled out three times - the shipped config, the
+# transcribe() fallback, and the settings-save fallback - and a stale copy is
+# silent: the user only finds out when their OpenRouter key is rejected by
+# OpenAI. One of the three was in fact missed on the first pass, which is why
+# this check exists.
+
+OPENROUTER = "https://openrouter.ai/api/v1"
+
+check("DEFAULT_CONFIG['asr']['endpoint'] is OpenRouter",
+      ps.DEFAULT_CONFIG["asr"]["endpoint"] == OPENROUTER,
+      ps.DEFAULT_CONFIG["asr"]["endpoint"])
+check("DEFAULT_CONFIG['asr']['model'] is whisper-1",
+      ps.DEFAULT_CONFIG["asr"]["model"] == "whisper-1",
+      ps.DEFAULT_CONFIG["asr"]["model"])
+
+# transcribe() with no endpoint must not reach out to anyone but OpenRouter.
+# It is given an empty cfg and a 1-byte wav, so it fails at the network, but
+# the URL it failed against is the thing under test.
+probe = {}
+_orig_urlopen = asr.urllib.request.urlopen
+
+
+def _capture(req, *a, **kw):
+    probe["url"] = req.full_url if hasattr(req, "full_url") else str(req)
+    raise OSError("blocked by test")
+
+
+asr.urllib.request.urlopen = _capture
+try:
+    asr.transcribe({}, b"RIFF....WAVEfmt ")
+except Exception as e:
+    probe["raised"] = repr(e)
+finally:
+    asr.urllib.request.urlopen = _orig_urlopen
+check("transcribe() with an empty cfg targets OpenRouter",
+      probe.get("url", "").startswith(OPENROUTER),
+      probe.get("url") or probe.get("raised"))
+
+# save_asr() with a cleared endpoint field must fall back to OpenRouter, not
+# to whichever provider was hard-coded first.
+api = point_logger.Api(c.store, c)
+try:
+    api.save_asr({"enabled": False, "endpoint": "", "model": ""})
+    saved = c.store.config.get("asr", {})
+    check("save_asr('') falls back to OpenRouter",
+          saved.get("endpoint") == OPENROUTER, saved.get("endpoint"))
+    check("save_asr('') falls back to whisper-1",
+          saved.get("model") == "whisper-1", saved.get("model"))
+except Exception as e:
+    check("save_asr('') does not raise", False, e)
+
 
 print()
 print("ALL CHECKS PASSED" if not FAILS else "FAILED: " + ", ".join(FAILS))
