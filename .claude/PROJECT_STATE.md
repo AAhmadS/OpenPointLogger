@@ -3,8 +3,8 @@ report: project-state
 project: Trailmark (formerly OpenPointLogger)
 generated: 2026-09-15
 generated_by: project-cartographer
-branch: main
-last_updated: 2026-09-25 by main session: always-on voice + minimisable mini bar (6947eb3), Persian/RTL across editing, templates and .docx (99a8c24), exe rebuilt and relaunched
+branch: main (jev-integration checked out, 1 commit ahead, unmerged)
+last_updated: 2026-09-25 by main session: always-on voice + minimisable mini bar (6947eb3), Persian/RTL across editing, templates and .docx (99a8c24), exe rebuilt and relaunched, then Jev second opinion on branch jev-integration (e46b14d, unmerged)
 schema_version: 1
 phase: build
 phase_evidence: >
@@ -224,6 +224,15 @@ commit SHA by anyone scanning this report).
   commit: 6947eb3
   verified: "13/13 tests/test_*.py exit 0 under .venv python (two new: test_voicecmd.py, test_voice_session.py with 15 sections); node --check on both extracted ui.py script blocks exit 0. The grammar fires only when the utterance IS the command plus fillers plus an argument, checked against 16 false-positive cases including 'I should trail save this later'. Damerau-Levenshtein distance 1 covers the trail/trial ASR substitution. Removes are hand-only by three independent mechanisms: no spoken verb exists, run_command refuses remove/delete/drop/clear, and the delete chips render only in the expanded card. Found and fixed en route: Store.last_open_topic() returned the OLDER of two topics created in the same second, because `created` has second resolution and a stable sort preserved input order - now tie-broken on insertion index. NOT exercised by hand: a real microphone through the packaged exe; every voice check is against the grammar and the controller, not against audio."
 
+- id: JEV
+  title: "A second opinion on the two judgements code cannot compute: note survival in a polished draft, and the kind of a captured line"
+  importance: high
+  commit: e46b14d
+  branch: jev-integration (unmerged, unpushed)
+  verified: "14/14 tests/test_*.py exit 0 under .venv python (one new: tests/test_judge.py, 73 checks, no network - every Jev call stubbed); node --check on both extracted ui.py script blocks exit 0. evals/judge_eval.py run live against jev-1.13.0 with the key read from TYPESAFE_API_KEY: 39/39 correct, Persian band 5/5 at 0.93-0.98. Run twice on 2026-09-25, 39/39 both times. The substring test for note survival is replaced by a per-note judgement against the single closest passage (183 chars of state in the test case, never the whole document); verbatim quote comparison and citation-marker placement stay mechanical because code decides them exactly. note_flag_min is 0.40, not 0.50, because the binding case - a note restated as someone else's sourced finding - answered correctly at 0.52 and 0.55 while the two runs showed confidence drifting up to 0.07, so 0.50 would hold on some runs and not others. Off by default, fails closed on every path (no key, no network, malformed payload, non-numeric confidence, exception, each per-question switch), and ground_science is asserted byte-identical to its pre-Jev behaviour three ways. NOT measured, and it is the important one: Claude wrote both the labelled cases and the criteria they are scored against, so 39/39 means the question separates cases its own author had in mind - see gate J8. Nothing measures the owner's real notes or their real Persian prose (J9), and no human has reviewed the slice (J10). Six report claims resolved by resolve_evidence.py, none unresolved; --scan-tree found 0 identity claims, which that tool states is not a pass."
+  gates: .claude/gates/jev-integration.yaml (10 gates: 7 pass, 3 unmeasured)
+  pruned: "Recorded in the gate file rather than dropped silently: citation formatting, voice-command grammar matching, Persian direction detection, Telegram topic resolution (all deterministic - code computes them exactly); auto-dropping voice utterances as noise (rejected on the owner's standing rule that removes are hand-only, not on the decision test); template choice (aesthetic, and a one-off decision with full context); scoring a finished report (large unfiltered state, multi-hop); and blocking an export (control flow belongs to code, not to the model)."
+
 - id: VOICE-SWITCH
   title: "Always-on voice had no switch called that: renamed the tray row and the Settings master, and put a microphone toggle in the quick-capture popup"
   importance: high
@@ -356,12 +365,25 @@ commit SHA by anyone scanning this report).
   severity: High
   mitigation: "Add proxy support to telegram_bridge.py: every outbound call goes through one UrllibTransport class on stdlib urllib, so a ProxyHandler-built opener fed from a Settings field covers the whole module. Alternative is a system-wide VPN, which needs no code but is outside the app. Owner decision recorded as gate telegram-network-reachability. Until then, no Telegram claim may be reported as working - only as unit-tested."
 
+- id: C8
+  risk: "Every number behind the Jev thresholds rests on 39 cases Claude wrote itself, scored against criteria Claude also wrote. 39/39 twice is a real measurement of a self-consistent question, and no measurement at all of the notes this owner writes or the lines they dictate. A second, smaller risk sits beside it: the two runs showed confidence drifting up to 0.07 on the same model and the same input, against a vendor-documented std dev of about 0.01 - our mean matched at 0.013, but the tail is seven times the headline figure, so any threshold within 0.07 of its binding case is unstable."
+  severity: Medium
+  mitigation: "note_flag_min was moved from 0.50 to 0.40 for exactly that reason, giving the binding case roughly two drift-widths of headroom while admitting no labelled case (the next least confident correct flag is 0.84). The band cannot be widened by Claude - doing so would add more cases from the same author and read as more evidence while being none. What discharges this is 30-50 real captures and real note/draft pairs from the owner's own logs, labelled by them, run through evals/judge_eval.py. Gates J8 and J9 stay unmeasured until then, and because the feature is off by default, nothing reaches an export in the meantime."
+
 - id: C4
   risk: "ASR mode introduces a new class of always-listening background behavior with privacy/consent implications the owner hasn't specified"
   severity: Medium
   mitigation: "D3's design pass should make the listening/transcribing state visually unmissable and require an explicit on/off, not a background default; confirm with the owner whether meeting audio (loopback) or only microphone input is in scope before T12."
 
 ## human_checkpoints
+
+- step: JEV labelled cases from real use
+  why: "The thresholds in judge.py are set by 39 cases Claude wrote and scored against criteria Claude wrote. Only the owner can supply notes and captures that are actually theirs, and only they can label them. Gate J8 in .claude/gates/jev-integration.yaml stays unmeasured until they do; it blocks nothing, because the feature ships off."
+  kind: action
+
+- step: JEV slice review before merge
+  why: "jev-integration is one commit ahead of main and unmerged. No human has read it. Gate J10 records that."
+  kind: review
 
 - step: D1 category/template design review
   why: "New user-facing surface; owner's own design-first rule requires sign-off before implementation begins"
