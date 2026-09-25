@@ -2209,6 +2209,8 @@ function settingsHtml(){
   const provOpts=Object.keys(prov).map(k=>`<option value="${k}" ${llm.provider===k?"selected":""}>${prov[k].label}</option>`).join("");
   const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{}, cb=c.clipboard||{}, asr=c.asr||{}, tg=c.telegram||{};
   const vc=c.voice||{}, vcKeys=vc.keys||{};
+  const jd=c.judge||{}, ji=state.judge_info||{};
+  const jdModel=ji.model||"jev", jdTh=ji.thresholds||{};
   const vcMods=(vc.modifiers||["ctrl","alt"]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+");
   const vcRows=(state.voiceGrammar||[]).map(g=>`<tr><td><b>${esc(g.say)}</b></td><td>${esc(g.summary)}</td></tr>`).join("");
   const vcHot=(state.voiceHotkeys||[]);
@@ -2326,6 +2328,40 @@ function settingsHtml(){
       <div class="row"><button class="btn primary" id="vcSave">Save settings</button></div>
       <div class="row" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:12px 14px;margin-top:10px;align-items:flex-start">
         <p class="muted" style="margin:0">Removing a buffered note or source is done by hand, on the mini bar &mdash; never by voice. A misheard delete has no undo.</p>
+      </div>
+    </div>
+    <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Second opinion</div></div>
+      <p class="muted">Two things in Trailmark are judgements rather than calculations, and both are about protecting what <i>you</i> wrote. They can be sent to <b>TypeSafe System One</b>, a model that answers typed questions with a probability instead of prose. Bring your own key. With this off, both fall back to what the app did before: a substring test, and every captured line filed as a note.</p>
+      <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Use a second opinion</b>
+          <p class="muted" style="margin:3px 0 0">Nothing is sent unless this is on. What travels is one note and the one paragraph of the draft nearest it &mdash; never the whole report.</p>
+        </div>
+        <button class="sw ${jd.enabled?"on":""}" id="jdSw" type="button" role="switch" aria-checked="${jd.enabled?"true":"false"}" aria-label="Use a second opinion" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <div class="grid3" style="margin-top:12px">
+        <label>Model<input id="jdModel" class="input" placeholder="${esc(jdModel)}" value="${esc(jd.model||"")}"></label>
+        <label>Endpoint<input id="jdBase" class="input" placeholder="auto" value="${esc(jd.base_url||"")}"></label>
+        <label>API key<input id="jdKey" class="input" type="password" placeholder="ts-…" value="${esc(jd.api_key||"")}"></label>
+      </div>
+      <div class="row" style="align-items:flex-start;gap:10px;margin-top:12px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Check the polished draft against your notes</b>
+          <p class="muted" style="margin:3px 0 0">Scientific mode already refuses a draft that reworded a quotation. Your <i>notes</i> are allowed to be reworded, so a substring test cannot tell a rewrite from a rewriting-away. This asks, per note, whether the draft still says what you said &mdash; and only overturns the strict check at ${esc(jdTh.note_preserved_overturn)} confidence or better.</p>
+        </div>
+        <button class="sw ${jd.notes!==false?"on":""}" id="jdNotesSw" type="button" role="switch" aria-checked="${jd.notes!==false?"true":"false"}" aria-label="Check notes against the polished draft" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Work out what a captured line is</b>
+          <p class="muted" style="margin:3px 0 0">Everything spoken or sent from Telegram is stored as your own note. A sentence read aloud from a paper is a quotation and a finding you repeat is a claim, and scientific mode treats all three differently. Runs after the point is saved, never before, and only changes the kind at ${esc(jdTh.capture_kind_min)} confidence or better.</p>
+        </div>
+        <button class="sw ${jd.kinds!==false?"on":""}" id="jdKindsSw" type="button" role="switch" aria-checked="${jd.kinds!==false?"true":"false"}" aria-label="Work out what a captured line is" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <div class="row"><button class="btn ghost sm" id="jdTest">Test connection</button><span class="muted" id="jdTestOut"></span><button class="btn primary" id="jdSave">Save settings</button></div>
+      <div class="row" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:12px 14px;margin-top:10px;align-items:flex-start">
+        <p class="muted" style="margin:0">It never rewrites your text. It answers one multiple-choice question at a time and the answer either raises a warning or changes one field. If it is unreachable, slow, or unsure, the older behaviour is what happens &mdash; an export is never blocked on it.</p>
       </div>
     </div>
     <div class="card glass fade">
@@ -2680,6 +2716,46 @@ function bindSettings(){
   if(vcSaveBtn) vcSaveBtn.addEventListener("click",async()=>{
     const r=await vcApply(vcCfgFromForm());
     if(r&&!r.error)toast("Voice settings saved.");
+  });
+
+  function jdCfgFromForm(){
+    return {enabled:$("#jdSw")?$("#jdSw").classList.contains("on"):false,
+            model:$("#jdModel")?$("#jdModel").value.trim():"",
+            base_url:$("#jdBase")?$("#jdBase").value.trim():"",
+            api_key:$("#jdKey")?$("#jdKey").value:"",
+            notes:$("#jdNotesSw")?$("#jdNotesSw").classList.contains("on"):true,
+            kinds:$("#jdKindsSw")?$("#jdKindsSw").classList.contains("on"):true};
+  }
+  ["jdSw","jdNotesSw","jdKindsSw"].forEach(id=>{
+    const sw=$("#"+id);
+    if(!sw)return;
+    sw.addEventListener("click",async()=>{
+      const next=!sw.classList.contains("on");
+      sw.classList.toggle("on",next);sw.setAttribute("aria-checked",next?"true":"false");
+      const r=await api.save_judge(jdCfgFromForm());
+      if(!r||r.error){sw.classList.toggle("on",!next);
+                      sw.setAttribute("aria-checked",!next?"true":"false");}
+      else applyState(r);
+    });
+  });
+  const jdSaveBtn=$("#jdSave");
+  if(jdSaveBtn) jdSaveBtn.addEventListener("click",async()=>{
+    const r=await api.save_judge(jdCfgFromForm());
+    if(r&&r.error)toast(r.error,"err");
+    else{applyState(r);toast("Second-opinion settings saved.");}
+  });
+  const jdTestBtn=$("#jdTest");
+  if(jdTestBtn) jdTestBtn.addEventListener("click",async()=>{
+    const out=$("#jdTestOut");out.textContent="Asking…";
+    await api.save_judge(jdCfgFromForm());
+    let r;
+    try{r=await api.test_judge();}catch(e){r={error:"Bridge not ready."};}
+    if(r&&r.error){out.textContent="";toast(r.error,"err");return;}
+    // The probe asks whether "the audit has been completed" says what "the
+    // audit is not finished yet" says. Anything but `altered` means the
+    // service answered but not sensibly, and that is worth seeing.
+    out.textContent=r.model+" · "+r.choice+" @ "+r.confidence+
+      (r.choice==="altered"?" ✓":" (unexpected)");
   });
 
   const asrTestBtn=$("#asrTest");

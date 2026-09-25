@@ -1,0 +1,262 @@
+# Slice: jev-integration - the two judgements in Trailmark that code cannot compute
+#
+# Branch: jev-integration (off main at 266c1c1). Not merged, not pushed.
+# Phase: build. Posture: builder.
+#
+# ~/.claude/rules/jev-decisions.md requires that a Jev call in a slice be
+# justified by a line in that slice's gate file, not by the rule. Each call
+# below names the trigger it passes and the measurement behind its threshold.
+# The rule also names the phrasing this slice was requested with - "apply Jev
+# wherever possible" - as a required-field incentive that produces calls which
+# exist to satisfy the rule. That is why the prune list is part of this file.
+
+slice: jev-integration
+requested: "Do a research and find out where we can use Jev, apply Jev wherever possible."
+date: 2026-09-25
+
+# ---------------------------------------------------------------------------
+# The two calls that were built
+# ---------------------------------------------------------------------------
+
+calls:
+  - id: note_survived
+    where: pipeline.ground_science, via judge.note_verdicts
+    question: >
+      A person wrote this note; the AI-assist path rewrote their material into a
+      polished draft. What happened to the note - preserved, altered, or missing?
+    why_not_code: >
+      The rewrite is ALLOWED to reword, so "is the note still there" cannot be a
+      substring test. Before this slice it was one, which meant every permitted
+      rewording read as tampering and threw the whole polished export away. The
+      inverse was worse: a note whose opening 60 characters survived but whose
+      meaning was inverted passed silently.
+    triggers_passed: [1, 2, 3, 5]
+    trigger_notes:
+      1: >
+        Human-natural, LLM-unnatural. Two of the three sub-judgements in §3 apply
+        directly - picking from the list it was given, and not being talked out of
+        it by the content. Both prompt-injection cases in the band were answered
+        correctly (injection inside the user's note -> missing; injection inside
+        the model's draft -> altered).
+      2: N atomic judgements over one state - one per note, every note in one request.
+      3: Repeated on every scientific-mode export.
+      5: >
+        Must be independent of whoever produced the thing. The draft being judged
+        was written by an LLM, and asking that same class of model to grade its own
+        rewrite is the fabrication failure mode. Jev sees only the note and the
+        passage.
+    stays_mechanical:
+      - Verbatim quote comparison. A model has no business deciding whether a
+        quotation is verbatim; string equality decides it exactly.
+      - Citation marker placement. Counting and position - code computes it.
+      This split mirrors the vendor's own citation_check recipe.
+    state_sent: >
+      The note, plus the single closest passage of the draft, found by token
+      overlap in judge.best_passage. Never the whole document - a judgement over a
+      large unfiltered state is on the documented list of things this model is bad
+      at. Measured at 183 characters of state in the test case.
+
+  - id: capture_kind
+    where: point_logger.Controller.refine_kind, via judge.capture_kinds
+    question: >
+      Is this captured line the person's own thinking, someone else's finding in
+      their words, or someone else's exact words - note, claim, or quote?
+    why_not_code: >
+      Everything arriving by voice or Telegram is stored as a note, because at
+      capture time nobody asked. In scientific mode that is load-bearing: a note
+      must carry no citation, a quote must not be reworded. A sentence dictated
+      from a paper and filed as a note gets neither rule.
+    triggers_passed: [1, 2, 3, 6]
+    trigger_notes:
+      1: Gut-check classification, and picking from the three options given.
+      2: N atomic judgements over one state - one per captured line, batched.
+      3: Repeated on every single capture.
+      6: Product runtime code, which is what Jev is built for.
+    non_destructive: >
+      refine_kind only ever writes the `kind` field, only on an entry the app has
+      just created with the default, and only at confidence >= 0.90. It cannot
+      touch text, sources, or an entry the user has edited.
+    latency_handling: >
+      Measured 1.38-2.64 s on this network, not the ~100 ms the vendor documents.
+      So the capture is saved first and the kind refined afterwards in a daemon
+      thread. The user never waits on it, and a failure is invisible.
+
+# ---------------------------------------------------------------------------
+# The measurement
+# ---------------------------------------------------------------------------
+
+eval:
+  cases: evals/judge_cases.json
+  runner: evals/judge_eval.py
+  model: jev-1.13.0            # pinned; the probes asked for jev-latest and were served this
+  n: 39
+  composition:
+    clean_notes: 12
+    adversarial_notes: 13      # hedge stripped, quantity drifted, note restated as a
+                               # sourced claim, illegible passage, 2 prompt injections,
+                               # 3 Persian
+    capture_kinds: 14          # 2 Persian
+  runs:
+    - {when: "2026-09-25 first", correct: "39/39"}
+    - {when: "2026-09-25 second", correct: "39/39"}
+  persian_band: "5/5 correct, confidence 0.91-0.99"
+  run_to_run_drift:
+    mean_abs: 0.013
+    max_abs: 0.07
+    note: >
+      The vendor documents a run-to-run std dev of about 0.01 and our mean matches
+      it. The tail does not: one case moved 0.07 between two runs of the same model
+      on the same input. That number, not the mean, is what a threshold has to
+      survive.
+
+# ---------------------------------------------------------------------------
+# Gates
+# ---------------------------------------------------------------------------
+
+gates:
+  - id: J1
+    what: Every Jev call in this slice is justified against the decision test
+    status: pass
+    evidence: The two `calls` entries above, each naming the triggers it passes.
+
+  - id: J2
+    what: Thresholds are backed by a literal eval on labelled cases
+    status: pass
+    evidence: >
+      evals/judge_eval.py, re-runnable, drives judge.QUESTIONS directly rather than
+      a copy. Two runs, 39/39 each, output in the slice report.
+      note_flag_min = 0.40: the binding case is the note restated as someone
+      else's sourced finding, answered correctly at 0.52 and 0.55 on the two runs.
+      The next least confident correct flag is 0.84, so nothing labelled lives
+      between 0.55 and 0.84 and this bar admits no case from the band. It was
+      lowered from 0.50 after the second run, because 0.50 left the binding case
+      0.05 of headroom inside a 0.07 drift envelope - kept on some runs, lost on
+      others, which is the worst property a threshold can have.
+      note_preserved_overturn = 0.80: 6 of 7 correct `preserved` answers clear it.
+      capture_kind_min = 0.90: all 14 correct kind answers clear it; the lowest is
+      0.95.
+
+  - id: J3
+    what: A non-English band exists before any threshold is trusted
+    status: pass
+    evidence: >
+      5 Persian cases (3 note, 2 kind), 5/5 correct at 0.91-0.99 across both runs.
+      Required by jev-decisions.md because Jev's documented non-English accuracy is
+      lower. The band is small and all five are clean cases - it establishes that
+      Persian is not broken, not that it is as reliable as English.
+
+  - id: J4
+    what: The model is pinned, not a moving alias
+    status: pass
+    evidence: judge.MODEL = "jev-1.13.0"; tests/test_judge.py asserts it is a version.
+
+  - id: J5
+    what: Every failure path is fail-closed
+    status: pass
+    evidence: >
+      tests/test_judge.py sections 1, 3 and 4. No key, no questions, dead network,
+      malformed payload, non-numeric confidence, an exception inside judge.ask, and
+      each per-question switch off - every one returns the empty verdict and leaves
+      ground_science byte-identical to its pre-Jev behaviour. That last one is
+      asserted directly, three ways (no judge_cfg, judge_cfg=None, disabled).
+
+  - id: J6
+    what: The key is named by location, never by value
+    status: pass
+    evidence: >
+      Two uses of api_key in judge.py - one bool() test, one Authorization header -
+      and tests/test_judge.py asserts both shapes and that nothing else touches it.
+      judge.py contains no print and no logging. The eval reports where it found
+      the key (TYPESAFE_API_KEY), never the key.
+
+  - id: J7
+    what: The feature is off until the owner turns it on
+    status: pass
+    evidence: >
+      DEFAULT_CONFIG["judge"]["enabled"] is False and api_key is "". Settings ->
+      Second opinion has the switch, the two per-question switches, and a live test
+      button. judge.available() returns False for the shipped default.
+
+  - id: J8
+    what: The labelled cases reflect real use
+    status: unmeasured
+    evidence: >
+      They do not, and this is the honest limit on everything above. Claude wrote
+      both the cases and the criteria they are scored against, so 39/39 means the
+      question separates cases its own author had in mind - which is the weakest
+      form of evidence that still counts as evidence. It says nothing about the
+      notes this owner actually writes or the lines they actually dictate.
+      What would settle it: 30-50 real captures and real note/draft pairs from this
+      owner's own logs, labelled by them, run through evals/judge_eval.py. Until
+      that exists, J8 stays unmeasured and the thresholds are provisional.
+
+  - id: J9
+    what: Accuracy on the owner's real Persian prose
+    status: unmeasured
+    evidence: >
+      The 5 Persian cases are clean and short. Nothing here measures Jev against
+      Persian of the length, register, or ZWNJ density this owner's reports use.
+
+  - id: J10
+    what: Owner review of the second-opinion feature
+    status: unmeasured
+    human: true
+    evidence: >
+      No human has reviewed this slice. It is unmerged on branch jev-integration
+      and the feature is off by default, so nothing reaches the owner's exports
+      until they enable it. This gate is not a blocker; it is a record that the
+      review has not happened.
+
+# ---------------------------------------------------------------------------
+# Pruned - candidates the decision test rejected
+# ---------------------------------------------------------------------------
+#
+# This list is the other half of the deliverable. Each of these could have been
+# a Jev call, and each is on the mirror list in jev-decisions.md §3 or fails the
+# trigger test outright.
+
+pruned:
+  - candidate: citation.py - formatting a reference
+    reason: >
+      Pure rearrangement of fields into a style. Deterministic, already correct,
+      and a model could only introduce a way to be wrong. Mirror list: anything
+      code can compute exactly.
+
+  - candidate: voicecmd.py - matching a spoken command to an action
+    reason: >
+      A grammar match. Code computes it exactly, and the failure mode of a model
+      here is that "file that as a quote" sometimes does something else - which is
+      worse than not understanding it at all.
+
+  - candidate: persian.py - deciding text direction, and the RTL lint
+    reason: >
+      Counting characters by script. Mirror list: arithmetic, counting, magnitudes.
+
+  - candidate: Telegram topic resolution
+    reason: Deterministic id lookup.
+
+  - candidate: Auto-dropping voice utterances judged to be noise
+    reason: >
+      Rejected on the owner's standing rule, not on the decision test - "removes
+      are handled via hand though". A judgement that deletes the owner's words is
+      not a judgement this feature is allowed to make, however well it scored.
+
+  - candidate: Choosing which template to export with
+    reason: >
+      Aesthetic, and the owner's instruction is explicit that visual direction is
+      not arbitrated by asking - or, by extension, by a model. It is also a
+      one-off decision with full context available, which fails the trigger test
+      in §2.
+
+  - candidate: Scoring the quality of a finished report
+    reason: >
+      Generation-adjacent and needs multi-hop reasoning over the whole document.
+      Mirror list twice over: judgements over a large unfiltered state, and
+      anything where what they meant matters more than what they wrote.
+
+  - candidate: Deciding whether an export should be blocked
+    reason: >
+      Not pruned as a judgement but as a control-flow decision. Code owns control
+      flow; Jev supplies the gut-check. ground_science already decides this from
+      the verdicts, and a model deciding it directly would make a fail-closed
+      design impossible.

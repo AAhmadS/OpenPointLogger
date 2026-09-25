@@ -44,6 +44,19 @@ DEFAULT_CONFIG = {
     "appearance": {
         "theme": "system",
     },
+    # Off by default, and bring-your-own-key like every other outbound call
+    # here. Two judgements go to it, both described in judge.py: whether the
+    # AI-polished draft still says what your notes said, and which kind of
+    # entry a captured line is. With it off, both fall back to exactly what
+    # this app did before - a substring test, and a hard-coded "note".
+    "judge": {
+        "enabled": False,
+        "api_key": "",
+        "model": "",          # empty means judge.MODEL, which is pinned
+        "base_url": "",
+        "kinds": True,        # refine the kind of captured lines
+        "notes": True,        # check the polished draft against your notes
+    },
     # Off by default: unlike the clipboard hotkey, enabling this starts a
     # background microphone-capture thread the moment it's turned on - an
     # even bigger side effect than the clipboard hotkey's, so it stays
@@ -206,6 +219,18 @@ def new_topic(title):
     }
 
 
+def _judge_info():
+    """The pinned model and the thresholds, so the settings card can show the
+    numbers rather than describe them. Imported lazily and swallowed: a
+    second-opinion module that failed to load must not stop the app starting.
+    """
+    try:
+        import judge
+        return {"model": judge.MODEL, "thresholds": dict(judge.THRESHOLDS)}
+    except Exception:
+        return {"model": "", "thresholds": {}}
+
+
 def new_entry(subtopic, text, kind="claim"):
     return {
         "id": uuid.uuid4().hex,
@@ -287,7 +312,7 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr", "telegram", "voice"):
+                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr", "telegram", "voice", "judge"):
                     if section in saved and isinstance(saved[section], dict):
                         # voice.keys is a dict inside a section dict, so a
                         # plain update() would let a saved file that names
@@ -322,7 +347,8 @@ class Store:
         tg["token"] = ""
         config["telegram"] = tg
         return {"topics": topics, "config": config, "providers": PROVIDERS,
-                "exports": self.list_exports(), "templates": self.list_templates()}
+                "exports": self.list_exports(), "templates": self.list_templates(),
+                "judge_info": _judge_info()}
 
     def list_templates(self):
         try:
@@ -815,7 +841,8 @@ class Store:
             meta=self._export_meta({"subtitle": options.get("subtitle", ""),
                                     "summary": options.get("summary", "")}),
             prefer_engine=(cfg.get("engine") or None),
-            science=self._science(options))
+            science=self._science(options),
+            judge_cfg=self.config.get("judge") or {})
         if res.get("error") and not res.get("files"):
             return {"error": res["error"]}
         # shape the result the UI toast expects, plus the richer detail

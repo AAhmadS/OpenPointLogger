@@ -23,6 +23,7 @@ import llm
 import single
 import telegram_bridge
 import templates_registry
+import judge
 import traymenu
 
 def _snip(text, limit=120):
@@ -224,6 +225,62 @@ class Api:
         self.controller.apply_clipboard_hotkey(mods, key)
         self.controller.refresh_full()
         return self.store.state()
+
+    def get_judge(self):
+        """Config plus the questions and thresholds, for the settings card.
+
+        The thresholds travel to the UI because a number that decides whether
+        your own words survive an export should be visible to the person whose
+        words they are, not buried in a module.
+        """
+        return {
+            "config": self.store.config.get("judge") or {},
+            "model": judge.MODEL,
+            "thresholds": dict(judge.THRESHOLDS),
+        }
+
+    def save_judge(self, cfg):
+        """Mirrors save_asr's shape rather than _save_section's: this key is a
+        credential, so it is merged explicitly rather than swept in by a
+        generic update, and it is never logged, echoed, or put in an error."""
+        cfg = cfg or {}
+        prev = self.store.config.get("judge") or {}
+        merged = {
+            "enabled": bool(cfg.get("enabled")),
+            "api_key": str(cfg.get("api_key")) if cfg.get("api_key") is not None
+                       else str(prev.get("api_key") or ""),
+            "model": (str(cfg.get("model") or "")).strip(),
+            "base_url": (str(cfg.get("base_url") or "")).strip(),
+            "kinds": bool(cfg.get("kinds", prev.get("kinds", True))),
+            "notes": bool(cfg.get("notes", prev.get("notes", True))),
+        }
+        self.store.config["judge"] = merged
+        self.store.save_config()
+        self.controller.refresh_full()
+        return self.store.state()
+
+    def test_judge(self):
+        """One real question against the live endpoint, so the card can say
+        whether the key works before an export depends on it.
+
+        Deliberately a question with a known answer - if the service is up and
+        the key is good, the answer is unambiguous, and anything else is a
+        configuration problem rather than a judgement to interpret.
+        """
+        cfg = self.store.config.get("judge") or {}
+        if not judge.available(cfg):
+            return {"error": "Not enabled, or no API key."}
+        payload = judge.ask(cfg, {"note": "The audit is not finished yet.",
+                                  "passage": "The audit has been completed."},
+                            {"probe": {"type": "choice",
+                                       "instructions": "Does `passage` say what `note` says?",
+                                       "criteria": judge.NOTE_CRITERIA}})
+        a = (payload.get("answers") or {}).get("probe") or {}
+        if not a:
+            return {"error": "No answer - check the key and the network."}
+        return {"ok": True, "model": payload.get("model", ""),
+                "choice": a.get("choice", ""),
+                "confidence": round(float(a.get("confidence") or 0), 2)}
 
     def save_asr(self, cfg):
         """Mirrors save_clipboard's shape, not _save_section: enabling this
@@ -1114,7 +1171,42 @@ class Controller:
             return {"error": r["error"]}
         self.voice.take()
         self.refresh_full()
+        self.refine_kind(t["id"], r.get("entry_id"), snap["text"],
+                         bool(snap["sources"]))
         return {"state": "logged", "detail": _snip(snap["text"])}
+
+    def refine_kind(self, tid, eid, text, has_source):
+        """Ask the judge whether a captured line is really a note.
+
+        Everything captured by voice or from Telegram is stored as a note,
+        because at capture time nobody asked. In scientific mode that is
+        load-bearing - a note must carry no citation, a quote must not be
+        reworded - so a sentence dictated out of a paper, filed as a note, gets
+        neither protection.
+
+        Behind the capture, never in front of it. The entry is already saved
+        and already correct by the old rules before this starts; the round trip
+        measures 1.4-2.6 s on this machine and a capture that took that long
+        would feel broken. If the answer never arrives the entry simply stays a
+        note, which is what it would have been anyway.
+
+        Only ever changes ``kind``, and only on an entry this app just created
+        with the default. Nothing else about what the user logged is touched.
+        """
+        cfg = self.store.config.get("judge") or {}
+        if not eid or not cfg.get("kinds", True) or not judge.available(cfg):
+            return
+        def work():
+            kinds = judge.capture_kinds(cfg, [(text, has_source)])
+            kind = kinds.get(0)
+            if not kind:
+                return
+            r = self.store.update_entry(tid, eid, {"kind": kind})
+            if r.get("error"):
+                return
+            self.refresh_full()
+            self.push_voice_state("edited", "Filed as a %s." % kind)
+        judge.in_background(work)
 
     def _voice_finish(self, _argument=""):
         """Trail-Finish / Ctrl+Alt+F: close the open topic.
@@ -1427,6 +1519,9 @@ class Controller:
                                          sources=payload.get("sources"), kind="note")
             else:
                 r = self.store.add_entry(topic["id"], "", text, kind="note")
+            if kind != "link" and text.strip():
+                self.refine_kind(topic["id"], r.get("entry_id"), text,
+                                 bool(payload.get("sources")))
         except Exception:
             traceback.print_exc()
             self.push_telegram_state("error", "Could not log the message.")

@@ -24,6 +24,7 @@ from pathlib import Path
 
 import citation
 import mdlite
+import judge
 import persian
 import templates_registry as templates
 
@@ -225,16 +226,46 @@ def _norm(s):
     return re.sub(r"\s+", " ", str(s or "")).strip().lower()
 
 
-def ground_science(produced_md, entries, sci):
+def _judge_notes(judge_cfg, notes, produced_md):
+    """Ask the judge what happened to each note. {} whenever it cannot say."""
+    try:
+        if not (judge_cfg or {}).get("notes", True):
+            return {}
+        if not judge.available(judge_cfg):
+            return {}
+        return judge.note_verdicts(judge_cfg, [e.get("text") or "" for e in notes],
+                                   produced_md)
+    except Exception:
+        return {}
+
+
+def ground_science(produced_md, entries, sci, judge_cfg=None):
     """Scientific-mode gate: the model may reword, but not reclassify.
 
-    Three things it must not do, and all three are mechanically checkable:
+    Three things it must not do:
 
       * turn one of your notes into a sourced claim, by attaching a citation
         to it or by dropping the notes block it lived in;
       * lose a note entirely, which would quietly delete your own thinking;
       * reword a quotation, which stops being a quotation the moment it is
         reworded.
+
+    Two of those are mechanical and stay mechanical. A citation marker either
+    appears under the notes heading or it does not; a quotation either survives
+    character for character or it is no longer a quotation. Code decides both
+    exactly, and a model could only add a way to be wrong about them.
+
+    The third is not mechanical and never was. The model is ALLOWED to reword a
+    note - that is what polishing is - so "is the note still there" cannot be a
+    substring test. The test that shipped took the first 60 characters and
+    looked for them, which fails in both directions: an allowed rewording reads
+    as tampering and throws away the whole polished draft, while a note whose
+    opening survives and whose meaning was inverted sails through.
+
+    So when a judge is configured, that one question goes to it, per note, all
+    in a single request. When it is not configured, or it cannot answer, or it
+    is not confident, the substring test is what decides - exactly as before.
+    See judge.py for the questions and the measured thresholds.
 
     Returns (ok, findings). ok=False sends the export back to your own text.
     """
@@ -270,11 +301,38 @@ def ground_science(produced_md, entries, sci):
                     findings.append("A citation was attached to a line marked as your "
                                     "own note.")
                     break
-        for e in notes:
+        # Per note, not per corpus: a verdict that names which note is the
+        # only kind the judge below can act on, and the only kind worth
+        # showing a person.
+        suspect = set()
+        for i, e in enumerate(notes):
             head = _norm(e.get("text"))[:60]
             if head and head not in hay:
-                findings.append("A note of yours is missing from the polished draft.")
-                break
+                suspect.add(i)
+
+        verdicts = _judge_notes(judge_cfg, notes, produced_md)
+        for i, e in enumerate(notes):
+            got = verdicts.get(i)
+            snip = (e.get("text") or "")[:48]
+            if got:
+                verdict, conf = got
+                if verdict == "preserved":
+                    # Only an answer this confident may RELAX a protection the
+                    # user already had. Below the bar the substring test keeps
+                    # its finding, which is the conservative side.
+                    if conf >= judge.THRESHOLDS["note_preserved_overturn"]:
+                        suspect.discard(i)
+                    continue
+                suspect.discard(i)   # replaced by something more specific
+                if verdict == "altered":
+                    findings.append("A note of yours was changed in the polished "
+                                    "draft: %s..." % snip)
+                else:
+                    findings.append("A note of yours is missing from the polished "
+                                    "draft: %s..." % snip)
+        for i in sorted(suspect):
+            findings.append("A note of yours is missing from the polished draft: "
+                            "%s..." % ((notes[i].get("text") or "")[:48]))
 
     for e in quotes:
         body = _norm(e.get("text")).strip('"').strip()
@@ -496,7 +554,7 @@ def _markdown_to_tex(md, refs, style="numeric"):
 
 def export(topic, entries, refs, cites, export_root, template_id="personal-report",
            formats=("html", "markdown"), polished_markdown=None, meta=None,
-           prefer_engine=None, on_stage=None, science=None):
+           prefer_engine=None, on_stage=None, science=None, judge_cfg=None):
     """Run the full pipeline. Returns a result dict; never raises for a partial
     success - formats that failed are reported in ``errors`` so the user gets the
     three artefacts that worked plus an honest note about the fourth."""
@@ -545,7 +603,7 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
             expected = sorted({m for nums in cites.values() if isinstance(nums, list)
                                for m in markers_for(nums, meta_for, style)})
         ok, findings = ground_citations(base_md, markdown, len(refs), expected)
-        sci_ok, sci_findings = ground_science(markdown, entries, sci)
+        sci_ok, sci_findings = ground_science(markdown, entries, sci, judge_cfg)
         findings = findings + sci_findings
         ok = ok and sci_ok
         result["warnings"] += findings
