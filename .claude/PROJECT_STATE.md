@@ -224,6 +224,18 @@ commit SHA by anyone scanning this report).
   commit: 6947eb3
   verified: "13/13 tests/test_*.py exit 0 under .venv python (two new: test_voicecmd.py, test_voice_session.py with 15 sections); node --check on both extracted ui.py script blocks exit 0. The grammar fires only when the utterance IS the command plus fillers plus an argument, checked against 16 false-positive cases including 'I should trail save this later'. Damerau-Levenshtein distance 1 covers the trail/trial ASR substitution. Removes are hand-only by three independent mechanisms: no spoken verb exists, run_command refuses remove/delete/drop/clear, and the delete chips render only in the expanded card. Found and fixed en route: Store.last_open_topic() returned the OLDER of two topics created in the same second, because `created` has second resolution and a stable sort preserved input order - now tie-broken on insertion index. NOT exercised by hand: a real microphone through the packaged exe; every voice check is against the grammar and the controller, not against audio."
 
+- id: VOICE-SWITCH
+  title: "Always-on voice had no switch called that: renamed the tray row and the Settings master, and put a microphone toggle in the quick-capture popup"
+  importance: high
+  commit: c355745
+  verified: "Owner reported it: 'I don't see an always on voice on/off switch'. They were right - the master was #asrSw labelled 'Auto-log speech as notes' inside a card called 'Voice logging', the tray row said 'Voice logging: On/Off', and the card actually titled 'Always-on voice' led with a refinement that does nothing while the mic is shut. Worse, the popup gated its whole voice card on the microphone already being open, so the off state was invisible on the surface the feature is used from. Now: one name in all three places, Api.toggle_voice() routed through save_asr (the same path the tray uses, so persistence and apply_asr stay in one place), the popup card gated on CONFIGURED rather than RUNNING, and a keyless start warns at the click instead of failing on the first utterance. 13/13 tests exit 0, node --check clean, and the popup was rendered headless at 462x648 in both states - off shows an unaccented microphone plus 'Always-on voice is off. Click the microphone above to start.', on shows the accented button, Listening, the note count and the five command buttons, no console errors."
+
+- id: BUILD4
+  title: "Rebuilt dist/Trailmark.exe from c355745, installed, relaunched"
+  importance: high
+  commit: n/a (build artifact)
+  verified: "PyInstaller exit 0 via .venv python; 2 processes stopped, copied, SHA256 of dist and installed exe equal (46E91BC2BA2AADB9D00DCC2987E4FCF5DD4646569CB26792B3A43B2559426ADF), 33,898,571 bytes; relaunched 2026-09-25 23:09:19, 2 processes alive at the 25 s check."
+
 - id: PERSIAN
   title: "Persian/RTL: direction decided from the report's own text, across in-app editing, all five templates, and the .docx writer"
   importance: high
