@@ -415,10 +415,22 @@ class Api:
         return {"templates": self.store.list_templates()}
 
     def open_template_dir(self):
-        """Open the folder where the user's own templates live, creating it first."""
+        """Open the folder where the user's own templates live, creating it first.
+
+        Also drops in a starter template and the authoring notes if they are
+        not there. An empty folder tells someone nothing about what a template
+        is, and the one thing a hand-written template gets wrong - direction -
+        is invisible until a Persian report renders sideways. Writing a
+        correct example beside their own work is cheaper than documenting it
+        somewhere they will not look.
+        """
         try:
             d = templates_registry.user_dir()
             d.mkdir(parents=True, exist_ok=True)
+            try:
+                templates_registry.write_starter(d)
+            except Exception:
+                pass          # a missing example must never block the folder
             os.startfile(str(d))
             return {"path": str(d)}
         except Exception as e:

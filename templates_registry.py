@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 __all__ = ["available", "load", "render_shell", "user_dir", "builtin_dir",
-           "TemplateError", "PLACEHOLDERS"]
+           "TemplateError", "PLACEHOLDERS", "write_starter"]
 
 _SECTION_RE = re.compile(r"\{\{#([a-z0-9_]+)\}\}(.*?)\{\{/\1\}\}", re.S)
 _VAR_RE = re.compile(r"\{\{([a-z0-9_]+)\}\}")
@@ -53,7 +53,31 @@ PLACEHOLDERS = {
     "count_sources": "Number of distinct cited sources",
     "footer": "Footer line",
     "accent": "Accent colour from template.json",
+    "accent_hex": "The same colour as six bare hex digits, for LaTeX",
     "app_version": "Trailmark version string",
+
+    # --- direction and language -------------------------------------------
+    # Decided from the report's own text, not from a setting. A template that
+    # wants to work in both directions needs only the first three: put lang
+    # and dir on <html>, and rtl_css last inside <style>. Everything else
+    # follows from CSS logical properties, which resolve to the same physical
+    # sides in a left-to-right document - so adding them costs an English
+    # template nothing.
+    "lang": "BCP-47 language tag for <html lang>: 'fa' or 'en'",
+    "dir": "'rtl' when the major text is right-to-left, else 'ltr'",
+    "rtl_css": "Persian typesetting block; EMPTY for a left-to-right document",
+    "date_gregorian": "The generation date in the Gregorian calendar, always",
+
+    # --- chrome the template would otherwise hard-code in English ----------
+    "l_references": "Label: References",
+    "l_sources": "Label: Sources",
+    "l_contents": "Label: Contents",
+    "l_abstract": "Label: Abstract",
+    "l_figures": "Label: Figures",
+    "l_points": "Label: Points",
+    "l_period": "Label: Period",
+    "l_author": "Label: Author",
+    "l_date": "Label: Date",
 }
 
 
@@ -83,6 +107,220 @@ def builtin_dir():
 def user_dir():
     base = Path(os.environ.get("APPDATA") or Path.home()) / "Trailmark" / "templates"
     return base
+
+
+# ---------------------------------------------------------------------------
+# The starter template
+# ---------------------------------------------------------------------------
+
+#: A template that works in BOTH directions, written out beside the user's own
+#: templates so making a new one starts from something correct rather than
+#: from a copy of a built-in that happens to be English.
+#:
+#: Direction is three lines of a template's work and no more:
+#:   1. lang and dir on <html>
+#:   2. {{rtl_css}} as the last thing inside <style>
+#:   3. CSS logical properties instead of left/right
+#: Everything else the pipeline does for it.
+_STARTER_HTML = """<!doctype html>
+<html lang="{{lang}}" dir="{{dir}}"><head><meta charset="utf-8">
+<title>{{title}}</title>
+<style>
+/* Starter - a deliberately plain template that is correct in both
+   directions. Copy the folder, rename it, and change what you like.
+
+   The three things that make it bidirectional are marked BIDI below. Keep
+   them and your template works in Persian; drop them and it does not. */
+@page{size:A4;margin:18mm}
+:root{
+  --ink:#1a1a1a; --mut:#5f6570; --rule:#e2e4e8; --accent:{{accent}};
+  --sans:"Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:Consolas,"Cascadia Mono",monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;background:#fff;color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.65}
+.wrap{max-width:900px;margin:0 auto;padding:36px 28px 56px}
+
+header{border-bottom:2px solid var(--accent);padding-bottom:14px;margin-bottom:26px}
+.kicker{font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent);font-weight:700}
+h1{font-size:27px;line-height:1.25;margin:6px 0 4px}
+.sub{color:var(--mut);font-size:14px}
+.meta{margin-top:10px;font-size:12px;color:var(--mut);
+  display:flex;gap:16px;flex-wrap:wrap}
+
+h2{font-size:18px;margin:26px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--rule)}
+h3{font-size:15px;margin:18px 0 6px}
+p{margin:0 0 11px}
+
+/* BIDI 1: logical, not physical. padding-inline-start resolves to
+   padding-left in a left-to-right document and padding-right in a
+   right-to-left one, so one declaration is correct in both. */
+ul,ol{margin:8px 0 14px;padding-inline-start:22px}
+blockquote{margin:12px 0;padding:9px 14px;background:#f7f8f9;
+  border-inline-start:3px solid var(--rule);color:var(--mut)}
+.summary{background:#f7f8f9;border-inline-start:3px solid var(--accent);
+  padding:12px 16px;margin:0 0 22px}
+
+code{font-family:var(--mono);font-size:12.5px;background:#f2f3f5;padding:1px 4px;
+  border-radius:3px}
+pre{font-family:var(--mono);font-size:12px;background:#f7f8f9;
+  border:1px solid var(--rule);border-radius:5px;padding:11px 13px;overflow-x:auto}
+
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+/* BIDI 2: start/end, not left/right. */
+th,td{border:1px solid var(--rule);padding:6px 9px;text-align:start;
+  vertical-align:top}
+th{background:#f7f8f9;font-weight:650}
+
+a.cite{color:var(--accent);text-decoration:none;font-weight:600}
+figure{margin:16px 0}
+figure img{max-width:100%;border:1px solid var(--rule);border-radius:5px;display:block}
+figcaption{font-size:12px;color:var(--mut);margin-top:5px}
+
+ol.refs{padding-inline-start:0;list-style:none;counter-reset:ref;font-size:13px}
+ol.refs li{counter-increment:ref;position:relative;
+  padding-inline-start:2.2em;margin:0 0 5px}
+ol.refs li::before{content:"[" counter(ref) "]";position:absolute;
+  inset-inline-start:0;color:var(--accent);font-weight:700}
+
+footer{margin-top:34px;padding-top:12px;border-top:1px solid var(--rule);
+  font-size:11.5px;color:var(--mut)}
+
+/* BIDI 3: the Persian typesetting block. EMPTY unless the report's own text
+   is mostly right-to-left - an English report is byte-identical without it.
+   It must be LAST inside <style> so it wins on source order. */
+{{rtl_css}}
+</style></head><body>
+<div class="wrap">
+  <header>
+    <div class="kicker">{{kicker}}</div>
+    <h1>{{title}}</h1>
+    {{#subtitle}}<div class="sub">{{subtitle}}</div>{{/subtitle}}
+    <div class="meta">
+      <span>{{l_date}}: {{date}}</span>
+      <span>{{l_period}}: {{period}}</span>
+      {{#author}}<span>{{l_author}}: {{author}}</span>{{/author}}
+      <span>{{count_points}} / {{count_sources}}</span>
+    </div>
+  </header>
+
+  {{#summary}}<div class="summary"><b>{{l_abstract}}</b><br>{{summary}}</div>{{/summary}}
+  {{#toc}}<nav><b>{{l_contents}}</b>{{toc}}</nav>{{/toc}}
+
+  {{body}}
+
+  {{#figures}}<h2>{{l_figures}}</h2>{{figures}}{{/figures}}
+  {{#references}}<h2>{{l_references}}</h2><ol class="refs">{{references}}</ol>{{/references}}
+
+  <footer>{{footer}} &middot; {{app_version}} &middot; {{date_iso}}</footer>
+</div>
+</body></html>
+"""
+
+_STARTER_JSON = """{
+  "id": "starter",
+  "name": "Starter",
+  "purpose": "general",
+  "category": "personal",
+  "description": "A plain template that is correct in both directions. Copy the folder, rename it, and edit.",
+  "kicker": "Report",
+  "accent": "#7a5cff",
+  "formats": ["html", "pdf", "markdown", "docx"],
+  "page": { "size": "A4", "margin": "18mm" }
+}
+"""
+
+
+def _starter_readme():
+    """Written next to the starter so the placeholder list is never guessed."""
+    rows = "\n".join("| `{{%s}}` | %s |" % (k, v) for k, v in sorted(PLACEHOLDERS.items()))
+    return """# Writing a Trailmark template
+
+A template is a folder with `template.json` and `template.html`. Drop it in
+this directory and Trailmark finds it - no restart, no registration. A folder
+whose `id` matches a built-in shadows that built-in.
+
+Start by copying `starter/`.
+
+## Placeholders
+
+`{{name}}` is replaced. `{{#name}}...{{/name}}` keeps its contents only when
+that value is non-empty, which is how you hide an Abstract heading on a report
+that has no abstract.
+
+| Placeholder | What it is |
+|---|---|
+%s
+
+## Right-to-left, and Persian
+
+Trailmark decides direction from the report's own text - if the major text is
+Persian (or any right-to-left script) the whole document becomes right-to-left.
+There is no setting; there is nothing for the reader to get wrong.
+
+Three things make a template work in both directions:
+
+1. **`<html lang="{{lang}}" dir="{{dir}}">`** - the base direction.
+
+2. **`{{rtl_css}}` as the last thing inside `<style>`.** For an English report
+   this is the empty string and your template renders exactly as it would have
+   without it. For a Persian one it supplies the font stack, the looser
+   leading Persian needs, Persian numerals on ordered lists, and bidi
+   isolation for URLs and code. Being last matters: it wins on source order.
+
+3. **CSS logical properties instead of physical ones.** Use
+   `padding-inline-start` rather than `padding-left`, `border-inline-start`
+   rather than `border-left`, `text-align:start` rather than `text-align:left`,
+   and `inset-inline-start` rather than `left` on positioned elements. In a
+   left-to-right document each of these is *defined* to resolve to the
+   physical property you would have written, so this costs an English template
+   nothing and is the entire reason a Persian one works.
+
+What Trailmark handles for you when the report is Persian:
+
+- the Solar Hijri calendar and Persian digits in `{{date}}`, `{{period}}` and
+  the counts - while `{{date_iso}}` stays Gregorian ISO-8601 because something
+  will parse it, and `{{date_gregorian}}` is there if you want both;
+- the chrome labels (`{{l_references}}`, `{{l_abstract}}`, ...) in Persian;
+- no synthetic italics, because Persian has no italic cuts and a browser
+  would shear the glyphs into something that reads as a rendering fault.
+
+What it deliberately does **not** do: touch the text you wrote. Digits inside
+a point stay as typed, because converting them would corrupt a DOI, a URL or a
+year inside a quotation.
+
+## Testing one
+
+Settings -> Templates shows a live preview of every template against a fixed
+sample report, so you can see a change without exporting anything.
+""" % rows
+
+
+def write_starter(dest=None, force=False):
+    """Write the starter template and the authoring notes into ``dest``.
+
+    Called whenever the templates folder is opened, so it is never an empty
+    directory with no hint of what belongs in it. Existing files are left
+    alone unless ``force`` - someone may have edited the starter into their
+    own template, and silently overwriting that would be unforgivable.
+
+    Returns the paths actually written.
+    """
+    root = Path(dest) if dest else user_dir()
+    folder = root / "starter"
+    folder.mkdir(parents=True, exist_ok=True)
+    written = []
+    for path, text in ((folder / "template.html", _STARTER_HTML),
+                       (folder / "template.json", _STARTER_JSON),
+                       (root / "README.md", _starter_readme())):
+        if path.exists() and not force:
+            continue
+        path.write_text(text, encoding="utf-8")
+        written.append(str(path))
+    return written
 
 
 def _read_manifest(folder):

@@ -51,7 +51,8 @@ _TOKEN_RE = re.compile(
     re.S)
 
 
-def _run(text, bold=False, ital=False, strike=False, code=False, style=None):
+def _run(text, bold=False, ital=False, strike=False, code=False, style=None,
+         rtl=False):
     props = []
     if style:
         props.append('<w:rStyle w:val="%s"/>' % style)
@@ -59,10 +60,17 @@ def _run(text, bold=False, ital=False, strike=False, code=False, style=None):
         props.append('<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>')
     if bold:
         props.append("<w:b/>")
+        if rtl:
+            props.append("<w:bCs/>")     # bold for the complex-script half
     if ital:
-        props.append("<w:i/>")
+        # Persian has no italic cuts; Word would synthesise an oblique that
+        # reads as a rendering fault. Emphasis becomes weight instead, which
+        # is what a Persian typesetter would do.
+        props.append("<w:b/><w:bCs/>" if rtl else "<w:i/>")
     if strike:
         props.append("<w:strike/>")
+    if rtl:
+        props.append("<w:rtl/>")
     rpr = "<w:rPr>%s</w:rPr>" % "".join(props) if props else ""
     # xml:space=preserve keeps the spaces between adjacent runs
     return '<w:r>%s<w:t xml:space="preserve">%s</w:t></w:r>' % (rpr, _x(text))
@@ -105,38 +113,43 @@ class _Rels:
                 '2006/relationships">%s%s</Relationships>' % (base, rows))
 
 
-def _runs(text, rels):
+def _runs(text, rels, rtl=False):
     """Split one line of Markdown into Word runs, resolving links to rels."""
     out = []
     pos = 0
     for m in _TOKEN_RE.finditer(text):
         if m.start() > pos:
-            out.append(_run(text[pos:m.start()]))
+            out.append(_run(text[pos:m.start()], rtl=rtl))
         kind = m.lastgroup
         raw = m.group()
         if kind == "code":
-            out.append(_run(raw[1:-1], code=True))
+            out.append(_run(raw[1:-1], code=True, rtl=rtl))
         elif kind == "bold":
-            out.append(_run(raw[2:-2], bold=True))
+            out.append(_run(raw[2:-2], bold=True, rtl=rtl))
         elif kind == "strike":
-            out.append(_run(raw[2:-2], strike=True))
+            out.append(_run(raw[2:-2], strike=True, rtl=rtl))
         elif kind == "ital":
-            out.append(_run(raw[1:-1], ital=True))
+            out.append(_run(raw[1:-1], ital=True, rtl=rtl))
         elif kind == "link":
             label, url = re.match(r"\[([^\]]+)\]\(\s*([^)\s]+)\s*\)", raw).groups()
             rid = rels.hyperlink(url)
             out.append('<w:hyperlink r:id="%s">%s</w:hyperlink>'
-                       % (rid, _run(label, style="Hyperlink")))
+                       % (rid, _run(label, style="Hyperlink", rtl=rtl)))
         pos = m.end()
     if pos < len(text):
-        out.append(_run(text[pos:]))
-    return "".join(out) or _run("")
+        out.append(_run(text[pos:], rtl=rtl))
+    return "".join(out) or _run("", rtl=rtl)
 
 
-def _para(runs_xml, style=None, numid=None, level=0, spacing=None):
+def _para(runs_xml, style=None, numid=None, level=0, spacing=None, rtl=False):
     props = []
     if style:
         props.append('<w:pStyle w:val="%s"/>' % style)
+    if rtl:
+        # Must come before numPr: w:bidi flips the numbering indent too, and
+        # a list that numbers from the left in a right-to-left paragraph is
+        # the giveaway that a document was converted rather than written.
+        props.append("<w:bidi/>")
     if numid:
         props.append('<w:numPr><w:ilvl w:val="%d"/><w:numId w:val="%d"/></w:numPr>'
                      % (level, numid))
@@ -198,14 +211,14 @@ _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 _TABLE_SEP_RE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$")
 
 
-def _table(rows, rels):
+def _table(rows, rels, rtl=False):
     def cell(text, header):
         shd = '<w:shd w:val="clear" w:fill="F2F0EB"/>' if header else ""
         return ('<w:tc><w:tcPr><w:tcBorders>'
                 '<w:top w:val="single" w:sz="4" w:color="D8D4CC"/>'
                 '<w:bottom w:val="single" w:sz="4" w:color="D8D4CC"/>'
                 '<w:left w:val="nil"/><w:right w:val="nil"/></w:tcBorders>%s</w:tcPr>%s</w:tc>'
-                % (shd, _para(_runs(("**%s**" % text) if header else text, rels),
+                % (shd, _para(_runs(("**%s**" % text) if header else text, rels, rtl), rtl=rtl,
                               style="TableCell")))
     trs = []
     for n, row in enumerate(rows):
@@ -219,7 +232,7 @@ def _split_row(line):
     return [c.strip() for c in line.split("|")]
 
 
-def _markdown_body(md, rels, heading_offset=0):
+def _markdown_body(md, rels, heading_offset=0, rtl=False):
     lines = (md or "").replace("\r\n", "\n").split("\n")
     out = []
     para = []
@@ -227,7 +240,7 @@ def _markdown_body(md, rels, heading_offset=0):
 
     def flush():
         if para:
-            out.append(_para(_runs(" ".join(para), rels), style="Body"))
+            out.append(_para(_runs(" ".join(para), rels, rtl), style="Body", rtl=rtl))
             del para[:]
 
     while i < len(lines):
@@ -244,7 +257,7 @@ def _markdown_body(md, rels, heading_offset=0):
                 i += 1
             i += 1
             for c in code:
-                out.append(_para(_run(c, code=True), style="Code"))
+                out.append(_para(_run(c, code=True, rtl=rtl), style="Code", rtl=rtl))
             continue
 
         if "|" in s and i + 1 < len(lines) and _TABLE_SEP_RE.match(lines[i + 1]):
@@ -254,7 +267,7 @@ def _markdown_body(md, rels, heading_offset=0):
             while i < len(lines) and "|" in lines[i] and lines[i].strip():
                 rows.append(_split_row(lines[i]))
                 i += 1
-            out.append(_table(rows, rels))
+            out.append(_table(rows, rels, rtl))
             continue
 
         if not s:
@@ -264,8 +277,9 @@ def _markdown_body(md, rels, heading_offset=0):
 
         if _HR_RE.match(line) and not _UL_RE.match(line):
             flush()
-            out.append('<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" '
-                       'w:color="D8D4CC"/></w:pBdr></w:pPr></w:p>')
+            out.append('<w:p><w:pPr>%s<w:pBdr><w:bottom w:val="single" w:sz="6" '
+                       'w:color="D8D4CC"/></w:pBdr></w:pPr></w:p>'
+                       % ("<w:bidi/>" if rtl else ""))
             i += 1
             continue
 
@@ -273,14 +287,15 @@ def _markdown_body(md, rels, heading_offset=0):
         if h:
             flush()
             level = min(4, len(h.group(1)) + heading_offset)
-            out.append(_para(_runs(h.group(2).strip(), rels), style="Heading%d" % level))
+            out.append(_para(_runs(h.group(2).strip(), rels, rtl), style="Heading%d" % level,
+                             rtl=rtl))
             i += 1
             continue
 
         q = _QUOTE_RE.match(line)
         if q:
             flush()
-            out.append(_para(_runs(q.group(1), rels), style="Quote"))
+            out.append(_para(_runs(q.group(1), rels, rtl), style="Quote", rtl=rtl))
             i += 1
             continue
 
@@ -290,7 +305,7 @@ def _markdown_body(md, rels, heading_offset=0):
             indent = len((ul or ol).group(1).expandtabs(4))
             level = min(2, indent // 2)
             text = ul.group(2) if ul else ol.group(3)
-            out.append(_para(_runs(text.strip(), rels), style="ListParagraph",
+            out.append(_para(_runs(text.strip(), rels, rtl), style="ListParagraph", rtl=rtl,
                              numid=1 if ul else 2, level=level))
             i += 1
             continue
@@ -304,7 +319,13 @@ def _markdown_body(md, rels, heading_offset=0):
 
 # --- parts -------------------------------------------------------------------
 
-def _styles_xml(accent="C97F2D", serif="Georgia", sans="Segoe UI"):
+#: The complex-script face. Tahoma is not a beautiful Persian type but it is
+#: on every Windows machine with complete, correctly-shaped coverage, and a
+#: .docx cannot carry a font the reader does not have.
+CS_FONT = "Tahoma"
+
+
+def _styles_xml(accent="C97F2D", serif="Georgia", sans="Segoe UI", rtl=False):
     def st(sid, name, size, color, bold, spacing, font, extra=""):
         return (
             '<w:style w:type="paragraph" w:styleId="%s"><w:name w:val="%s"/>'
@@ -317,8 +338,13 @@ def _styles_xml(accent="C97F2D", serif="Georgia", sans="Segoe UI"):
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             "<w:styles %s>" % NS
             + '<w:docDefaults><w:rPrDefault><w:rPr>'
-              '<w:rFonts w:ascii="%s" w:hAnsi="%s"/><w:sz w:val="22"/>'
-              '<w:color w:val="1A2230"/></w:rPr></w:rPrDefault></w:docDefaults>' % (serif, serif)
+              '<w:rFonts w:ascii="%s" w:hAnsi="%s" w:cs="%s"/>'
+              '<w:sz w:val="22"/><w:szCs w:val="22"/>'
+              '<w:color w:val="1A2230"/>%s</w:rPr></w:rPrDefault>'
+              '<w:pPrDefault><w:pPr>%s</w:pPr></w:pPrDefault></w:docDefaults>'
+              % (serif, serif, CS_FONT if rtl else serif,
+                 "<w:rtl/>" if rtl else "",
+                 "<w:bidi/>" if rtl else "")
             + st("Title", "Title", 56, "1A2230", True, sp(0, 120), serif)
             + st("Subtitle", "Subtitle", 22, "5C6675", False, sp(0, 360), sans)
             + st("Kicker", "Kicker", 17, accent, True, sp(0, 60), sans,
@@ -384,9 +410,21 @@ ROOT_RELS = (
     '<Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/'
     '2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
 
-SECT_PR = ('<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
-           '<w:pgMar w:top="1418" w:right="1418" w:bottom="1418" w:left="1418" '
-           'w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>')
+def sect_pr(rtl=False):
+    """A4 with even margins, optionally right-to-left.
+
+    The gutter stays at 0 either way; w:bidi is what moves the binding edge,
+    not the margin values.
+    """
+    return ('<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
+            '<w:pgMar w:top="1418" w:right="1418" w:bottom="1418" w:left="1418" '
+            'w:header="708" w:footer="708" w:gutter="0"/>'
+            + ("<w:bidi/>" if rtl else "")
+            + "</w:sectPr>")
+
+
+#: Kept for callers that predate the direction argument.
+SECT_PR = sect_pr(False)
 
 
 def write_docx(path, doc):
@@ -394,27 +432,36 @@ def write_docx(path, doc):
 
     ``doc`` keys used: title, subtitle, kicker, summary, markdown, references
     (list of display strings), figures (list of {path, caption}), accent,
-    meta_line.
+    meta_line, footer, and - for a right-to-left document - dir, l_figures
+    and l_references.
+
+    Direction is the caller's verdict, not this module's guess. The pipeline
+    already decided it from the report's own text; re-deriving it here from
+    the markdown alone would let the .docx and the .html disagree about which
+    way the same report runs.
     """
+    rtl = (doc.get("dir") == "rtl")
     rels = _Rels()
     accent = (doc.get("accent") or "#c97f2d").lstrip("#").upper()[:6] or "C97F2D"
     body = []
 
     if doc.get("kicker"):
-        body.append(_para(_run(doc["kicker"].upper()), style="Kicker"))
-    body.append(_para(_run(doc.get("title") or "Untitled"), style="Title"))
+        body.append(_para(_run(doc["kicker"].upper(), rtl=rtl), style="Kicker", rtl=rtl))
+    body.append(_para(_run(doc.get("title") or "Untitled", rtl=rtl), style="Title",
+                      rtl=rtl))
     if doc.get("subtitle"):
-        body.append(_para(_run(doc["subtitle"]), style="Subtitle"))
+        body.append(_para(_run(doc["subtitle"], rtl=rtl), style="Subtitle", rtl=rtl))
     if doc.get("meta_line"):
-        body.append(_para(_run(doc["meta_line"]), style="Subtitle"))
+        body.append(_para(_run(doc["meta_line"], rtl=rtl), style="Subtitle", rtl=rtl))
     if doc.get("summary"):
-        body.append(_para(_runs(doc["summary"], rels), style="Quote"))
+        body.append(_para(_runs(doc["summary"], rels, rtl), style="Quote", rtl=rtl))
 
-    body.append(_markdown_body(doc.get("markdown") or "", rels))
+    body.append(_markdown_body(doc.get("markdown") or "", rels, rtl=rtl))
 
     figures = doc.get("figures") or []
     if figures:
-        body.append(_para(_run("Figures"), style="Heading2"))
+        body.append(_para(_run(doc.get("l_figures") or "Figures", rtl=rtl),
+                          style="Heading2", rtl=rtl))
         for fig in figures:
             rid = rels.image(fig.get("path", ""))
             if not rid:
@@ -423,20 +470,22 @@ def write_docx(path, doc):
             w, h = _png_size(data)
             body.append(_image_para(rid, w, h, fig.get("caption", "figure")))
             if fig.get("caption"):
-                body.append(_para(_run(fig["caption"]), style="Caption"))
+                body.append(_para(_run(fig["caption"], rtl=rtl), style="Caption", rtl=rtl))
 
     refs = doc.get("references") or []
     if refs:
-        body.append(_para(_run("References"), style="Heading2"))
+        body.append(_para(_run(doc.get("l_references") or "References", rtl=rtl),
+                          style="Heading2", rtl=rtl))
         for n, r in enumerate(refs, 1):
-            body.append(_para(_runs("%d. %s" % (n, r), rels), style="Reference"))
+            body.append(_para(_runs("%d. %s" % (n, r), rels, rtl), style="Reference",
+                          rtl=rtl))
 
     if doc.get("footer"):
-        body.append(_para(_run(doc["footer"]), style="Caption"))
+        body.append(_para(_run(doc["footer"], rtl=rtl), style="Caption", rtl=rtl))
 
     document = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 "<w:document %s><w:body>%s%s</w:body></w:document>"
-                % (NS, "".join(body), SECT_PR))
+                % (NS, "".join(body), sect_pr(rtl)))
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -450,7 +499,7 @@ def write_docx(path, doc):
             put("[Content_Types].xml", CONTENT_TYPES)
             put("_rels/.rels", ROOT_RELS)
             put("word/document.xml", document)
-            put("word/styles.xml", _styles_xml(accent=accent))
+            put("word/styles.xml", _styles_xml(accent=accent, rtl=rtl))
             put("word/numbering.xml", _numbering_xml(accent=accent))
             put("word/_rels/document.xml.rels", rels.xml())
             for name, data in rels.media.items():

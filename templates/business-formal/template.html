@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="{{lang}}" dir="{{dir}}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{title}}</title>
 <style>
@@ -42,7 +42,7 @@ h1{font-size:24pt;line-height:1.22;font-weight:700;margin:8pt 0 3pt;letter-spaci
 
 /* --- table of contents ---------------------------------------------------- */
 .toc{font-family:var(--sans);margin:0 0 22pt;padding:12pt 16pt;background:var(--wash);
-  border-left:3px solid var(--accent);break-inside:avoid}
+  border-inline-start:3px solid var(--accent);break-inside:avoid}
 .toc .toc-t{font-size:8.5pt;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
   color:var(--faint);margin-bottom:6pt}
 .toc ol{margin:0;padding:0;list-style:none;counter-reset:toc;font-size:10pt}
@@ -70,11 +70,11 @@ section.sub>h3{counter-increment:subsec}
 section.sub>h3::before{content:counter(sec) "." counter(subsec) "\00a0\00a0";color:var(--accent)}
 h4{font-size:10.5pt;font-weight:700;font-style:italic;margin:10pt 0 3pt;color:var(--mut)}
 p{margin:0 0 8pt;text-align:justify}
-ul,ol{margin:6pt 0 10pt;padding-left:22px}
+ul,ol{margin:6pt 0 10pt;padding-inline-start:22px}
 li{margin:0 0 5pt}
 li>ul,li>ol{margin:4pt 0 0}
 li::marker{color:var(--accent)}
-blockquote{margin:10pt 8mm;padding:2pt 0 2pt 12pt;border-left:2pt solid var(--rule);
+blockquote{margin:10pt 8mm;padding:2pt 0 2pt 12pt;border-inline-start:2pt solid var(--rule);
   color:var(--mut);font-style:italic}
 code{font-family:var(--mono);font-size:9.8pt;background:var(--wash);border:.5pt solid var(--rule);
   padding:.5px 4px;border-radius:3px}
@@ -91,7 +91,7 @@ a.cite{font-family:var(--sans);text-decoration:none;font-size:8.5pt;font-weight:
 .md-table{width:100%;border-collapse:collapse;margin:10pt 0 14pt;font-size:10pt;
   font-variant-numeric:tabular-nums;break-inside:avoid;font-family:var(--sans)}
 .md-table thead th{border-top:1pt solid var(--ink);border-bottom:.75pt solid var(--ink);
-  text-align:left;padding:6pt 8pt;font-size:8.5pt;font-weight:700;letter-spacing:.04em;
+  text-align:start;padding:6pt 8pt;font-size:8.5pt;font-weight:700;letter-spacing:.04em;
   text-transform:uppercase;color:var(--mut)}
 .md-table td{padding:6pt 8pt;border-bottom:.5pt solid var(--rule);vertical-align:top}
 .md-table tbody tr:last-child td{border-bottom:1pt solid var(--ink)}
@@ -107,11 +107,11 @@ figcaption{font-family:var(--sans);font-size:9pt;color:var(--mut);margin-top:5pt
 /* --- references: formal, decimal, no brackets -------------------------------- */
 .refs-h{font-size:14.5pt;font-weight:700;margin:26pt 0 8pt;padding-top:14pt;
   border-top:1pt solid var(--ink);break-after:avoid}
-ol.refs{font-family:var(--sans);font-size:9.5pt;line-height:1.5;padding-left:0;
+ol.refs{font-family:var(--sans);font-size:9.5pt;line-height:1.5;padding-inline-start:0;
   list-style:none;counter-reset:ref}
 ol.refs li{counter-increment:ref;padding:5pt 0 5pt 26pt;position:relative;
   border-bottom:.5pt solid var(--rule);word-break:break-word;scroll-margin-top:20pt}
-ol.refs li::before{content:counter(ref) ".";position:absolute;left:0;top:5pt;
+ol.refs li::before{content:counter(ref) ".";position:absolute;inset-inline-start:0;top:5pt;
   color:var(--accent);font-weight:700}
 ol.refs li:target{background:var(--accent-wash)}
 ol.refs a{color:var(--ink);border-bottom:.5pt solid var(--rule)}
@@ -119,6 +119,7 @@ ol.refs a{color:var(--ink);border-bottom:.5pt solid var(--rule)}
 footer{margin-top:26pt;padding-top:10pt;border-top:.5pt solid var(--rule);
   font-family:var(--sans);font-size:8.5pt;color:var(--faint);display:flex;
   justify-content:space-between;gap:12px;flex-wrap:wrap}
+{{rtl_css}}
 </style></head>
 <body><div class="wrap">
 
@@ -143,7 +144,7 @@ footer{margin-top:26pt;padding-top:10pt;border-top:.5pt solid var(--rule);
 
 {{#figures}}<div class="figures"><h2 style="border-bottom:1pt solid var(--ink)">Exhibits</h2>{{figures}}</div>{{/figures}}
 
-<h2 class="refs-h">References</h2>
+<h2 class="refs-h">{{l_references}}</h2>
 <ol class="refs">{{references}}</ol>
 
 <footer><span>{{footer}}</span><span>Trailmark {{app_version}}</span></footer>

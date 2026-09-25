@@ -407,7 +407,7 @@ body.mini .vheard{-webkit-line-clamp:1;min-height:0}
     <div class="card glass fade">
       <div class="big">Start a topic</div>
       <p class="muted">No open topic yet. Give this research a name to begin.</p>
-      <input id="ntTitle" class="input" placeholder="Topic name — e.g. Rust borrow checker">
+      <input id="ntTitle" class="input" dir="auto" placeholder="Topic name — e.g. Rust borrow checker">
       <button id="ntGo" class="btn primary full">Start topic</button>
     </div>
   </section>
@@ -430,14 +430,14 @@ body.mini .vheard{-webkit-line-clamp:1;min-height:0}
         <div class="k-hint" id="ptKindHint"></div>
       </div>
       <label>Point</label>
-      <textarea id="ptText" class="input ta" rows="3" placeholder="Type or paste the point…" spellcheck="false"></textarea>
+      <textarea id="ptText" class="input ta" dir="auto" rows="3" placeholder="Type or paste the point…" spellcheck="false"></textarea>
       <div class="srcbar">
         <input id="ptLink" class="input grow" placeholder="Paste a source link…">
         <button id="ptLinkAdd" class="chip">+ Link</button>
         <button id="ptLinkPaste" class="paste-btn" type="button" aria-label="Paste link from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
       </div>
       <div class="srcbar">
-        <input id="ptStr" class="input grow" placeholder="Or a string citation…">
+        <input id="ptStr" class="input grow" dir="auto" placeholder="Or a string citation…">
         <button id="ptStrAdd" class="chip">+ String</button>
         <button id="ptStrPaste" class="paste-btn" type="button" aria-label="Paste text from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
       </div>
@@ -807,6 +807,25 @@ function popupShown(){
   setTimeout(()=>{const el=$("#ptText");if(el)el.focus();},120);
 }
 if(window.pywebview){boot();}else{window.addEventListener("pywebviewready",boot);}
+
+// --- Persian half-space -----------------------------------------------------
+// Ctrl+Shift+Space inserts ZWNJ (U+200C). Windows has no key for it, and
+// Persian needs it constantly: "\u0645\u06cc \u0634\u0648\u062f" and
+// "\u0645\u06cc\u200c\u0634\u0648\u062f" are different words and look
+// identical in most editors. Without a key, people type the wrong one - which
+// is the single most common defect in Persian text entered on a machine that
+// did not expect it.
+function zwnjKey(e){
+  if(!(e.ctrlKey&&e.shiftKey&&(e.code==="Space"||e.key===" ")))return;
+  const el=e.target;
+  if(!el||!("selectionStart" in el)||el.selectionStart===null)return;
+  e.preventDefault();
+  const a=el.selectionStart,b=el.selectionEnd,v=el.value;
+  el.value=v.slice(0,a)+"\u200c"+v.slice(b);
+  el.selectionStart=el.selectionEnd=a+1;
+  el.dispatchEvent(new Event("input",{bubbles:true}));
+}
+document.addEventListener("keydown",zwnjKey,true);
 </script></body></html>
 """
 
@@ -1205,7 +1224,7 @@ function renderSide(){
       :(n+" point"+(n===1?"":"s")+" · closed "+fmtT(t.closed));
     return `<div class="ti ${sel===t.id?"sel":""}" data-id="${t.id}">
       <span class="dot ${t.status}"></span>
-      <div class="ti-b"><div class="ti-t">${esc(t.title)}</div><div class="ti-s">${esc(sub)}</div></div>
+      <div class="ti-b"><div class="ti-t" dir="auto">${esc(t.title)}</div><div class="ti-s" dir="auto">${esc(sub)}</div></div>
     </div>`;
   }).join("")||(open?emptyHtml("No open topics","Start one with the button below, or hit the capture hotkey.")
                     :emptyHtml("No closed topics yet","A topic moves here when you close and export it."));
@@ -1255,7 +1274,7 @@ function newViewHtml(){
   return `<div class="cards"><div class="card glass fade hero">${MARK_SVG}
     <div class="card-h"><div class="card-t">New research topic</div></div>
     <p class="muted">Give the topic a name, then start logging points. Each point can carry a source — a link, a string citation, or a screenshot.</p>
-    <div class="row"><input id="ntTitle" class="input grow" placeholder="Topic name — e.g. Rust borrow checker">
+    <div class="row"><input id="ntTitle" class="input grow" dir="auto" placeholder="Topic name — e.g. Rust borrow checker">
       <button class="btn primary" id="ntGo">Start topic</button></div>
   </div></div>`;
 }
@@ -1794,7 +1813,7 @@ function detailHtml(t){
     ${sciOn()?`<div class="row"><div class="kinds grow" id="cKinds">
       ${["claim","note","quote"].map(k=>`<button class="k ${compKind===k?"on":""}" data-kind="${k}">${KIND_LABEL[k]}</button>`).join("")}
     </div><span class="muted" style="flex:2;min-width:180px;font-size:11px">${esc(KIND_HINT[compKind]||"")}</span></div>`:""}
-    <div class="row"><textarea id="cText" class="input ta grow" rows="2" placeholder="Type or paste the point…" spellcheck="false"></textarea>
+    <div class="row"><textarea id="cText" class="input ta grow" dir="auto" rows="2" placeholder="Type or paste the point…" spellcheck="false"></textarea>
       <button class="btn primary" id="cGo">Log point</button></div>
     <div class="row"><input id="cStr" class="input grow" placeholder="String citation…">
       <button class="chip" id="cStrAdd">+ String</button>
@@ -1808,7 +1827,7 @@ function detailHtml(t){
   const moreBtn=shown.length>displayLimit?`<button class="btn ghost full" id="showMore">Show ${shown.length-displayLimit} more</button>`:"";
   const summaryBlock=summaryDraft?`<div class="card sub glass">
     <div class="card-h"><div class="card-t">AI summary</div></div>
-    <div class="e-text" style="white-space:pre-line;margin-bottom:10px">${esc(summaryDraft)}</div>
+    <div class="e-text" dir="auto" style="white-space:pre-line;margin-bottom:10px">${esc(summaryDraft)}</div>
     <div class="row"><button class="btn ghost sm" id="sumCopy">Copy</button>
       <button class="btn ghost sm" id="sumClose">Dismiss</button></div>
   </div>`:"";
@@ -1816,7 +1835,7 @@ function detailHtml(t){
     ${summaryBlock}
     <div class="dhead">
       <span class="dot ${t.status}"></span>
-      <div class="dh-b"><div class="dh-t">${esc(t.title)}</div>
+      <div class="dh-b"><div class="dh-t" dir="auto">${esc(t.title)}</div>
         <div class="dh-s">${n} point${n===1?"":"s"} · created ${fmt(t.created)}${t.closed?" · closed "+fmt(t.closed):""}</div></div>
       ${pill}
     </div>
@@ -1856,8 +1875,8 @@ function entryHtml(t,e){
   const mf=(editSource&&editSource.split("|")[0]===e.id)
     ? metaFormHtml(e,(e.sources||[]).find(x=>x.id===editSource.split("|")[1])) : "";
   const actions=editEntry===e.id
-    ?`<div class="edit"><textarea id="eeText" class="input ta" rows="2">${esc(e.text)}</textarea>
-       <div class="row"><input id="eeSub" class="input grow" placeholder="Sub-topic" value="${esc(e.subtopic||"")}">
+    ?`<div class="edit"><textarea id="eeText" class="input ta" dir="auto" rows="2">${esc(e.text)}</textarea>
+       <div class="row"><input id="eeSub" class="input grow" dir="auto" placeholder="Sub-topic" value="${esc(e.subtopic||"")}">
        <button class="btn primary sm" id="eeSave">Save</button><button class="btn ghost sm" id="eeCancel">Cancel</button></div></div>`
     :`<div class="e-actions">
         ${state.config.llm&&state.config.llm.enabled?`<button class="btn ghost sm" data-polish="${e.id}">Polish</button>`:""}
@@ -1866,7 +1885,7 @@ function entryHtml(t,e){
        </div>`;
   return `<div class="card sub glass entry fade">
     <div class="e-meta">${when}${sub}${kindBadge}</div>
-    <div class="e-text">${escTop(e.text)}</div>
+    <div class="e-text" dir="auto">${escTop(e.text)}</div>
     <div class="sources">${srcs}</div>
     ${descBtns?`<div class="src-descs">${descBtns}</div>`:""}
     ${mf}
@@ -2847,6 +2866,25 @@ async function init(){
   render();
 }
 if(window.pywebview){init();}else{window.addEventListener("pywebviewready",init);}
+
+// --- Persian half-space -----------------------------------------------------
+// Ctrl+Shift+Space inserts ZWNJ (U+200C). Windows has no key for it, and
+// Persian needs it constantly: "\u0645\u06cc \u0634\u0648\u062f" and
+// "\u0645\u06cc\u200c\u0634\u0648\u062f" are different words and look
+// identical in most editors. Without a key, people type the wrong one - which
+// is the single most common defect in Persian text entered on a machine that
+// did not expect it.
+function zwnjKey(e){
+  if(!(e.ctrlKey&&e.shiftKey&&(e.code==="Space"||e.key===" ")))return;
+  const el=e.target;
+  if(!el||!("selectionStart" in el)||el.selectionStart===null)return;
+  e.preventDefault();
+  const a=el.selectionStart,b=el.selectionEnd,v=el.value;
+  el.value=v.slice(0,a)+"\u200c"+v.slice(b);
+  el.selectionStart=el.selectionEnd=a+1;
+  el.dispatchEvent(new Event("input",{bubbles:true}));
+}
+document.addEventListener("keydown",zwnjKey,true);
 </script></body></html>
 """
 

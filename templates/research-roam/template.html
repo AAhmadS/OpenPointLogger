@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="{{lang}}" dir="{{dir}}"><head><meta charset="utf-8">
 <title>{{title}}</title>
 <style>
 /* Research Roam - journal typesetting. Latin Modern where installed (it ships
@@ -37,36 +37,36 @@ h1{font-size:17pt;line-height:1.2;font-weight:600;margin:8pt 0 4pt;text-align:ce
   font-size:9.2pt; line-height:1.4;
 }
 .abstract .lbl{font-family:var(--sans);font-weight:700;font-size:8pt;letter-spacing:.08em;
-  text-transform:uppercase;color:var(--ink);margin-right:.6em}
+  text-transform:uppercase;color:var(--ink);margin-inline-end:.6em}
 
 /* --- contents ----------------------------------------------------------- */
 .toc{margin:0 0 14pt;font-size:9pt;font-family:var(--sans)}
 .toc .toc-t{font-weight:700;font-size:8pt;letter-spacing:.1em;text-transform:uppercase;
   color:var(--mut);margin-bottom:4pt}
-.toc ol{margin:0;padding-left:1.4em;columns:2;column-gap:10mm}
+.toc ol{margin:0;padding-inline-start:1.4em;columns:2;column-gap:10mm}
 .toc a{color:var(--ink);text-decoration:none}
 
 /* --- body --------------------------------------------------------------- */
 section.sub{margin:0 0 11pt; break-inside:auto}
 h2{
   font-family:var(--serif); font-size:11pt; font-weight:700; margin:14pt 0 5pt;
-  text-align:left; counter-increment:sec; break-after:avoid;
+  text-align:start; counter-increment:sec; break-after:avoid;
 }
 h2::before{content:counter(sec) ".\00a0\00a0"; color:var(--accent)}
 body{counter-reset:sec}
-h3{font-size:10pt;font-weight:600;font-style:italic;margin:9pt 0 3pt;text-align:left;break-after:avoid}
-h4{font-size:9.6pt;font-weight:600;margin:7pt 0 2pt;text-align:left}
+h3{font-size:10pt;font-weight:600;font-style:italic;margin:9pt 0 3pt;text-align:start;break-after:avoid}
+h4{font-size:9.6pt;font-weight:600;margin:7pt 0 2pt;text-align:start}
 p{margin:0 0 5pt;text-indent:1.6em}
 p:first-of-type, h2 + p, h3 + p, h4 + p, blockquote + p, ul + p, ol + p{text-indent:0}
-ul,ol{margin:4pt 0 6pt;padding-left:1.5em}
+ul,ol{margin:4pt 0 6pt;padding-inline-start:1.5em}
 li{margin:0 0 2.5pt;text-align:justify}
 li > ul, li > ol{margin:2pt 0 0}
-blockquote{margin:6pt 6mm;padding:0 0 0 8pt;border-left:1.5pt solid var(--rule);
+blockquote{margin:6pt 6mm;padding:0 0 0 8pt;border-inline-start:1.5pt solid var(--rule);
   font-size:9.6pt;color:var(--mut);text-indent:0}
 code{font-family:var(--mono);font-size:9.2pt;background:#f4f4f6;padding:0 .18em;border-radius:2px}
 pre{font-family:var(--mono);font-size:8.6pt;line-height:1.35;background:#f7f7f9;
   border:.5pt solid var(--rule);border-radius:3px;padding:6pt 8pt;overflow-x:auto;
-  text-align:left;text-indent:0;break-inside:avoid}
+  text-align:start;text-indent:0;break-inside:avoid}
 pre code{background:none;padding:0}
 hr{border:0;border-top:.5pt solid var(--rule);margin:10pt 0}
 a{color:var(--ink);text-decoration:none;border-bottom:.4pt solid var(--rule)}
@@ -78,7 +78,7 @@ a.cite{
 /* --- tables ------------------------------------------------------------- */
 .md-table{
   width:100%;border-collapse:collapse;margin:8pt 0 10pt;font-size:9pt;
-  font-variant-numeric:tabular-nums;break-inside:avoid;text-align:left;
+  font-variant-numeric:tabular-nums;break-inside:avoid;text-align:start;
 }
 .md-table thead th{
   border-top:1pt solid var(--ink);border-bottom:.5pt solid var(--ink);
@@ -99,16 +99,17 @@ body{counter-reset:sec fig}
 
 /* --- references --------------------------------------------------------- */
 .refs-h{font-size:11pt;font-weight:700;margin:16pt 0 5pt;border-top:.5pt solid var(--rule);
-  padding-top:8pt;text-align:left;break-after:avoid}
-ol.refs{font-size:8.8pt;line-height:1.42;padding-left:0;list-style:none;counter-reset:ref}
-ol.refs li{counter-increment:ref;padding-left:2.4em;text-indent:-2.4em;margin:0 0 3pt;
-  text-align:left;word-break:break-word}
+  padding-top:8pt;text-align:start;break-after:avoid}
+ol.refs{font-size:8.8pt;line-height:1.42;padding-inline-start:0;list-style:none;counter-reset:ref}
+ol.refs li{counter-increment:ref;padding-inline-start:2.4em;text-indent:-2.4em;margin:0 0 3pt;
+  text-align:start;word-break:break-word}
 ol.refs li::before{content:"[" counter(ref) "]";color:var(--accent);font-family:var(--sans);
   font-size:8.2pt;font-weight:700;display:inline-block;width:2.4em;text-indent:0}
 ol.refs a{border:0;color:var(--accent)}
 
 footer{margin-top:14pt;padding-top:6pt;border-top:.5pt solid var(--rule);
   font-family:var(--sans);font-size:7.4pt;color:var(--mut);text-align:center}
+{{rtl_css}}
 </style></head>
 <body><div class="page">
 <header>
@@ -119,7 +120,7 @@ footer{margin-top:14pt;padding-top:6pt;border-top:.5pt solid var(--rule);
   <div class="dateline">{{date}}{{#period}} &nbsp;·&nbsp; collected {{period}}{{/period}}</div>
 </header>
 
-{{#summary}}<div class="abstract"><span class="lbl">Abstract</span>{{summary}}</div>{{/summary}}
+{{#summary}}<div class="abstract"><span class="lbl">{{l_abstract}}</span>{{summary}}</div>{{/summary}}
 
 {{toc}}
 
@@ -127,7 +128,7 @@ footer{margin-top:14pt;padding-top:6pt;border-top:.5pt solid var(--rule);
 
 {{#figures}}<div class="figures">{{figures}}</div>{{/figures}}
 
-<div class="refs-h">References</div>
+<div class="refs-h">{{l_references}}</div>
 <ol class="refs">{{references}}</ol>
 
 <footer>{{footer}} &nbsp;·&nbsp; {{count_points}} points, {{count_sources}} sources &nbsp;·&nbsp; Trailmark {{app_version}}</footer>
