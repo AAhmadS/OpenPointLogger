@@ -328,6 +328,24 @@ class Api:
         self.controller.push_voice_state("cleared", "")
         return self.controller.voice_snapshot()
 
+    def toggle_voice(self, on=None):
+        """Turn always-on voice on or off from whichever window asked."""
+        try:
+            cfg = dict(self.store.config.get("asr") or {})
+            cfg["enabled"] = (not cfg.get("enabled")) if on is None else bool(on)
+            self.save_asr(cfg)
+            out = {"enabled": bool(cfg["enabled"])}
+            # Turning it on with no transcription key opens the microphone and
+            # then fails on the first thing said, several seconds later and in
+            # a different place. Say it now instead - the switch still goes on,
+            # because the user asked for it to.
+            if cfg["enabled"] and not (cfg.get("api_key") or "").strip():
+                out["warn"] = ("Listening, but there is no transcription key yet "
+                               "- add one in Settings.")
+            return out
+        except Exception as e:
+            return {"error": str(e)}
+
     def set_popup_mini(self, mini):
         return self.controller.set_popup_mini(mini)
 
@@ -1171,6 +1189,13 @@ class Controller:
         payload["state"] = self.voice_state
         payload["detail"] = self.voice_detail
         payload["always_on"] = bool((self.store.config.get("voice") or {}).get("always_on", True))
+        _asr = self.store.config.get("asr") or {}
+        payload["enabled"] = bool(_asr.get("enabled"))
+        # "Configured" is what decides whether the popup shows the voice card
+        # at all. Someone who has never set voice up gets a capture form, not a
+        # dormant panel; someone who has gets to see that it is off, which is
+        # the state you cannot discover from a hidden card.
+        payload["configured"] = bool((_asr.get("api_key") or "").strip())
         payload["listening"] = bool(self.asr_logger is not None)
         payload["mini"] = bool(self.popup_mini)
         return payload
@@ -1707,7 +1732,7 @@ class Controller:
 
     @staticmethod
     def _voice_label(enabled):
-        return "Voice logging: %s" % ("On" if enabled else "Off")
+        return "Always-on voice: %s" % ("On" if enabled else "Off")
 
     def _toggle_voice_logging(self):
         """Tray click handler - runs on the tray's own thread, same as every

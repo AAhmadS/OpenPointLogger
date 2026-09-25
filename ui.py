@@ -358,6 +358,8 @@ section{overflow-y:auto;flex:1}
   width:24px;height:24px;padding:0;border-radius:var(--r-sm);border:1px solid var(--border);
   background:transparent;color:var(--content-secondary);cursor:pointer}
 .icobtn:hover{color:var(--content);border-color:var(--border-strong)}
+.icobtn[aria-checked="true"]{color:var(--accent);border-color:var(--accent);
+  background:var(--accent-tint)}
 .icobtn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;
   stroke-linecap:round;stroke-linejoin:round}
 
@@ -378,6 +380,8 @@ body.mini .vheard{-webkit-line-clamp:1;min-height:0}
     <img src="__ICON__" alt="">
     <div class="tt"><div class="app">Trailmark</div><div class="hk" id="hkLabel"></div></div>
     <button id="openApp" class="chip accent" title="Open the main window">Open app</button>
+    <button id="voiceBtn" class="icobtn" type="button" role="switch" aria-checked="false"
+            title="Always-on voice"><svg viewBox="0 0 20 20"><path d="M10 3.5a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0V6A2.5 2.5 0 0 1 10 3.5z"/><path d="M5.5 9.5A4.5 4.5 0 0 0 10 14a4.5 4.5 0 0 0 4.5-4.5"/><path d="M10 14v2.5"/></svg></button>
     <button id="miniBtn" class="icobtn" type="button" role="switch" aria-checked="false"
             title="Collapse to the voice bar"><svg viewBox="0 0 20 20"><path d="M4 10h12"/></svg></button>
     <div class="pulse" id="liveDot"></div>
@@ -674,7 +678,8 @@ document.addEventListener("wheel",e=>{if(e.ctrlKey)e.preventDefault();},{passive
 // window. So this window never keeps its own copy: every render comes from a
 // payload Python pushed, or from one pull when the window is shown.
 let voice={comments:[],sources:[],count_comments:0,count_sources:0,empty:true,
-           state:"off",detail:"",topic:"",always_on:true,listening:false,mini:false};
+           state:"off",detail:"",topic:"",always_on:true,enabled:false,
+           configured:false,listening:false,mini:false};
 
 const V_LABEL={off:"Voice off",listening:"Listening",speech:"Speaking",
   transcribing:"Transcribing",heard:"Heard",logged:"Logged",source:"Source added",
@@ -709,10 +714,14 @@ function vrow(kind,i,text,isSrc){
 function renderVoice(){
   const sec=$("#voiceSec");
   if(!sec)return;
-  const live=!!(voice.always_on&&voice.listening);
+  const live=!!voice.listening;
+  const vb=$("#voiceBtn");
+  if(vb){vb.setAttribute("aria-checked",voice.enabled?"true":"false");
+         vb.title=voice.enabled?"Always-on voice is on — click to stop listening"
+                               :"Always-on voice is off — click to start listening";}
   // The bar stays up while collapsed even with voice off, so the mini window
   // is never a blank rectangle with nothing to click.
-  sec.hidden=!(live||voice.mini);
+  sec.hidden=!(voice.enabled||live||voice.mini||voice.configured);
   document.body.classList.toggle("mini",!!voice.mini);
   if(sec.hidden)return;
 
@@ -736,7 +745,9 @@ function renderVoice(){
   if(voice.state==="error")h.textContent="";
   else if(last)h.textContent="\u201c"+last+"\u201d";
   else if(voice.detail)h.textContent=voice.detail;
-  else h.textContent=live?"Talk. Say Trail-Log to file it.":"Turn voice logging on in Settings.";
+  else if(live)h.textContent="Talk. Say Trail-Log to file it.";
+  else if(voice.enabled)h.textContent="Starting the microphone…";
+  else h.textContent="Always-on voice is off. Click the microphone above to start.";
 
   const list=$("#vList");
   const rows=[];
@@ -765,6 +776,15 @@ $("#vSave").addEventListener("click",()=>vcmd("save"));
 $("#vTab").addEventListener("click",()=>vcmd("tab"));
 $("#vSess").addEventListener("click",()=>vcmd("session"));
 $("#vFin").addEventListener("click",()=>vcmd("finish"));
+$("#voiceBtn").addEventListener("click",async()=>{
+  let r;
+  try{r=await api.toggle_voice();}catch(e){r={error:"Bridge not ready."};}
+  if(r&&r.error){toast(r.error,"err");return;}
+  voice.enabled=!!(r&&r.enabled);
+  renderVoice();
+  if(r&&r.warn)toast(r.warn,"err");
+  else if(!voice.enabled)toast("Always-on voice off.");
+});
 $("#miniBtn").addEventListener("click",()=>{
   const next=!document.body.classList.contains("mini");
   popupMini(next);              // paint first: the ctypes resize is a bridge
@@ -2240,11 +2260,11 @@ function settingsHtml(){
       <div class="row"><button class="btn ghost sm" id="lTest">Test connection</button><span class="muted" id="lTestOut"></span></div>
     </div>
     <div class="card glass fade">
-      <div class="card-h"><div class="card-t">Voice logging</div></div>
+      <div class="card-h"><div class="card-t">Always-on voice</div></div>
       <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
-          <b style="font-size:12.5px;font-weight:650;display:block">Auto-log speech as notes</b>
-          <p class="muted" style="margin:3px 0 0">Listens on your microphone only while this is on. Nothing is stored until a phrase is transcribed.</p>
+          <b style="font-size:12.5px;font-weight:650;display:block">Always-on voice</b>
+          <p class="muted" style="margin:3px 0 0">The master switch. Listens on your microphone only while this is on, buffers what you say, and files it when you say a command or press a chord. Also on the tray menu and on the quick-capture popup.</p>
         </div>
         <button class="sw ${asr.enabled?"on":""}" id="asrSw" type="button" role="switch" aria-checked="${asr.enabled?"true":"false"}" aria-label="Enable auto-log speech as notes" style="flex:none"><span class="kn"></span></button>
       </div>
@@ -2271,12 +2291,12 @@ function settingsHtml(){
       </div>
     </div>
     <div class="card glass fade">
-      <div class="card-h"><div class="card-t">Always-on voice</div></div>
-      <p class="muted">With voice logging on, everything you say is buffered as notes instead of filed one sentence at a time. You decide when it becomes a point &mdash; by saying a command, pressing a chord, or clicking Log on the mini bar.</p>
+      <div class="card-h"><div class="card-t">Commands &amp; hotkeys</div></div>
+      <p class="muted">How a buffered note becomes a point. These refine always-on voice above; none of them does anything while that switch is off.</p>
       <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
         <div style="flex:1;min-width:0">
-          <b style="font-size:12.5px;font-weight:650;display:block">Buffer what I say</b>
-          <p class="muted" style="margin:3px 0 0">Off means the older behaviour: every transcribed phrase becomes its own point immediately.</p>
+          <b style="font-size:12.5px;font-weight:650;display:block">Buffer, don&rsquo;t file each phrase</b>
+          <p class="muted" style="margin:3px 0 0">On means you decide when what you said becomes a point. Off is the older behaviour: every transcribed phrase is filed the moment it is heard.</p>
         </div>
         <button class="sw ${vc.always_on!==false?"on":""}" id="vcSw" type="button" role="switch" aria-checked="${vc.always_on!==false?"true":"false"}" aria-label="Buffer what I say" style="flex:none"><span class="kn"></span></button>
       </div>

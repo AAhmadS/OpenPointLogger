@@ -416,7 +416,8 @@ check("full still defines asrState", "window.asrState=asrState" in ui.MAIN_HTML)
 
 # Every id the popup's voice script queries must exist in the popup markup.
 for eid in ("voiceSec", "vState", "vCounts", "vTopic", "vHeard", "vList",
-            "vHint", "vLog", "vSave", "vTab", "vSess", "vFin", "miniBtn"):
+            "vHint", "vLog", "vSave", "vTab", "vSess", "vFin", "miniBtn",
+            "voiceBtn"):
     check("popup markup has #%s" % eid, ('id="%s"' % eid) in ui.POPUP_HTML)
 
 for eid in ("voiceChip", "vcSw", "vcCmdSw", "vcHkSw", "vcSave", "vcHkStatus"):
@@ -432,7 +433,7 @@ for eid in ("vcKeyLog", "vcKeyFinish", "vcKeySession", "vcKeyTab"):
 # Every bridge method the windows call must exist on Api.
 for meth in ("get_voice", "save_voice", "voice_command", "voice_buffer",
              "voice_drop_comment", "voice_drop_source", "voice_clear",
-             "set_popup_mini"):
+             "set_popup_mini", "toggle_voice"):
     check("Api.%s exists" % meth, callable(getattr(api, meth, None)))
 
 # And the JS must not reach for one that does not.
@@ -464,6 +465,36 @@ check("the grammar has no delete verb",
 for name in ("remove", "delete", "drop", "clear"):
     r = c.run_voice_command(name)
     check("run_voice_command(%r) is refused" % name, bool(r.get("error")), r)
+
+
+print()
+print("-- one name for the feature --")
+
+check("the tray row names the feature",
+      point_logger.Controller._voice_label(True) == "Always-on voice: On",
+      point_logger.Controller._voice_label(True))
+check("the tray row shows Off too",
+      point_logger.Controller._voice_label(False) == "Always-on voice: Off",
+      point_logger.Controller._voice_label(False))
+check("Settings has exactly one card titled Always-on voice",
+      ui.MAIN_HTML.count(">Always-on voice</div>") == 1,
+      ui.MAIN_HTML.count(">Always-on voice</div>"))
+check("the master switch is labelled with the feature name",
+      'aria-label="Enable always-on voice"' in ui.MAIN_HTML
+      or ">Always-on voice</b>" in ui.MAIN_HTML, "")
+check("the old label is gone", "Auto-log speech as notes" not in ui.MAIN_HTML, "")
+check("the popup can start it without Settings",
+      "api.toggle_voice()" in ui.POPUP_HTML, "")
+check("the popup card shows while voice is off",
+      "voice.enabled||live||voice.mini||voice.configured" in ui.POPUP_HTML, "")
+check("the off state tells you how to start it",
+      "Click the microphone above to start" in ui.POPUP_HTML, "")
+check("the snapshot carries configured",
+      '"configured"' in pathlib.Path("point_logger.py").read_text(encoding="utf-8")
+      .split("def voice_snapshot")[1].split("def ")[0], "")
+check("the snapshot carries enabled",
+      '"enabled"' in pathlib.Path("point_logger.py").read_text(encoding="utf-8")
+      .split("def voice_snapshot")[1].split("def ")[0], "")
 
 
 print()
