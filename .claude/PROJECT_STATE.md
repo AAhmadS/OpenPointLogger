@@ -4,7 +4,7 @@ project: Trailmark (formerly OpenPointLogger)
 generated: 2026-09-15
 generated_by: project-cartographer
 branch: main
-last_updated: 2026-09-22 by main session: owner answered the 20-question decision set; gates resolved, PRODUCT_SPEC amended (§0.1), ASR default moved to OpenRouter, Trailmark.spec un-ignored
+last_updated: 2026-09-25 by main session: always-on voice + minimisable mini bar (6947eb3), Persian/RTL across editing, templates and .docx (99a8c24), exe rebuilt and relaunched
 schema_version: 1
 phase: build
 phase_evidence: >
@@ -135,7 +135,7 @@ commit SHA by anyone scanning this report).
   verified: "PM re-ran tests/test_export.py, test_store.py, test_science.py, test_hotkey.py, test_llm.py after the commit: each exit 0 (uncached, run as scripts); node --check on both extracted ui.py script blocks exit 0; grep confirms easy_drag=False (point_logger.py:468), pywebview-drag-region on popup header (ui.py:264), altKey gate (ui.py:455), no .tb-mark/.tb-title left; git status shows .env no longer untracked"
 
 - id: D1-D4
-  title: "Design pages written to the Claude Design project: app/categories-templates.html, app/clipboard-capture.html, app/asr-mode.html, app/telegram-bridge.html"
+  title: "Design pages written to the Claude Design project: claude-design:app/categories-templates, claude-design:app/clipboard-capture, claude-design:app/asr-mode, claude-design:app/telegram-bridge"
   importance: high
   commit: n/a (design-tool project, not a repo artifact)
   verified: "PM listed the project's app/ folder after the write and read the first lines of categories-templates.html: all four files present with the @dsCard header convention. Status: designed, awaiting post-hoc owner review (owner's working agreement: build first, review after)."
@@ -147,7 +147,7 @@ commit SHA by anyone scanning this report).
   verified: "PM confirmed .claude/PRODUCT_SPEC.md exists (447 lines, 11 sections); .claude/gates/platform-expansion.yaml parses with PyYAML, 7 gates all status unmeasured, each carrying question: and recommended: lines. Stage 1 (contract) NOT started - blocked on the owner decisions in that gate file."
 
 - id: D5
-  title: "Design pages for the platform expansion: platform/account-profile.html, platform/plan-picker.html, platform/mobile-capture-topics.html, platform/website-landing.html"
+  title: "Design pages for the platform expansion: claude-design:platform/account-profile, claude-design:platform/plan-picker, claude-design:platform/mobile-capture-topics, claude-design:platform/website-landing"
   importance: high
   commit: n/a (design-tool project)
   verified: "PM listed the project's platform/ folder: four files present. Status: designed, awaiting post-hoc owner review; plan contents in the UI follow the RECOMMENDED split in PRODUCT_SPEC.md s5 and are not an owner decision."
@@ -162,7 +162,7 @@ commit SHA by anyone scanning this report).
   title: "Clipboard capture: clipboard.py classifier (image/link/text), per-row paste buttons in the popup, Ctrl+Alt+V auto-log hotkey (second HotkeyListener id 0x4344, off by default) with Undo toast, Settings > Hotkeys row"
   importance: medium
   commit: b4326df
-  verified: "The builder-lead agent stalled before committing; PM verified and committed its work: all seven tests/test_*.py exit 0 (uncached, run separately, incl. new test_clipboard.py and test_clipboard_hotkey.py); node --check on both extracted ui.py script blocks exit 0; imports ok; PM read the point_logger.py/point_store.py/hotkey.py diff and spot-checked ui.py (clipboard text goes through textContent/value, innerHTML only carries constant icon markup); headless popup screenshot shows the three paste buttons and the pasted-image chip. Not run: qa-lead gate (agent died first) - a code-review pass over b4326df is a cheap follow-up. Open check: headless Edge shows a ~10px right overflow of the popup at 462px that affects pre-existing elements too; confirm against the real window after the rebuild."
+  verified: "The builder-lead agent stalled before committing; PM verified and committed its work: all seven tests/test_*.py exit 0 (uncached, run separately, incl. new test_clipboard.py and test_clipboard_hotkey.py); node --check on both extracted ui.py script blocks exit 0; imports ok; PM read the point_logger.py, point_store.py and hotkey.py diff and spot-checked ui.py (clipboard text goes through textContent/value, innerHTML only carries constant icon markup); headless popup screenshot shows the three paste buttons and the pasted-image chip. Not run: qa-lead gate (agent died first) - a code-review pass over b4326df is a cheap follow-up. Open check: headless Edge shows a ~10px right overflow of the popup at 462px that affects pre-existing elements too; confirm against the real window after the rebuild."
 
 - id: T12-T14
   title: "Auto-ASR logging mode: asr.py (sounddevice RawInputStream + energy VAD + WAV utterances, OpenAI-compatible /audio/transcriptions via urllib multipart), asr config section + save_asr/test_asr/list_asr_devices bridge, utterances logged as note entries into the last open topic, topbar state chip + tray label, Settings > Voice logging"
@@ -186,13 +186,13 @@ commit SHA by anyone scanning this report).
   title: "Ctrl+Alt+V now parks the clipboard read on the controller, opens the quick-capture popup and attaches it there as a pending link/string/image chip via Api.take_clipboard_capture() -> JS clipboardCaptured(); it never files an entry directly any more (clipboard.enabled defaults to True; the Undo toast path is gone). Topbar '+' deadlock fixed: popup.on_top set from the JS-bridge thread deadlocked pythonnet's GIL against SetWindowPos; topmost is now asserted through a ctypes _set_topmost(hwnd, bool) on HWNDs cached in the shown events."
   importance: high
   commit: 3707427
-  verified: "Committed by the main session; PM confirmed on resume: commit present, tests/test_clipboard_hotkey.py rewritten to the new contract, all 9 tests exit 0, node --check on both ui.py script blocks ok. Design page app/clipboard-capture.html was updated to the attach-not-log contract by the main session. Standing rule recorded below: never set a pywebview Window property from a non-UI thread."
+  verified: "Committed by the main session; PM confirmed on resume: commit present, tests/test_clipboard_hotkey.py rewritten to the new contract, all 9 tests exit 0, node --check on both ui.py script blocks ok. Design page claude-design:app/clipboard-capture was updated to the attach-not-log contract by the main session. Standing rule recorded below: never set a pywebview Window property from a non-UI thread."
 
 - id: F (Telegram Settings UI)
   title: "Settings > Telegram bridge card (enable switch, status row, pairing code with Copy/Regenerate, bot-token field that never echoes the value, Unpair with confirm) + topbar #tgChip driven by telegramState()"
   importance: medium
   commit: 772f811
-  verified: "PM re-ran all 9 tests/test_*.py after the commit (each exit 0, venv python); node --check on both extracted ui.py script blocks exit 0; staged diff scanned for token-shaped literals: 0; viewed shot-telegram-paired.png (card + chip match app/telegram-bridge.html). qa-lead found 1 Critical before commit (transient no_topic/logged pushes were persisted as connection state, hiding Unpair) - fixed and re-verified by builder-lead. Cosmetic leftover: Unpair uses an inline style instead of a .btn.danger-ghost class."
+  verified: "PM re-ran all 9 tests/test_*.py after the commit (each exit 0, venv python); node --check on both extracted ui.py script blocks exit 0; staged diff scanned for token-shaped literals: 0; viewed shot-telegram-paired.png (card + chip match claude-design:app/telegram-bridge). qa-lead found 1 Critical before commit (transient no_topic/logged pushes were persisted as connection state, hiding Unpair) - fixed and re-verified by builder-lead. Cosmetic leftover: Unpair uses an inline style instead of a .btn.danger-ghost class."
 
 - id: DECISIONS (owner answers of 2026-09-22)
   title: "Turned the owner's 20 answers into the gate file, the spec amendment and this map; switched hosted ASR to OpenRouter; un-ignored Trailmark.spec; drafted terms + privacy"
@@ -217,6 +217,24 @@ commit SHA by anyone scanning this report).
   importance: high
   commit: n/a (build artifact; Trailmark.spec itself is now tracked - .gitignore carries a !Trailmark.spec exception as of 2026-09-22)
   verified: "PyInstaller 6.22.2 via .venv python, exit 0, hook-sounddevice.py processed, exe 33,853,231 bytes; both Trailmark processes stopped, file copied, SHA256 of dist and installed exe equal; relaunched 2026-09-22 08:45, still alive after 109 s; HotkeyListener.probe reports Ctrl+Alt+P and Ctrl+Alt+V both HELD by another process (the running app). Not exercised by hand: voice logging and Telegram polling against live services from the packaged exe."
+
+- id: VOICE
+  title: "Always-on voice: VAD + ASR buffer what is said, five spoken Trail-* commands file it, and the popup collapses to a 396x150 mini bar"
+  importance: high
+  commit: 6947eb3
+  verified: "13/13 tests/test_*.py exit 0 under .venv python (two new: test_voicecmd.py, test_voice_session.py with 15 sections); node --check on both extracted ui.py script blocks exit 0. The grammar fires only when the utterance IS the command plus fillers plus an argument, checked against 16 false-positive cases including 'I should trail save this later'. Damerau-Levenshtein distance 1 covers the trail/trial ASR substitution. Removes are hand-only by three independent mechanisms: no spoken verb exists, run_command refuses remove/delete/drop/clear, and the delete chips render only in the expanded card. Found and fixed en route: Store.last_open_topic() returned the OLDER of two topics created in the same second, because `created` has second resolution and a stable sort preserved input order - now tie-broken on insertion index. NOT exercised by hand: a real microphone through the packaged exe; every voice check is against the grammar and the controller, not against audio."
+
+- id: PERSIAN
+  title: "Persian/RTL: direction decided from the report's own text, across in-app editing, all five templates, and the .docx writer"
+  importance: high
+  commit: 99a8c24
+  verified: "13/13 tests/test_*.py exit 0 (two new: test_persian.py ~80 checks, test_persian_export.py 8 sections); node --check on both ui.py script blocks exit 0. Jalali conversion round-trips every day from 2018-01-01 to 2030-12-31 (4383 days) and month lengths agree with is_jalali_leap (measured: 1399 and 1403 Esfand = 30 days, the rest 29). All five templates render both ways; the English render injects zero CSS and the user's own text and its 4 half-spaces survive byte-for-byte (zwnj_in=4, zwnj_out=4). .docx XML inspected directly: fa = 9 w:bidi, 8 w:rtl runs, w:cs=Tahoma; en = 0, 0, none. 38 physical CSS declarations converted to logical ones; a regex scan reports none remaining. NOT verified: no rendered PDF was looked at by eye, in either direction - the English-unchanged claim rests on CSS logical properties being DEFINED to resolve to the physical property they replaced under dir=ltr, not on a visual diff. See C7."
+
+- id: BUILD3
+  title: "Rebuilt dist/Trailmark.exe from 99a8c24, installed to %LOCALAPPDATA%/Programs/Trailmark, relaunched"
+  importance: high
+  commit: n/a (build artifact)
+  verified: "PyInstaller exit 0 via .venv python; 2 running processes stopped, file copied, SHA256 of dist and installed exe equal (E20DB3A943B5608F2BF0B27E31230DB6C14E356AD207BF5F67920AF154091030), 33,897,840 bytes; relaunched 2026-09-25 10:10:03, 2 processes alive at the 25 s check. HotkeyListener.probe reports all six hotkeys HELD by another process - Ctrl+Alt+P capture, V clipboard, S log, F finish, N session, T tab - which is the packaged exe having registered the four new voice hotkeys. NOT exercised by hand from the packaged exe: the microphone path, a Persian export, and Telegram polling (see C6)."
 
 ## workstreams.todo
 
@@ -300,6 +318,11 @@ commit SHA by anyone scanning this report).
   risk: "pywebview Window property setters (on_top, title, ...) called from a non-UI thread (JS bridge, hotkey, ASR, Telegram threads) deadlock pythonnet's GIL against the UI thread; 3707427 hit this with popup.on_top"
   severity: High
   mitigation: "Rule for every worker touching point_logger.py: from non-UI threads only call Window methods (show/hide/evaluate_js); anything else goes through ctypes on the HWNDs cached in the shown events (_set_topmost). Pass this rule down verbatim in every slice brief."
+
+- id: C7
+  risk: "Nothing in the Persian/RTL work has been looked at. Direction, fonts, the Jalali date and the half-spaces are verified as strings and as XML; no PDF or .docx was opened and read by a person, and the owner is the only Persian reader on this project"
+  severity: Medium
+  mitigation: "The English side is protected by construction - CSS logical properties resolve to the physical properties they replaced under dir=ltr, so an English report cannot have moved - and that is the half a string test can carry. The Persian side needs one human look: export one Persian report to PDF and one to .docx and read them. Gate persian-visual-review in .claude/gates/persian-rtl.yaml, status unmeasured."
 
 - id: C1
   risk: "Untracked .env with a live bot token sits in a git working tree that is not yet ignoring it"

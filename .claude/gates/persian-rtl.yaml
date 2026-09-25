@@ -1,0 +1,91 @@
+# Gates for the Persian / right-to-left slice (commit 99a8c24).
+#
+# `unmeasured` is a terminal state and blocks nothing. It is used here wherever
+# the thing is a judgement the owner has not made, or a measurement nobody took.
+# A gate is never marked pass on the strength of an argument, however good.
+
+slice: persian-rtl
+commit: 99a8c24
+owner: main session
+raised: 2026-09-25
+
+gates:
+
+  - id: persian-direction-detection
+    question: "Does a report's direction follow its own text?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_persian_export.py sections 1-4: a Persian topic renders dir="rtl" and an
+      English one dir="ltr" through all five templates. persian.direction() counts strong
+      characters with a floor of 8, so a short mixed title cannot flip a document; the mixed
+      case is asserted directly.
+
+  - id: persian-english-unchanged
+    question: "Is an English report byte-identical to what it was before this slice?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      The English render injects zero CSS ({{rtl_css}} is the empty string) and the .docx
+      contains 0 w:bidi, 0 w:rtl and no w:cs font. 38 physical CSS declarations became logical
+      ones, which are DEFINED by spec to resolve to the same physical side under dir=ltr; a
+      regex scan reports no physical left/right declarations remaining in any of the five
+      templates or the starter.
+
+  - id: persian-user-text-untouched
+    question: "Does the user's own text survive an export unmodified?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_persian_export.py: the point text appears verbatim in the HTML and in the
+      .docx body, and the ZWNJ count is equal in and out (zwnj_in=4, zwnj_out=4). Digit
+      conversion is applied only to chrome this app generates - dates and counts - never to a
+      point, because a converted digit inside a DOI, a URL or a quoted year is a corrupted fact.
+
+  - id: persian-jalali-correct
+    question: "Is the Solar Hijri conversion right?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_persian.py round-trips every day from 2018-01-01 to 2030-12-31 - 4383 days,
+      0 mismatches - and checks month lengths against is_jalali_leap (1399 and 1403 Esfand =
+      30 days, the others 29).
+
+  - id: persian-visual-review
+    question: "Has a Persian reader looked at a rendered Persian report?"
+    kind: human
+    status: unmeasured
+    blocking: false
+    evidence: >
+      No. No PDF and no .docx was opened and read this session, in either direction. Everything
+      above is a string or an XML assertion. What a look would catch and a string cannot:
+      whether the Tahoma fallback is acceptable, whether the line height reads as Persian rather
+      than as Latin text set in a Persian face, whether mixed Latin runs inside a Persian
+      paragraph land where the writer meant them, and whether the numbered reference list reads
+      correctly right-to-left.
+    to_resolve: >
+      Export one Persian report to PDF and one to .docx from the installed exe and read them.
+
+  - id: persian-font-choice
+    question: "Is Tahoma the right complex-script face to ship?"
+    kind: human
+    status: unmeasured
+    blocking: false
+    evidence: >
+      Tahoma was chosen because it is present on every stock Windows machine with complete and
+      correctly-shaped Persian coverage, and a .docx cannot carry a font the reader does not
+      have. Vazirmatn, Sahel and IRANSans are better Persian types and are absent by default.
+      This is a trade the owner may want to make differently - e.g. bundling a webfont for the
+      HTML and PDF paths while leaving .docx on Tahoma.
+
+  - id: persian-prose-of-our-own-strings
+    question: "Is the Persian chrome Trailmark itself writes natural Persian?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      persian.lint() enforces the mechanical rules from the persian-prose skill - ZWNJ present,
+      no Arabic ya/kaf, no Latin digits in running Persian, no em dash - and tests/test_persian.py
+      runs it over every Persian string this app ships. It found one: the footer used an em dash,
+      which Persian does not. Replaced with a full stop, and the rule is now enforced by the
+      linter rather than by memory. This gate covers roughly 20 short strings; it says nothing
+      about Persian the user writes.

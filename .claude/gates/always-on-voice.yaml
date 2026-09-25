@@ -1,0 +1,64 @@
+# Gates for the always-on voice slice (commit 6947eb3) and the mini bar.
+
+slice: always-on-voice
+commit: 6947eb3
+owner: main session
+raised: 2026-09-25
+
+gates:
+
+  - id: voice-command-precision
+    question: "Can an ordinary sentence fire a command by accident?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_voicecmd.py: a command fires only when the whole utterance IS the command,
+      plus fillers, plus an argument for session/tab. 16 near-miss utterances are asserted NOT
+      to fire, including "I should trail save this later" and "the trial log was inconclusive".
+      The asymmetry this is built around: a missed command costs a repeat, a false command
+      loses work.
+
+  - id: voice-asr-tolerance
+    question: "Does a plausible mis-hearing still reach the right command?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      Damerau-Levenshtein with transposition counted as one edit, so trail/trial - the
+      substitution every ASR makes on this vocabulary - matches at distance 1. Joined forms
+      ("trailsave") and hyphen/space variants are split before matching.
+
+  - id: voice-cannot-delete
+    question: "Can anything be removed by voice?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      No, by three independent mechanisms, because the owner asked for exactly this ("removes
+      are handled via hand though"): no destructive verb exists in the grammar; run_voice_command
+      refuses remove/delete/drop/clear even if one were added; and the delete chips render only
+      in the expanded card, never in the 396x150 mini bar where a delete target would sit a few
+      pixels from Log. Asserted in tests/test_voice_session.py section 15.
+
+  - id: voice-microphone-path
+    question: "Has anyone spoken into the packaged exe and had it work?"
+    kind: human
+    status: unmeasured
+    blocking: false
+    evidence: >
+      No. Every voice check in the suite is against the grammar module and the controller with
+      transcripts injected as strings. Nothing this session put audio through VAD, through an
+      ASR endpoint, or through the packaged exe's microphone. The six hotkeys are confirmed
+      registered by the running exe (HotkeyListener.probe reports all six HELD), which is the
+      keyboard half only.
+    to_resolve: >
+      With the installed exe running: enable always-on voice in Settings, speak a sentence,
+      confirm it appears in the mini bar's buffer, then say "Trail-Log" and confirm the point
+      lands in the open topic.
+
+  - id: voice-thread-safety
+    question: "Does anything in this slice touch a pywebview Window property off the UI thread?"
+    kind: deterministic
+    status: pass
+    evidence: >
+      No. The mini bar resizes through ctypes SetWindowPos on the cached HWND, which releases
+      the GIL, not through window.resize - challenge C5 in PROJECT_STATE.md. Only show/hide/
+      evaluate_js are called from the voice and hotkey threads.
