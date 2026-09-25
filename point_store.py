@@ -61,6 +61,29 @@ DEFAULT_CONFIG = {
         "device": "",
         "sensitivity": 50,
     },
+    # Always-on voice. Only reachable once asr.enabled is on, so this section
+    # starts nothing by itself; it decides what a running microphone DOES.
+    #
+    # always_on on means a transcript is either a Trail-* command or a comment
+    # parked in the buffer until Trail-Log commits it. Off restores the older
+    # behaviour, where every utterance became its own point immediately - kept
+    # because it is the right shape for dictating a list, and because somebody
+    # already has it in their habits.
+    #
+    # The four keys are the ones the owner named. They are stored as bare
+    # letters with the modifiers shared, because that is how they were asked
+    # for - one chord family, four verbs - and a per-key modifier set would be
+    # four ways to build the same conflict.
+    "voice": {
+        "always_on": True,
+        "commands": True,
+        "hotkeys": True,
+        "modifiers": ["ctrl", "alt"],
+        "keys": {"log": "S", "finish": "F", "session": "N", "tab": "T"},
+        # The quick-capture window collapsed to a bar. Persisted so an
+        # always-on session that was left collapsed comes back collapsed.
+        "mini": False,
+    },
     # Scientific mode. Off by default: it changes how every export reads, and a
     # person keeping a reading log is not automatically writing a paper.
     "science": {
@@ -264,8 +287,16 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr", "telegram"):
+                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr", "telegram", "voice"):
                     if section in saved and isinstance(saved[section], dict):
+                        # voice.keys is a dict inside a section dict, so a
+                        # plain update() would let a saved file that names
+                        # only one key wipe the other three. Merge it first,
+                        # then let update() handle the flat fields.
+                        if section == "voice" and isinstance(saved[section].get("keys"), dict):
+                            merged_keys = dict(cfg["voice"]["keys"])
+                            merged_keys.update(saved[section]["keys"])
+                            saved[section] = dict(saved[section], keys=merged_keys)
                         cfg[section].update(saved[section])
             except Exception:
                 pass
@@ -430,12 +461,23 @@ class Store:
             return [t for t in self._topics if t.get("status") == "open"]
 
     def last_open_topic(self):
+        """The newest open topic, with insertion order as the tie-break.
+
+        ``created`` has second resolution, so two topics started in the same
+        second compare equal - and a stable sort then returns the OLDER one,
+        the opposite of what every caller means by "last". Voice turns that
+        from theoretical into ordinary: Trail-Session followed straight away
+        by another is well inside one second. Position in the list is the
+        real creation order, because topics are only ever appended.
+        """
         with self._lock:
-            opens = self.open_topics()
+            opens = [(t.get("created") or "", i, t)
+                     for i, t in enumerate(self._topics)
+                     if t.get("status") == "open"]
             if not opens:
                 return None
-            opens.sort(key=lambda t: t.get("created") or "", reverse=True)
-            return opens[0]
+            opens.sort(key=lambda row: (row[0], row[1]), reverse=True)
+            return opens[0][2]
 
     def start_topic(self, title):
         title = str(title or "").strip()

@@ -187,6 +187,8 @@ label.mod .muted{font-weight:400}
 .chip.add{background:transparent;border-color:var(--accent);color:var(--accent);border-style:dashed}
 .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .muted{color:var(--content-secondary);font-size:12.5px;line-height:1.5}
+/* a hotkey another application already holds */
+.taken{color:var(--danger);font-weight:650}
 #toasts{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;
   gap:8px;z-index:80;align-items:center;pointer-events:none}
 .toast{display:flex;flex-direction:column;padding:10px 16px;border-radius:var(--r-md);
@@ -310,14 +312,96 @@ section{overflow-y:auto;flex:1}
 .recent{font-size:11.5px;color:var(--content-secondary);border-top:1px solid var(--border);
   padding-top:8px;margin-top:2px}
 .recent b{color:var(--content);font-weight:600}
+
+/* Always-on voice.
+
+   The mini bar is not a second window - it is THIS window resized by ctypes
+   (see Controller.set_popup_mini) with a class on <body>. A real second
+   window would double the hotkey, focus, topmost and GIL-deadlock surface
+   for what is a layout change.
+
+   What the bar is allowed to show is deliberately narrow: what voice is
+   doing, what is waiting to be filed, and the commands. Removing a buffered
+   comment stays in the expanded card, because at 150px tall a delete target
+   sits a few pixels from Log, and a mis-click there has no undo. */
+#voiceSec{flex:none;overflow:visible}
+.vcard{padding:12px;display:flex;flex-direction:column;gap:8px}
+.vhead{display:flex;align-items:center;gap:7px;min-width:0}
+.vstate{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650;
+  padding:3px 9px;border-radius:var(--r-pill);background:var(--surface-sunken);
+  color:var(--content-secondary);white-space:nowrap}
+.vstate .d{width:6px;height:6px;border-radius:50%;background:var(--content-muted);flex:none}
+.vstate.on{color:var(--accent);background:var(--accent-tint)}
+.vstate.on .d{background:var(--accent);animation:pulse 1.6s ease-in-out infinite}
+.vstate.err{color:var(--danger);background:var(--danger-tint)}
+.vstate.err .d{background:var(--danger);animation:none}
+.vcounts{display:flex;gap:5px;flex:none}
+.vpill{font-size:10.5px;padding:2px 8px;border-radius:var(--r-pill);
+  background:var(--surface-sunken);color:var(--content-secondary);white-space:nowrap}
+.vpill.hot{background:var(--accent-tint);color:var(--accent);font-weight:650}
+.vtopic{flex:1;min-width:0;font-size:11px;color:var(--content-muted);text-align:right;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vheard{font-size:12px;line-height:1.35;color:var(--content-secondary);min-height:16px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vacts{display:flex;gap:5px}
+.vacts .btn{flex:1;font-size:11px;padding:6px 4px;min-width:0}
+.vhint{font-size:10.5px;color:var(--content-muted);letter-spacing:.02em;line-height:1.45}
+.vlist{display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto}
+.vrow{display:flex;gap:6px;align-items:flex-start;font-size:11.5px;line-height:1.35;
+  background:var(--surface-sunken);border-radius:var(--r-sm);padding:5px 6px 5px 8px}
+.vrow .t{flex:1;min-width:0;word-break:break-word}
+.vrow.src .t{color:var(--content-secondary)}
+.vrow .x{flex:none;border:0;background:transparent;color:var(--content-muted);cursor:pointer;
+  font-size:14px;line-height:1;padding:0 3px;border-radius:4px}
+.vrow .x:hover{color:var(--danger);background:var(--danger-tint)}
+.icobtn{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:24px;height:24px;padding:0;border-radius:var(--r-sm);border:1px solid var(--border);
+  background:transparent;color:var(--content-secondary);cursor:pointer}
+.icobtn:hover{color:var(--content);border-color:var(--border-strong)}
+.icobtn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+
+/* Collapsed. The window is 396x150 physical, so everything that is not the
+   voice bar is removed from the flow rather than merely scrolled past. */
+body.mini .win{padding:8px;gap:5px}
+body.mini header{padding:5px 8px;gap:7px}
+body.mini header img{height:18px}
+body.mini .app{font-size:12px}
+body.mini .hk,body.mini #openApp{display:none}
+body.mini #noTopic,body.mini #logPanel{display:none!important}
+body.mini .vcard{padding:9px 10px;gap:6px}
+body.mini .vlist,body.mini .vhint{display:none}
+body.mini .vheard{-webkit-line-clamp:1;min-height:0}
 </style></head><body>
 <div class="win">
   <header class="glass pywebview-drag-region">
     <img src="__ICON__" alt="">
     <div class="tt"><div class="app">Trailmark</div><div class="hk" id="hkLabel"></div></div>
     <button id="openApp" class="chip accent" title="Open the main window">Open app</button>
+    <button id="miniBtn" class="icobtn" type="button" role="switch" aria-checked="false"
+            title="Collapse to the voice bar"><svg viewBox="0 0 20 20"><path d="M4 10h12"/></svg></button>
     <div class="pulse" id="liveDot"></div>
   </header>
+
+  <section id="voiceSec" hidden>
+    <div class="card glass fade vcard">
+      <div class="vhead">
+        <span class="vstate" id="vState"><span class="d"></span><span class="tx">Voice off</span></span>
+        <span class="vcounts" id="vCounts"></span>
+        <span class="vtopic" id="vTopic" dir="auto"></span>
+      </div>
+      <div class="vheard" id="vHeard" dir="auto"></div>
+      <div class="vacts">
+        <button class="btn primary" id="vLog" type="button" title="Trail-Log">Log</button>
+        <button class="btn ghost" id="vSave" type="button" title="Trail-Save">Source</button>
+        <button class="btn ghost" id="vTab" type="button" title="Trail-Tab">Tab</button>
+        <button class="btn ghost" id="vSess" type="button" title="Trail-Session">Session</button>
+        <button class="btn ghost" id="vFin" type="button" title="Trail-Finish">Finish</button>
+      </div>
+      <div class="vhint" id="vHint"></div>
+      <div class="vlist" id="vList"></div>
+    </div>
+  </section>
 
   <section id="noTopic" hidden>
     <div class="card glass fade">
@@ -583,7 +667,121 @@ $("#ptHide").addEventListener("click",()=>api.hide_popup());
 document.addEventListener("keydown",e=>{if(e.key==="Escape")api.hide_popup();});
 document.addEventListener("wheel",e=>{if(e.ctrlKey)e.preventDefault();},{passive:false});
 
+
+// ---- always-on voice ------------------------------------------------------
+// The buffer lives in Python (voicecmd.VoiceBuffer), written from the audio
+// thread and the Win32 hotkey thread - neither of which can reach this
+// window. So this window never keeps its own copy: every render comes from a
+// payload Python pushed, or from one pull when the window is shown.
+let voice={comments:[],sources:[],count_comments:0,count_sources:0,empty:true,
+           state:"off",detail:"",topic:"",always_on:true,listening:false,mini:false};
+
+const V_LABEL={off:"Voice off",listening:"Listening",speech:"Speaking",
+  transcribing:"Transcribing",heard:"Heard",logged:"Logged",source:"Source added",
+  duplicate:"Already added",session:"New session",tab:"New tab",finished:"Finished",
+  edited:"Removed",cleared:"Cleared",ok:"Done",no_topic:"No open topic"};
+
+function voiceState(payload){
+  if(payload&&typeof payload==="object"&&!payload.error)voice=Object.assign(voice,payload);
+  renderVoice();
+}
+window.voiceState=voiceState;
+
+function popupMini(mini){
+  voice.mini=!!mini;
+  document.body.classList.toggle("mini",!!mini);
+  const b=$("#miniBtn");
+  if(b){b.setAttribute("aria-checked",mini?"true":"false");
+        b.title=mini?"Back to the full window":"Collapse to the voice bar";}
+  renderVoice();
+}
+window.popupMini=popupMini;
+
+function refreshVoice(){
+  api.voice_buffer().then(p=>{if(p&&!p.error)voiceState(p);}).catch(()=>{});
+}
+
+function vrow(kind,i,text,isSrc){
+  return '<div class="vrow'+(isSrc?" src":"")+'"><span class="t" dir="auto">'+esc(text)+'</span>'+
+    '<button class="x" type="button" data-vrm="'+kind+'-'+i+'" aria-label="Remove">&times;</button></div>';
+}
+
+function renderVoice(){
+  const sec=$("#voiceSec");
+  if(!sec)return;
+  const live=!!(voice.always_on&&voice.listening);
+  // The bar stays up while collapsed even with voice off, so the mini window
+  // is never a blank rectangle with nothing to click.
+  sec.hidden=!(live||voice.mini);
+  document.body.classList.toggle("mini",!!voice.mini);
+  if(sec.hidden)return;
+
+  const st=$("#vState");
+  st.className="vstate"+(live?" on":"")+(voice.state==="error"?" err":"");
+  let label=live?(V_LABEL[voice.state]||"Listening"):"Voice off";
+  if(voice.state==="error")label=voice.detail||"Voice error";
+  st.querySelector(".tx").textContent=label;
+
+  const cc=voice.count_comments||0,cs=voice.count_sources||0,pills=[];
+  if(cc)pills.push('<span class="vpill hot">'+cc+(cc>1?" notes":" note")+'</span>');
+  if(cs)pills.push('<span class="vpill">'+cs+(cs>1?" sources":" source")+'</span>');
+  $("#vCounts").innerHTML=pills.join("");
+
+  $("#vTopic").textContent=voice.topic||"no open topic";
+
+  // Untrusted text (a transcript, a clipboard excerpt) only ever reaches the
+  // DOM through textContent or esc().
+  const h=$("#vHeard");
+  const last=(voice.comments&&voice.comments.length)?voice.comments[voice.comments.length-1]:"";
+  if(voice.state==="error")h.textContent="";
+  else if(last)h.textContent="\u201c"+last+"\u201d";
+  else if(voice.detail)h.textContent=voice.detail;
+  else h.textContent=live?"Talk. Say Trail-Log to file it.":"Turn voice logging on in Settings.";
+
+  const list=$("#vList");
+  const rows=[];
+  (voice.comments||[]).forEach((c,i)=>rows.push(vrow("c",i,c,false)));
+  (voice.sources||[]).forEach((sv,i)=>rows.push(
+    vrow("s",i,sv.type==="image"?"Image":(sv.value||""),true)));
+  list.innerHTML=rows.join("");
+  list.querySelectorAll("[data-vrm]").forEach(b=>b.addEventListener("click",async()=>{
+    const p=b.dataset.vrm.split("-"),i=parseInt(p[1],10);
+    let r;
+    try{r=p[0]==="c"?await api.voice_drop_comment(i):await api.voice_drop_source(i);}
+    catch(e){r=null;}
+    if(r&&r.ok===false)toast("That one is already gone.","err");
+    refreshVoice();
+  }));
+}
+
+async function vcmd(name){
+  let r;
+  try{r=await api.voice_command(name,"");}catch(e){r={error:"Bridge not ready."};}
+  if(r&&r.error)toast(r.error,"err");
+  refreshVoice();
+}
+$("#vLog").addEventListener("click",()=>vcmd("log"));
+$("#vSave").addEventListener("click",()=>vcmd("save"));
+$("#vTab").addEventListener("click",()=>vcmd("tab"));
+$("#vSess").addEventListener("click",()=>vcmd("session"));
+$("#vFin").addEventListener("click",()=>vcmd("finish"));
+$("#miniBtn").addEventListener("click",()=>{
+  const next=!document.body.classList.contains("mini");
+  popupMini(next);              // paint first: the ctypes resize is a bridge
+  api.set_popup_mini(next);     // round-trip and the bar should not lag it
+});
+
+function bootVoice(){
+  api.get_voice().then(v=>{
+    if(!v||v.error)return;
+    const el=$("#vHint");
+    if(el)el.textContent=(v.hotkeys||[]).map(x=>x.combo+" "+x.command).join("  \u00b7  ");
+    voiceState(v.buffer||{});
+  }).catch(()=>{});
+}
+
 function boot(){
+  bootVoice();
   api.get_state().then(r=>{
     state=r;
     const cfg=r.config||{};
@@ -602,6 +800,8 @@ function applyTheme(pref){
   else el.removeAttribute("data-theme");   // fall back to prefers-color-scheme
 }
 function popupShown(){
+  // A hidden window missed every push while it was away, so it pulls once.
+  refreshVoice();
   api.get_state().then(r=>{if(r&&!r.error){state=r;
     applyTheme(((r.config||{}).appearance||{}).theme||"system");renderMode();}}).catch(()=>{});
   setTimeout(()=>{const el=$("#ptText");if(el)el.focus();},120);
@@ -898,6 +1098,7 @@ main{overflow-y:auto;padding:22px}
   <header class="topbar">
     <span class="tb-ctx" id="tbCtx"></span>
     <span class="tb-chip" id="asrChip"></span>
+    <span class="tb-chip" id="voiceChip"></span>
     <span class="tb-chip" id="tgChip"></span>
     <span class="tb-act">
       <button class="tb-btn" id="tbTheme" title="Switch theme"><svg viewBox="0 0 24 24">
@@ -1968,6 +2169,11 @@ function settingsHtml(){
   const mk=(id,checked,label)=>`<label class="mod"><input type="checkbox" id="${id}" ${checked?"checked":""}> ${label}</label>`;
   const provOpts=Object.keys(prov).map(k=>`<option value="${k}" ${llm.provider===k?"selected":""}>${prov[k].label}</option>`).join("");
   const ex=c.export||{}, app=c.appearance||{}, sci=c.science||{}, cb=c.clipboard||{}, asr=c.asr||{}, tg=c.telegram||{};
+  const vc=c.voice||{}, vcKeys=vc.keys||{};
+  const vcMods=(vc.modifiers||["ctrl","alt"]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+");
+  const vcRows=(state.voiceGrammar||[]).map(g=>`<tr><td><b>${esc(g.say)}</b></td><td>${esc(g.summary)}</td></tr>`).join("");
+  const vcHot=(state.voiceHotkeys||[]);
+  const vcKeyRow=(id,name,label)=>`<label>${label}<input id="${id}" class="input" maxlength="12" value="${esc(vcKeys[name]||"")}"></label>`;
   const tgStatus=state.telegramStatus||{state:"off",detail:"",username:"",pairing_code:tg.pairing_code||"",token_source:"none"};
   const asrDevs=state.asrDevices||[];
   const asrDeviceOpts=asrDevs.length?asrDevs.map(d=>`<option value="${esc(d.id)}" ${String(asr.device)===String(d.id)?"selected":""}>${esc(d.name)}</option>`).join(""):`<option value="">Default</option>`;
@@ -2043,6 +2249,44 @@ function settingsHtml(){
           <b style="display:block;font-size:12.5px;margin-bottom:4px">Voice logging is strictly opt-in.</b>
           <p class="muted" style="margin:0">Trailmark only listens to your own microphone while this switch is on &mdash; never system audio, other apps, or call/loopback audio. Turning it off immediately stops capture. Nothing is recorded to disk; only the transcribed text becomes a logged point.</p>
         </div>
+      </div>
+    </div>
+    <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Always-on voice</div></div>
+      <p class="muted">With voice logging on, everything you say is buffered as notes instead of filed one sentence at a time. You decide when it becomes a point &mdash; by saying a command, pressing a chord, or clicking Log on the mini bar.</p>
+      <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Buffer what I say</b>
+          <p class="muted" style="margin:3px 0 0">Off means the older behaviour: every transcribed phrase becomes its own point immediately.</p>
+        </div>
+        <button class="sw ${vc.always_on!==false?"on":""}" id="vcSw" type="button" role="switch" aria-checked="${vc.always_on!==false?"true":"false"}" aria-label="Buffer what I say" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Listen for spoken commands</b>
+          <p class="muted" style="margin:3px 0 0">A command only fires when the whole sentence <i>is</i> the command &mdash; &ldquo;trail log the sources for this one&rdquo; stays a note.</p>
+        </div>
+        <button class="sw ${vc.commands!==false?"on":""}" id="vcCmdSw" type="button" role="switch" aria-checked="${vc.commands!==false?"true":"false"}" aria-label="Listen for spoken commands" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <table class="tbl" style="margin-top:12px"><tbody>${vcRows||'<tr><td class="muted">No grammar loaded.</td></tr>'}</tbody></table>
+      <p class="muted">Spoken commands tolerate the mistakes transcribers make &mdash; <b>trial</b>, <b>trail safe</b>, <b>trail lock</b> all land. Persian works too: <b dir="rtl">&#1578;&#1585;&#1740;&#1604; &#1604;&#1575;&#1711;</b>.</p>
+      <div class="row" style="align-items:flex-start;gap:10px;margin-top:12px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Global hotkeys (${esc(vcMods)}+&hellip;)</b>
+          <p class="muted" style="margin:3px 0 0">The same five commands, without saying anything.</p>
+        </div>
+        <button class="sw ${vc.hotkeys!==false?"on":""}" id="vcHkSw" type="button" role="switch" aria-checked="${vc.hotkeys!==false?"true":"false"}" aria-label="Enable voice hotkeys" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <div class="grid3" style="margin-top:10px">
+        ${vcKeyRow("vcKeyLog","log","Log")}
+        ${vcKeyRow("vcKeyFinish","finish","Finish")}
+        ${vcKeyRow("vcKeySession","session","New session")}
+        ${vcKeyRow("vcKeyTab","tab","New tab")}
+      </div>
+      <div id="vcHkStatus" class="muted" style="margin-top:8px">${vcHot.length?vcHot.map(h=>esc(h.combo)+" &rarr; "+esc(h.command)+(h.registered?"":" <b class='taken'>(taken)</b>")).join(" &middot; "):"Not registered yet."}</div>
+      <div class="row"><button class="btn primary" id="vcSave">Save settings</button></div>
+      <div class="row" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:12px 14px;margin-top:10px;align-items:flex-start">
+        <p class="muted" style="margin:0">Removing a buffered note or source is done by hand, on the mini bar &mdash; never by voice. A misheard delete has no undo.</p>
       </div>
     </div>
     <div class="card glass fade">
@@ -2167,6 +2411,35 @@ function asrState(state,detail){
 }
 window.asrState=asrState;
 
+// Always-on voice. The full window is not the capture surface - the mini bar
+// is - so this is a status chip, not a second copy of the buffer: how many
+// thoughts are waiting, and the one action that files them.
+let mainVoice={count_comments:0,count_sources:0,always_on:true,listening:false,
+               state:"off",detail:"",topic:""};
+function voiceState(payload){
+  if(payload&&typeof payload==="object"&&!payload.error)
+    mainVoice=Object.assign(mainVoice,payload);
+  const chip=$("#voiceChip");
+  if(!chip)return;
+  chip.classList.remove("show","listening","logged","error");
+  const live=!!(mainVoice.always_on&&mainVoice.listening);
+  if(!live){chip.innerHTML="";return;}
+  const cc=mainVoice.count_comments||0,cs=mainVoice.count_sources||0;
+  chip.classList.add("show");
+  chip.classList.add(mainVoice.state==="error"?"error":(cc||cs)?"logged":"listening");
+  chip.innerHTML='<span class="tx"></span>';
+  let txt;
+  if(mainVoice.state==="error")txt=mainVoice.detail||"Voice error";
+  else if(cc||cs)txt="Waiting to log: "+cc+(cc===1?" note":" notes")+
+    (cs?(" \u00b7 "+cs+(cs===1?" source":" sources")):"");
+  else txt="Voice ready";
+  chip.querySelector(".tx").textContent=txt;
+  const sw=$("#vcSw");
+  if(sw){sw.classList.toggle("on",!!mainVoice.always_on);
+         sw.setAttribute("aria-checked",mainVoice.always_on?"true":"false");}
+}
+window.voiceState=voiceState;
+
 function telegramState(st,detail){
   const chip=$("#tgChip");
   if(chip){
@@ -2270,6 +2543,18 @@ function bindSettings(){
     api.list_asr_devices().then(r=>{state.asrDevices=Array.isArray(r)?r:[];render();}).catch(()=>{state.asrDevices=[];});
   }
 
+  // --- always-on voice ---
+  // The grammar and the live hotkey report are not part of get_state(): one
+  // is a constant this window has no business hard-coding, the other is only
+  // true after the listener threads have actually registered.
+  if(!state.voiceGrammar){
+    api.get_voice().then(v=>{
+      if(!v||v.error){state.voiceGrammar=[];return;}
+      state.voiceGrammar=v.grammar||[];state.voiceHotkeys=v.hotkeys||[];
+      voiceState(v.buffer||{});render();
+    }).catch(()=>{state.voiceGrammar=[];});
+  }
+
   // --- Telegram bridge ---
   if(!state.telegramStatus){
     api.telegram_status().then(r=>{state.telegramStatus=r;render();}).catch(()=>{});
@@ -2309,6 +2594,55 @@ function bindSettings(){
     if(r&&r.error)return toast(r.error,"err");
     state=r;toast("Voice logging settings saved.");
   });
+  // --- always-on voice ---
+  function vcCfgFromForm(){
+    return {
+      always_on:$("#vcSw")?$("#vcSw").classList.contains("on"):true,
+      commands:$("#vcCmdSw")?$("#vcCmdSw").classList.contains("on"):true,
+      hotkeys:$("#vcHkSw")?$("#vcHkSw").classList.contains("on"):true,
+      keys:{
+        log:($("#vcKeyLog")||{}).value||"S",
+        finish:($("#vcKeyFinish")||{}).value||"F",
+        session:($("#vcKeySession")||{}).value||"N",
+        tab:($("#vcKeyTab")||{}).value||"T",
+      },
+    };
+  }
+  async function vcApply(cfg){
+    let r;
+    try{r=await api.save_voice(cfg);}catch(e){r={error:"Bridge not ready."};}
+    if(r&&r.error)return toast(r.error,"err");
+    // save_voice answers with the live registration report, so a key that is
+    // held by another app says so here instead of failing silently later.
+    state.voiceHotkeys=r.hotkeys||[];
+    state.voiceGrammar=r.grammar||state.voiceGrammar;
+    const el=$("#vcHkStatus");
+    if(el){
+      el.innerHTML=(r.hotkeys||[]).map(h=>esc(h.combo)+" &rarr; "+esc(h.command)+
+        (h.registered?"":" <b class='taken'>(taken)</b>")).join(" &middot; ")
+        ||"Not registered.";
+    }
+    const taken=(r.hotkeys||[]).filter(h=>!h.registered);
+    if(taken.length)toast(taken.length+" hotkey(s) are held by another app.","err");
+    return r;
+  }
+  ["vcSw","vcCmdSw","vcHkSw"].forEach(id=>{
+    const sw=$("#"+id);
+    if(!sw)return;
+    sw.addEventListener("click",async()=>{
+      const next=!sw.classList.contains("on");
+      sw.classList.toggle("on",next);sw.setAttribute("aria-checked",next?"true":"false");
+      const r=await vcApply(vcCfgFromForm());
+      if(!r||r.error){sw.classList.toggle("on",!next);
+                      sw.setAttribute("aria-checked",!next?"true":"false");}
+    });
+  });
+  const vcSaveBtn=$("#vcSave");
+  if(vcSaveBtn) vcSaveBtn.addEventListener("click",async()=>{
+    const r=await vcApply(vcCfgFromForm());
+    if(r&&!r.error)toast("Voice settings saved.");
+  });
+
   const asrTestBtn=$("#asrTest");
   if(asrTestBtn) asrTestBtn.addEventListener("click",async()=>{
     const out=$("#asrTestOut");out.textContent="Testing…";

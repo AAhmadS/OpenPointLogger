@@ -3,8 +3,10 @@ import os
 import secrets
 import sys
 import threading
+import time
 import traceback
 import webbrowser
+from datetime import datetime
 from urllib.parse import urlparse
 
 import webview
@@ -15,12 +17,19 @@ from point_store import Store, data_dir, slugify
 from ui import MAIN_HTML, POPUP_HTML
 
 import asr
+import voicecmd
 import clipboard
 import llm
 import single
 import telegram_bridge
 import templates_registry
 import traymenu
+
+def _snip(text, limit=120):
+    """One line of a transcript, short enough for a toast or a 396px bar."""
+    text = str(text or "").strip()
+    return text[:limit] + ("…" if len(text) > limit else "")
+
 
 #: Excludes 0/O/1/I - the pairing code is read off a phone screen and typed
 #: back, so the characters most often confused with each other are dropped
@@ -53,10 +62,63 @@ def system_prefers_light():
         return False
 
 POPUP_W, POPUP_H = 462, 648
+# The collapsed "mini" quick-capture bar: wide enough for a voice state, the
+# two buffer counts and the last thing heard; short enough to park over other
+# work without covering it. Restoring goes back to POPUP_W/POPUP_H exactly.
+MINI_W, MINI_H = 396, 150
 MAIN_W, MAIN_H = 1180, 764
 
 _HWND_TOPMOST, _HWND_NOTOPMOST = -1, -2
 _SWP_NOSIZE, _SWP_NOMOVE, _SWP_NOACTIVATE = 0x0001, 0x0002, 0x0010
+_SWP_NOZORDER = 0x0004
+
+
+def _window_scale(hwnd):
+    """The window's DPI scale, so a logical size can be turned into physical
+    pixels for SetWindowPos.
+
+    pywebview's width/height are logical - it applies the scale itself. Win32
+    takes physical pixels. On a 150% display, resizing to a literal 396 would
+    hand back a window two-thirds the intended size, so every ctypes resize
+    has to do the multiplication pywebview would have done.
+    """
+    try:
+        import ctypes
+        dpi = 0
+        try:
+            dpi = int(ctypes.windll.user32.GetDpiForWindow(int(hwnd)))
+        except Exception:
+            dpi = 0
+        if not dpi:
+            # Pre-1607 fallback: the desktop DC's logical pixels per inch.
+            dc = ctypes.windll.user32.GetDC(0)
+            try:
+                dpi = int(ctypes.windll.gdi32.GetDeviceCaps(dc, 88))  # LOGPIXELSX
+            finally:
+                ctypes.windll.user32.ReleaseDC(0, dc)
+        return (dpi or 96) / 96.0
+    except Exception:
+        return 1.0
+
+
+def _set_window_size(hwnd, width, height):
+    """Resize a window from any thread, in LOGICAL pixels.
+
+    Same reasoning as _set_topmost: window.resize() goes through pythonnet
+    and is not safe off the UI thread, and the mini/full toggle is reachable
+    from the JS bridge and from the hotkey thread. ctypes drops the GIL, so
+    the identical SetWindowPos is safe here.
+    """
+    if not hwnd:
+        return
+    try:
+        import ctypes
+        scale = _window_scale(hwnd)
+        ctypes.windll.user32.SetWindowPos(
+            int(hwnd), 0, 0, 0, int(round(width * scale)), int(round(height * scale)),
+            _SWP_NOMOVE | _SWP_NOZORDER | _SWP_NOACTIVATE)
+    except Exception:
+        pass
 
 
 def _set_topmost(hwnd, topmost):
@@ -192,6 +254,82 @@ class Api:
         self.controller.apply_asr()
         self.controller.refresh_full()
         return self.store.state()
+
+    def get_voice(self):
+        """Config + live registration state + the grammar, in one call.
+
+        Settings needs all three at once and they are cheap; three separate
+        bridge round-trips would only give the panel three chances to render
+        a half-built view.
+        """
+        return {
+            "config": self.store.config.get("voice") or {},
+            "hotkeys": self.controller.voice_hotkey_report(),
+            "grammar": voicecmd.describe_grammar(),
+            "buffer": self.controller.voice_snapshot(),
+        }
+
+    def save_voice(self, cfg):
+        """Persist the voice section and re-register the hotkeys.
+
+        Mirrors save_asr's shape rather than _save_section's: changing a key
+        has to re-register a Win32 hotkey, and changing always_on changes
+        what the microphone already running will do with the next sentence.
+        """
+        cfg = cfg or {}
+        prev = self.store.config.get("voice") or {}
+        keys = dict(prev.get("keys") or {})
+        incoming = cfg.get("keys")
+        if isinstance(incoming, dict):
+            for name in ("log", "finish", "session", "tab"):
+                if name in incoming:
+                    keys[name] = str(incoming[name] or "").strip().upper()[:12]
+        mods = cfg.get("modifiers") if isinstance(cfg.get("modifiers"), list) else None
+        merged = {
+            "always_on": bool(cfg.get("always_on", prev.get("always_on", True))),
+            "commands": bool(cfg.get("commands", prev.get("commands", True))),
+            "hotkeys": bool(cfg.get("hotkeys", prev.get("hotkeys", True))),
+            "modifiers": mods or prev.get("modifiers") or ["ctrl", "alt"],
+            "keys": keys,
+            "mini": bool(cfg.get("mini", prev.get("mini", False))),
+        }
+        self.store.config["voice"] = merged
+        self.store.save_config()
+        self.controller.apply_voice_hotkeys()
+        self.controller.refresh_full()
+        return self.get_voice()
+
+    def voice_command(self, name, argument=""):
+        """Run a Trail-* command from a button, the same way voice does."""
+        return self.controller.run_voice_command(str(name or ""), str(argument or ""),
+                                                 via="ui")
+
+    def voice_buffer(self):
+        return self.controller.voice_snapshot()
+
+    def voice_drop_comment(self, index):
+        """Remove one buffered comment before it is logged.
+
+        Removes are deliberately not spoken - a misheard delete has no undo -
+        so this is the hand-driven half the owner asked for, reachable from
+        the mini window's chips.
+        """
+        r = self.controller.voice.drop_comment(index)
+        self.controller.push_voice_state("edited", "")
+        return r
+
+    def voice_drop_source(self, index):
+        r = self.controller.voice.drop_source(index)
+        self.controller.push_voice_state("edited", "")
+        return r
+
+    def voice_clear(self):
+        self.controller.voice.clear()
+        self.controller.push_voice_state("cleared", "")
+        return self.controller.voice_snapshot()
+
+    def set_popup_mini(self, mini):
+        return self.controller.set_popup_mini(mini)
 
     def test_asr(self, seconds=5):
         cfg = self.store.config.get("asr") or {}
@@ -619,6 +757,17 @@ class Controller:
         self.quitting = False
         self.hotkey = None
         self.clipboard_hotkey = None
+        # name -> HotkeyListener for the four always-on voice verbs. A dict
+        # rather than four attributes because they are registered, stopped
+        # and re-registered as a set, and a set is easier to not half-update.
+        self.voice_hotkeys = {}
+        # What has been said and copied since the last Trail-Log. Its own
+        # lock lives inside it; three threads reach it (audio, Win32 hotkey,
+        # JS bridge).
+        self.voice = voicecmd.VoiceBuffer()
+        self.voice_state = "off"
+        self.voice_detail = ""
+        self.popup_mini = False
         self.asr_logger = None
         # Guards apply_asr()'s read-modify-write of asr_logger: apply_asr is
         # reachable concurrently from the tray thread (_toggle_voice_logging)
@@ -682,6 +831,90 @@ class Controller:
         except ValueError:
             self.clipboard_hotkey = None
 
+    #: Win32 hotkey ids, one per voice verb. 0x4343 is the capture hotkey and
+    #: 0x4344 the clipboard one, so these continue the same block - a repeated
+    #: id would silently steal the other combo's registration.
+    VOICE_HOTKEY_IDS = {"log": 0x4345, "finish": 0x4346,
+                        "session": 0x4347, "tab": 0x4348}
+
+    def apply_voice_hotkeys(self):
+        """Register (or drop) Ctrl+Alt+S / F / N / T.
+
+        Mirrors apply_clipboard_hotkey, four times. Registration is
+        best-effort per key: if another application already holds one of the
+        combos, RegisterHotKey fails for that one alone and the other three
+        still work, which is better than losing the set to one conflict.
+        The ones that failed are reported by voice_hotkey_report() so Settings
+        can say which, rather than leaving the user to guess why one verb is
+        dead."""
+        for listener in self.voice_hotkeys.values():
+            try:
+                listener.stop()
+            except Exception:
+                pass
+        self.voice_hotkeys = {}
+        cfg = self.store.config.get("voice") or {}
+        if not cfg.get("hotkeys", True):
+            return
+        mods = cfg.get("modifiers") or ["ctrl", "alt"]
+        keys = cfg.get("keys") or {}
+        for name, hid in self.VOICE_HOTKEY_IDS.items():
+            key = (keys.get(name) or "").strip()
+            if not key:
+                continue
+            try:
+                listener = HotkeyListener(
+                    mods, key,
+                    (lambda n: (lambda: self.run_voice_command(n, "", via="hotkey")))(name),
+                    hotkey_id=hid)
+                listener.start()
+            except ValueError:
+                continue
+            self.voice_hotkeys[name] = listener
+        self._settle_voice_hotkeys()
+
+    def _settle_voice_hotkeys(self, timeout=0.4):
+        """Wait until every listener has actually tried RegisterHotKey.
+
+        HotkeyListener.start() returns as soon as the thread is spawned;
+        _registered is set inside that thread, one line into its message
+        loop. Reporting straight after start() would therefore say "not
+        registered" for a combo that registers a millisecond later - a
+        Settings panel that tells the user a working key is dead. A listener
+        has decided once it reports registered, or once its thread has
+        exited (RegisterHotKey failed and _loop returned).
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            undecided = [l for l in self.voice_hotkeys.values()
+                         if not getattr(l, "_registered", False)
+                         and getattr(l, "_thread", None) is not None
+                         and l._thread.is_alive()]
+            if not undecided:
+                return
+            time.sleep(0.01)
+
+    def voice_hotkey_report(self):
+        """Which voice combos are actually live, for Settings.
+
+        ``registered`` is what RegisterHotKey accepted. A combo held by
+        another application reports registered False, which is the only
+        honest answer available - Windows does not say who took it."""
+        cfg = self.store.config.get("voice") or {}
+        mods = cfg.get("modifiers") or ["ctrl", "alt"]
+        keys = cfg.get("keys") or {}
+        out = []
+        for name in self.VOICE_HOTKEY_IDS:
+            key = (keys.get(name) or "").strip()
+            listener = self.voice_hotkeys.get(name)
+            out.append({
+                "command": name,
+                "key": key,
+                "combo": "+".join([m.capitalize() for m in mods] + [key.upper()]) if key else "",
+                "registered": bool(listener and getattr(listener, "_registered", False)),
+            })
+        return out
+
     def apply_asr(self):
         """Mirrors apply_clipboard_hotkey: stop whatever's running, then start
         fresh from current config if enabled. Off by default (config.asr.enabled),
@@ -724,7 +957,264 @@ class Controller:
         if result.get("error"):
             self.push_asr_state("error", result["error"])
             return
-        self._log_asr_text(result.get("text") or "")
+        self.on_voice_transcript(result.get("text") or "")
+
+    def on_voice_transcript(self, text):
+        """One transcript in: a Trail-* command, or a comment for the buffer.
+
+        Split out from on_asr_utterance so the whole decision path is
+        testable without a microphone or a transcription call - which matters
+        more here than anywhere else in the app, because this runs several
+        times a minute and a wrong answer either loses a thought or closes a
+        topic.
+
+        With voice.always_on off this is the pre-existing behaviour: every
+        utterance becomes its own point immediately.
+        """
+        text = (text or "").strip()
+        cfg = self.store.config.get("voice") or {}
+        if not cfg.get("always_on", True):
+            self._log_asr_text(text)
+            return
+        if not text:
+            self.push_asr_state("listening", "")
+            return
+        if cfg.get("commands", True):
+            m = voicecmd.match(text)
+            if m["command"]:
+                self.run_voice_command(m["command"], m["argument"], via="voice")
+                return
+        self.voice.add_comment(text)
+        self.push_voice_state("heard", _snip(text))
+
+    # --- the command dispatcher ---------------------------------------------
+
+    def run_voice_command(self, name, argument="", via="voice"):
+        """Execute one command, whether it was spoken or pressed.
+
+        One entry point for both, so a hotkey and a wake word can never drift
+        apart: Ctrl+Alt+S and "Trail-Log" are this call with a different
+        ``via``. Reached from the audio thread and from the Win32 hotkey
+        thread, never from the UI thread - so everything it touches is the
+        store (locked), the buffer (locked), or evaluate_js/ctypes. Never a
+        pywebview property; see challenge C5.
+
+        Returns a small dict for tests and the JS bridge. The live windows are
+        updated by the state push, not by this return value.
+        """
+        handler = {
+            "save": self._voice_save,
+            "log": self._voice_log,
+            "finish": self._voice_finish,
+            "session": self._voice_session,
+            "tab": self._voice_tab,
+        }.get(name)
+        if handler is None:
+            return {"error": "Unknown command: %s" % name}
+        try:
+            result = handler(argument)
+        except Exception:
+            traceback.print_exc()
+            result = {"error": "That command failed."}
+        if result.get("error"):
+            self.push_voice_state("error", result["error"])
+        else:
+            self.push_voice_state(result.get("state") or "ok", result.get("detail") or "")
+        return result
+
+    def _open_topic(self):
+        """The topic a command should act on, re-checked at the moment of use.
+
+        The same race _log_asr_text guards: time passes between hearing a
+        command and acting on it, and the UI thread can close the topic in
+        between.
+        """
+        topic = self.store.last_open_topic()
+        if topic is None:
+            return None
+        t = self.store.find_topic(topic["id"])
+        if not t or t.get("status") != "open":
+            return None
+        return t
+
+    def _voice_save(self, _argument=""):
+        """Trail-Save / Ctrl+Alt+V: park the clipboard as a pending source.
+
+        Nothing is written to the store - the source joins the buffer and is
+        committed with the comments by Trail-Log. An image stays a data URL
+        and is handed to add_entry, which writes the file itself.
+        """
+        try:
+            data = clipboard.read()
+        except Exception:
+            traceback.print_exc()
+            return {"error": "Couldn't read the clipboard."}
+        kind = data.get("type") or "none"
+        value = data.get("value")
+        if kind == "none" or not value:
+            return {"error": "Clipboard is empty."}
+        if kind == "text" and isinstance(value, str):
+            value = value[:2000]
+            kind = "string"
+        if kind not in ("link", "string", "image"):
+            return {"error": "Nothing usable on the clipboard."}
+        if not self.voice.add_source(kind, value):
+            return {"state": "duplicate", "detail": "Already attached."}
+        return {"state": "source",
+                "detail": "Image attached." if kind == "image" else _snip(value)}
+
+    def _voice_log(self, _argument=""):
+        """Trail-Log / Ctrl+Alt+S: commit the buffer as one point.
+
+        The buffer is drained only after add_entry succeeds. Draining first
+        would be shorter and would throw the user's words away every time the
+        store refused the write.
+        """
+        snap = self.voice.snapshot()
+        if snap["empty"]:
+            return {"error": "Nothing to log yet."}
+        if not snap["text"].strip():
+            return {"error": "Sources are attached, but nothing was said yet."}
+        t = self._open_topic()
+        if t is None:
+            return {"error": "No open topic - say Trail-Session to start one."}
+        r = self.store.add_entry(t["id"], "", snap["text"], kind="note",
+                                 sources=snap["sources"])
+        if r.get("error"):
+            return {"error": r["error"]}
+        self.voice.take()
+        self.refresh_full()
+        return {"state": "logged", "detail": _snip(snap["text"])}
+
+    def _voice_finish(self, _argument=""):
+        """Trail-Finish / Ctrl+Alt+F: close the open topic.
+
+        Anything still buffered is logged first. Closing a topic and silently
+        discarding the sentence said ten seconds earlier is exactly the kind
+        of loss that makes people stop trusting voice input.
+        """
+        t = self._open_topic()
+        if t is None:
+            return {"error": "No open topic to finish."}
+        if self.voice.snapshot()["text"].strip():
+            self._voice_log()
+        r = self.store.close_topic(t["id"])
+        if r.get("error"):
+            return {"error": r["error"]}
+        self.voice.clear()
+        self.refresh_full()
+        return {"state": "finished", "detail": t.get("title") or ""}
+
+    def _voice_session(self, argument=""):
+        """Trail-Session / Ctrl+Alt+N: start a new topic.
+
+        An unnamed session is still a session: rather than refuse and lose
+        whatever gets said next, it takes a dated title the user can rename.
+        A buffer left over from the previous topic is logged into THAT topic
+        first, so a comment never lands under a heading it was not said
+        under.
+        """
+        title = (argument or "").strip()
+        if self.voice.snapshot()["text"].strip():
+            if self._open_topic() is not None:
+                self._voice_log()
+            else:
+                self.voice.clear()
+        if not title:
+            title = "Session " + datetime.now().strftime("%Y-%m-%d %H:%M")
+        r = self.store.start_topic(title)
+        if r.get("error"):
+            return {"error": r["error"]}
+        self.refresh_full()
+        return {"state": "session", "detail": title}
+
+    def _voice_tab(self, argument=""):
+        """Trail-Tab / Ctrl+Alt+T: add a sub-topic to the open topic.
+
+        An unnamed tab is numbered from the count already there, so saying it
+        twice gives Tab 1 and Tab 2 rather than failing on a duplicate name.
+        """
+        t = self._open_topic()
+        if t is None:
+            return {"error": "No open topic - say Trail-Session first."}
+        name = (argument or "").strip()
+        if not name:
+            name = "Tab %d" % (len(t.get("subtopics") or []) + 1)
+        r = self.store.add_subtopic(t["id"], name)
+        if r.get("error"):
+            return {"error": r["error"]}
+        self.refresh_full()
+        return {"state": "tab", "detail": name}
+
+    def voice_snapshot(self):
+        """The buffer plus the open topic, for a window that just opened.
+
+        A window that was hidden missed every push while it was away, so it
+        pulls once on show rather than waiting for the next thing to be said.
+        """
+        payload = dict(self.voice.snapshot())
+        t = self._open_topic()
+        payload["topic"] = (t or {}).get("title") or ""
+        payload["topic_id"] = (t or {}).get("id") or ""
+        payload["state"] = self.voice_state
+        payload["detail"] = self.voice_detail
+        payload["always_on"] = bool((self.store.config.get("voice") or {}).get("always_on", True))
+        payload["listening"] = bool(self.asr_logger is not None)
+        payload["mini"] = bool(self.popup_mini)
+        return payload
+
+    def push_voice_state(self, state, detail=""):
+        """Tell both windows what just happened, with the buffer alongside.
+
+        The buffer travels with every push rather than being fetched after
+        one: the mini window's whole job is to show what is waiting, and a
+        push followed by a round-trip would let it render a count that was
+        already stale. Same JSON-encoding discipline as push_telegram_state -
+        a transcript snippet must never be able to break out of the argument
+        list.
+        """
+        self.voice_state = state
+        self.voice_detail = detail or ""
+        try:
+            payload = self.voice_snapshot()
+            js = "voiceState(%s)" % json.dumps(payload)
+        except Exception:
+            return
+        for window, visible in ((self.popup, self.popup_visible),
+                                (self.full, self.full_visible)):
+            if window is None or not visible:
+                continue
+            try:
+                window.evaluate_js(js)
+            except Exception:
+                pass
+
+    def set_popup_mini(self, mini):
+        """Collapse the quick-capture window to a bar, or restore it.
+
+        The resize goes through ctypes rather than window.resize() for the
+        same reason _set_topmost does: this is reachable from the JS bridge
+        and from the hotkey thread, and a pywebview property setter off the
+        UI thread deadlocks against the GIL (challenge C5).
+        """
+        mini = bool(mini)
+        self.popup_mini = mini
+        cfg = self.store.config.setdefault("voice", {})
+        cfg["mini"] = mini
+        try:
+            self.store.save_config()
+        except Exception:
+            traceback.print_exc()
+        if mini:
+            _set_window_size(self.popup_hwnd, MINI_W, MINI_H)
+        else:
+            _set_window_size(self.popup_hwnd, POPUP_W, POPUP_H)
+        try:
+            if self.popup is not None:
+                self.popup.evaluate_js("popupMini(%s)" % ("true" if mini else "false"))
+        except Exception:
+            pass
+        return {"mini": mini}
 
     def _log_asr_text(self, text):
         """Files one transcribed utterance into the last open topic. Split out
@@ -782,6 +1272,17 @@ class Controller:
                 self._update_voice_tray_label(state)
             except Exception:
                 pass
+        # In always-on mode the mini bar is the primary surface, and the
+        # transport states (listening / transcribing) only ever reach a window
+        # through here. Mirror them onto the voice channel so the bar can show
+        # what the microphone is DOING, not only what it decided. VoiceLogger
+        # emits "listening" once when the stream opens rather than after every
+        # utterance, so this does not stamp over "heard" a moment later.
+        try:
+            if (self.store.config.get("voice") or {}).get("always_on", True):
+                self.push_voice_state(state, detail)
+        except Exception:
+            pass
 
     def apply_telegram(self):
         """Mirrors apply_asr: stop whatever's running, then start fresh from
@@ -924,6 +1425,15 @@ class Controller:
         except Exception:
             pass
 
+    def _voice_is_live(self):
+        """True when a microphone is open AND always-on mode is on.
+
+        Both halves matter: asr.enabled with always_on off is the older
+        dictation behaviour, which has no buffer to attach a source to.
+        """
+        cfg = self.store.config.get("voice") or {}
+        return bool(self.asr_logger is not None and cfg.get("always_on", True))
+
     def on_clipboard_hotkey(self):
         """Ctrl+Alt+V (by default): read whatever was last copied and hand it
         to the quick-capture popup as a pending source. Nothing is written
@@ -936,6 +1446,15 @@ class Controller:
         evaluate_js: an image is a multi-megabyte data URL, and a bridge
         return is the path that already carries those for the per-row
         paste buttons."""
+        # While always-on voice is actually listening, this chord means
+        # "attach that to what I am dictating", not "open a form" - the user
+        # is talking, not typing, and the popup would steal focus from
+        # whatever they copied it out of. Same key, same intent, different
+        # composition surface. With voice off it behaves exactly as before.
+        if self._voice_is_live():
+            self.run_voice_command("save", "", via="hotkey")
+            self.show_popup()
+            return
         try:
             data = clipboard.read()
         except Exception:
@@ -1213,6 +1732,17 @@ class Controller:
                 traceback.print_exc()
             try:
                 self.apply_clipboard_hotkey()
+            except Exception:
+                traceback.print_exc()
+            try:
+                self.apply_voice_hotkeys()
+            except Exception:
+                traceback.print_exc()
+            try:
+                # Come back collapsed if that is how it was left - an
+                # always-on session parked as a bar should stay a bar.
+                if (self.store.config.get("voice") or {}).get("mini"):
+                    self.set_popup_mini(True)
             except Exception:
                 traceback.print_exc()
             try:
