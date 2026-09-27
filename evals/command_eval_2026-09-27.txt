@@ -1,0 +1,94 @@
+key: TYPESAFE_API_KEY
+model requested: jev-1.13.0   asked: 25   decided by code: 26   runs: 2
+
+-- decided by code, never asked --
+  en-end-cmd-01   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  en-end-cmd-02   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  en-end-cmd-03   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  en-end-cmd-04   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  en-end-cmd-05   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  en-end-cmd-06   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  en-end-txt-01   text     want text    
+  en-end-txt-02   text     want text    
+  en-end-txt-03   text     want text    
+  en-end-txt-04   text     want text    
+  en-end-txt-05   text     want text    
+  en-end-txt-06   text     want text    
+  en-end-txt-07   text     want text    
+  en-end-txt-08   text     want text    
+  en-end-txt-09   text     want text    
+  en-end-txt-10   text     want text    
+  fa-end-cmd-01   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  fa-end-cmd-02   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  fa-end-cmd-03   text     want command known miss: a command at the end of a sentence is dictation - that form was measured and dropped
+  fa-end-txt-01   text     want text    
+  fa-end-txt-02   text     want text    
+  fa-end-txt-03   text     want text    
+  en-end-lst-01   text     want text    
+  en-end-lst-02   text     want text    
+  en-end-lst-03   text     want text    
+  fa-end-lst-01   text     want text    
+
+-- run 1  model=jev-1.13.0 --
+  en-arg-cmd-01   argument en  P(yes) 0.94 -> command want command 
+  en-arg-cmd-02   argument en  P(yes) 0.95 -> command want command 
+  en-arg-cmd-03   argument en  P(yes) 0.87 -> command want command 
+  en-arg-cmd-04   argument en  P(yes) 0.89 -> command want command 
+  en-arg-cmd-05   argument en  P(yes) 0.88 -> command want command 
+  en-arg-cmd-06   argument en  P(yes) 0.94 -> command want command 
+  en-arg-cmd-07   argument en  P(yes) 0.96 -> command want command 
+  en-arg-cmd-08   argument en  P(yes) 0.82 -> command want command 
+  en-arg-txt-01   argument en  P(yes) 0.03 -> text    want text    
+  en-arg-txt-02   argument en  P(yes) 0.04 -> text    want text    
+  en-arg-txt-03   argument en  P(yes) 0.05 -> text    want text    
+  en-arg-txt-04   argument en  P(yes) 0.05 -> text    want text    
+  en-arg-txt-05   argument en  P(yes) 0.06 -> text    want text    
+  en-arg-txt-06   argument en  P(yes) 0.08 -> text    want text    
+  en-arg-txt-07   argument en  P(yes) 0.02 -> text    want text    
+  en-arg-txt-08   argument en  P(yes) 0.05 -> text    want text    
+  fa-arg-cmd-01   argument fa  P(yes) 0.89 -> command want command 
+  fa-arg-cmd-02   argument fa  P(yes) 0.89 -> command want command 
+  fa-arg-cmd-03   argument fa  P(yes) 0.90 -> command want command 
+  fa-arg-txt-01   argument fa  P(yes) 0.04 -> text    want text    
+  fa-arg-txt-02   argument fa  P(yes) 0.05 -> text    want text    
+  fa-arg-txt-03   argument fa  P(yes) 0.03 -> text    want text    
+  odd-01          argument en  P(yes) 0.04 -> text    want text    
+  odd-02          argument en  P(yes) 0.08 -> text    want text    
+  odd-03          argument en  P(yes) 0.02 -> text    want text    
+
+-- run 2  model=jev-1.13.0 --
+  en-arg-cmd-01   argument en  P(yes) 0.94 -> command want command 
+  en-arg-cmd-02   argument en  P(yes) 0.96 -> command want command 
+  en-arg-cmd-03   argument en  P(yes) 0.88 -> command want command 
+  en-arg-cmd-04   argument en  P(yes) 0.90 -> command want command 
+  en-arg-cmd-05   argument en  P(yes) 0.88 -> command want command 
+  en-arg-cmd-06   argument en  P(yes) 0.94 -> command want command 
+  en-arg-cmd-07   argument en  P(yes) 0.96 -> command want command 
+  en-arg-cmd-08   argument en  P(yes) 0.86 -> command want command 
+  en-arg-txt-01   argument en  P(yes) 0.03 -> text    want text    
+  en-arg-txt-02   argument en  P(yes) 0.04 -> text    want text    
+  en-arg-txt-03   argument en  P(yes) 0.05 -> text    want text    
+  en-arg-txt-04   argument en  P(yes) 0.05 -> text    want text    
+  en-arg-txt-05   argument en  P(yes) 0.06 -> text    want text    
+  en-arg-txt-06   argument en  P(yes) 0.08 -> text    want text    
+  en-arg-txt-07   argument en  P(yes) 0.02 -> text    want text    
+  en-arg-txt-08   argument en  P(yes) 0.05 -> text    want text    
+  fa-arg-cmd-01   argument fa  P(yes) 0.89 -> command want command 
+  fa-arg-cmd-02   argument fa  P(yes) 0.89 -> command want command 
+  fa-arg-cmd-03   argument fa  P(yes) 0.88 -> command want command 
+  fa-arg-txt-01   argument fa  P(yes) 0.03 -> text    want text    
+  fa-arg-txt-02   argument fa  P(yes) 0.05 -> text    want text    
+  fa-arg-txt-03   argument fa  P(yes) 0.03 -> text    want text    
+  odd-01          argument en  P(yes) 0.04 -> text    want text    
+  odd-02          argument en  P(yes) 0.08 -> text    want text    
+  odd-03          argument en  P(yes) 0.02 -> text    want text    
+
+-- what these numbers allow --
+  argument  commands 0.82-0.96  dictation 0.02-0.08  threshold 0.50
+            margin: 0.42 above the highest dictation, 0.32 below the lowest command
+            en: 38/38 correct
+            fa: 12/12 correct
+  run-to-run drift: mean 0.004  max 0.040
+
+TOTAL: 50/50 correct across 2 run(s)
+rows written to C:\Users\USER\AppData\Local\Temp/claude/D---vscode-OpenPointLogger/73fd9637-7db2-472a-808f-cfc39c825acf/scratchpad/command_eval_final.json

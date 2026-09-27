@@ -3,8 +3,8 @@ report: project-state
 project: Trailmark (formerly OpenPointLogger)
 generated: 2026-09-15
 generated_by: project-cartographer
-branch: main (jev-integration checked out, 1 commit ahead, unmerged)
-last_updated: 2026-09-25 by main session: always-on voice + minimisable mini bar (6947eb3), Persian/RTL across editing, templates and .docx (99a8c24), exe rebuilt and relaunched, then Jev second opinion on branch jev-integration (e46b14d, unmerged)
+branch: main (voice-v2 checked out; it sits on jev-integration, both unmerged)
+last_updated: 2026-09-27 by main session: voice-v2 - one draft for dictation and typing, plain spoken commands with a Jev second opinion for session/tab names, Persian/English-only transcription, an 'only my voice' speaker check, a real microphone list with a live wave; exe rebuilt and relaunched. Branch voice-v2 on top of jev-integration, both unmerged
 schema_version: 1
 phase: build
 phase_evidence: >
@@ -257,6 +257,18 @@ commit SHA by anyone scanning this report).
   commit: n/a (build artifact)
   verified: "PyInstaller exit 0 via .venv python; 2 running processes stopped, file copied, SHA256 of dist and installed exe equal (E20DB3A943B5608F2BF0B27E31230DB6C14E356AD207BF5F67920AF154091030), 33,897,840 bytes; relaunched 2026-09-25 10:10:03, 2 processes alive at the 25 s check. HotkeyListener.probe reports all six hotkeys HELD by another process - Ctrl+Alt+P capture, V clipboard, S log, F finish, N session, T tab - which is the packaged exe having registered the four new voice hotkeys. NOT exercised by hand from the packaged exe: the microphone path, a Persian export, and Telegram polling (see C6)."
 
+- id: VOICE2
+  title: "voice-v2: one draft, plain commands, Persian/English only, only my voice, a real microphone list"
+  importance: high
+  commit: see `git log main..voice-v2` (branch voice-v2, stacked on jev-integration, unmerged)
+  verified: "Owner's four items, as read in .claude/gates/voice-v2.yaml (interpretations are listed there, none confirmed with the owner). 15/15 tests/test_*.py exit 0 - test_voicecmd 101, test_voice_session 269, test_asr 76, test_clipboard_hotkey 24 checks - and node --check passes on both script blocks. Jev command question: 50/50 over 2 runs, fa 12/12, evals/command_eval_2026-09-27.txt. The popup and Settings were rendered in headless Edge against a bridge mocked from the real Api; that render caught the mini bar overflowing 150 px (content 176), fixed and re-measured. asr.list_devices() on this machine returns 1 microphone. Found and fixed on the way: a saved speaker threshold of 0.0 was read as 'unset'; Settings claimed other voices are never sent, which is false for sub-second clips. NOT verified: no real voice went through the microphone, ASR, or the speaker model in the packaged exe (gate V13); the speaker threshold is unmeasured on the owner (V9); the owner's config has no TypeSafe key, so 'session X' stays text until one is added ('trail session X' forces it)."
+
+- id: BUILD5
+  title: "Rebuilt dist/Trailmark.exe from the voice-v2 working tree, installed, relaunched"
+  importance: high
+  commit: n/a (build artifact)
+  verified: "PyInstaller exit 0 via .venv python, onnxruntime and numpy now hidden imports (EXE-00.toc lists onnxruntime.dll, onnxruntime_providers_shared.dll, onnxruntime_pybind11_state.pyd); 47,527,999 bytes. 2 processes stopped, copied, SHA256 of dist and installed equal (48FAC0CEB94EBA1CC3BDB8919FEA369018AE44178F49CB22D44643E2AACE6754); relaunched 2026-09-27 17:43:13, 2 processes alive at 17:44:09; HotkeyListener.probe reports Ctrl+Alt+P/V/S/F/N/T all HELD. The previous installed exe is kept only in the session scratchpad."
+
 ## workstreams.todo
 
 - id: T18
@@ -377,6 +389,18 @@ commit SHA by anyone scanning this report).
 
 ## human_checkpoints
 
+- step: VOICE2 speak into the installed exe
+  why: "Gate V13 in .claude/gates/voice-v2.yaml. Nothing in this slice has heard a real voice: Settings -> Test microphone and watch the wave; dictate while typing in the quick-capture box; say 'log'; say 'trail session Test'."
+  kind: action
+
+- step: VOICE2 set the speaker threshold on your own voice
+  why: "Gate V9. 0.55 was measured on three Mandarin speakers, not on you. Enroll, 'Record a check' for yourself and a colleague, move the slider between the two scores."
+  kind: action
+
+- step: VOICE2 slice review before merge
+  why: "voice-v2 is stacked on jev-integration; merging it merges both. No human has read either. Interpretations of the four items are listed at the top of the gate file - in particular 'LLM' in 'tone + LLM + Jev' was read as the transcription model."
+  kind: review
+
 - step: JEV labelled cases from real use
   why: "The thresholds in judge.py are set by 39 cases Claude wrote and scored against criteria Claude wrote. Only the owner can supply notes and captures that are actually theirs, and only they can label them. Gate J8 in .claude/gates/jev-integration.yaml stays unmeasured until they do; it blocks nothing, because the feature ships off."
   kind: action
@@ -494,6 +518,8 @@ on a system-wide VPN. Recommended: proxy support — every call goes through one
 field covers the whole module.
 
 ## recommended_next
+
+1. Owner: try voice-v2 in the installed exe (checkpoints VOICE2 above), then review voice-v2 + jev-integration together before merging. Adding a TypeSafe key in Settings -> Second opinion is what lets a plain "session NAME" become a command
 
 2. Owner review of the design pages written this run (app/categories-templates, clipboard-capture, asr-mode, telegram-bridge; platform/account-profile, plan-picker, mobile-capture-topics, website-landing) - post-hoc per the working agreement
 3. Small follow-ups surfaced by qa: category-create double-submit guard, unsaved-rename discard, template_demo ignoring scientific-mode style, ASR device index 0 / Test-5-seconds using saved config, Unpair danger-ghost class; a sweep-sized batch

@@ -17,6 +17,7 @@ from point_store import Store, data_dir, slugify
 from ui import MAIN_HTML, POPUP_HTML
 
 import asr
+import speaker
 import voicecmd
 import clipboard
 import llm
@@ -64,9 +65,11 @@ def system_prefers_light():
 
 POPUP_W, POPUP_H = 462, 648
 # The collapsed "mini" quick-capture bar: wide enough for a voice state, the
-# two buffer counts and the last thing heard; short enough to park over other
-# work without covering it. Restoring goes back to POPUP_W/POPUP_H exactly.
-MINI_W, MINI_H = 396, 150
+# draft's counts, the wave and the tail of the draft; short enough to park over
+# other work without covering it. 176 is the bar's measured content height at
+# 396 px (headless Edge, 2026-09-27) - any less and the page scrolls, pushing
+# the header off the top. Restoring goes back to POPUP_W/POPUP_H exactly.
+MINI_W, MINI_H = 396, 176
 MAIN_W, MAIN_H = 1180, 764
 
 _HWND_TOPMOST, _HWND_NOTOPMOST = -1, -2
@@ -164,6 +167,86 @@ _DEMO_ENTRIES = [
 ]
 
 
+class _InOrder:
+    """Apply results in capture order, whatever order they finish in.
+
+    Each utterance is transcribed on its own thread, and a short sentence said
+    second can come back first. ``deliver(seq, item)`` parks the item and then
+    applies every consecutive one from the next expected number, on the
+    delivering thread, one at a time.
+
+    A number that never arrives would hold everything after it forever, so
+    once ``stall`` seconds pass with later items waiting, the gap is skipped.
+    Every caller delivers in a ``finally``, so this only fires for a thread
+    that died outright - and a thought applied late is better than a
+    microphone that silently stops working.
+    """
+
+    def __init__(self, apply, stall=90.0):
+        self._apply = apply
+        self._stall = stall
+        self._lock = threading.Lock()
+        self._drain = threading.Lock()
+        self._next = 1
+        self._waiting = {}
+        self._since = None
+
+    def deliver(self, seq, item):
+        with self._lock:
+            if seq < self._next:
+                return
+            self._waiting[seq] = item
+        self._run()
+
+    def _ready(self):
+        with self._lock:
+            if self._next in self._waiting:
+                self._since = None
+                item = self._waiting.pop(self._next)
+                self._next += 1
+                return item, True
+            if not self._waiting:
+                self._since = None
+                return None, False
+            now = time.time()
+            if self._since is None:
+                self._since = now
+            if now - self._since >= self._stall:
+                self._next = min(self._waiting)
+                self._since = None
+                item = self._waiting.pop(self._next)
+                self._next += 1
+                return item, True
+            return None, False
+
+    def _run(self):
+        # One drainer at a time: two threads applying at once would put the
+        # draft back in whatever order the scheduler felt like.
+        while True:
+            if not self._drain.acquire(blocking=False):
+                return
+            try:
+                while True:
+                    item, ok = self._ready()
+                    if not ok:
+                        break
+                    try:
+                        self._apply(item)
+                    except Exception:
+                        traceback.print_exc()
+            finally:
+                self._drain.release()
+            # Something delivered while this thread was releasing the drain
+            # lock would otherwise sit until the next utterance.
+            with self._lock:
+                if self._next not in self._waiting:
+                    return
+
+    def pending(self):
+        with self._lock:
+            return len(self._waiting)
+
+
 class Api:
     def __init__(self, store, controller):
         self.store = store
@@ -197,11 +280,6 @@ class Api:
             return clipboard.read()
         except Exception:
             return {"type": "none", "value": None, "meta": {}}
-
-    def take_clipboard_capture(self):
-        """JS-bridge entry point behind the popup's clipboardCaptured():
-        collects what the Ctrl+Alt+V hotkey read, exactly once."""
-        return self.controller.take_clipboard_capture()
 
     def save_clipboard(self, cfg):
         """Mirrors save_hotkey's validate-then-save shape, not
@@ -302,7 +380,12 @@ class Api:
                         or "https://openrouter.ai/api/v1",
             "model": (str(cfg.get("model") or prev.get("model") or "")).strip() or "whisper-1",
             "api_key": str(cfg.get("api_key")) if cfg.get("api_key") is not None else str(prev.get("api_key") or ""),
-            "language": (str(cfg.get("language") or "")).strip(),
+            # Persian or English only: "" decides between the two per
+            # utterance, "fa" / "en" pins one. Anything else - including a
+            # language saved by an older version - falls back to "".
+            "language": (lambda l: l if l in asr.ALLOWED_LANGUAGES else "")(
+                str(cfg.get("language") or "").strip().lower()),
+            # The microphone's NAME, which survives a reboot; an index does not.
             "device": (str(cfg.get("device") or "")).strip(),
             "sensitivity": sensitivity,
         }
@@ -323,7 +406,10 @@ class Api:
             "config": self.store.config.get("voice") or {},
             "hotkeys": self.controller.voice_hotkey_report(),
             "grammar": voicecmd.describe_grammar(),
-            "buffer": self.controller.voice_snapshot(),
+            "draft": self.controller.voice_snapshot(),
+            # Whether "session <name>" can be told from a sentence. Without
+            # a second opinion it stays text, and Settings says so.
+            "second_opinion": bool(judge.available(self.store.config.get("judge") or {})),
         }
 
     def save_voice(self, cfg):
@@ -357,33 +443,147 @@ class Api:
         return self.get_voice()
 
     def voice_command(self, name, argument=""):
-        """Run a Trail-* command from a button, the same way voice does."""
+        """Run a command from a button, the same way voice does."""
         return self.controller.run_voice_command(str(name or ""), str(argument or ""),
                                                  via="ui")
 
-    def voice_buffer(self):
+    # --- the draft: one point, dictated and typed into the same text -------
+
+    def draft_get(self):
         return self.controller.voice_snapshot()
 
-    def voice_drop_comment(self, index):
-        """Remove one buffered comment before it is logged.
+    def draft_set(self, text, base_rev):
+        """The popup's textarea, sent after the user stops typing.
 
-        Removes are deliberately not spoken - a misheard delete has no undo -
-        so this is the hand-driven half the owner asked for, reachable from
-        the mini window's chips.
+        ``base_rev`` is the revision the text was typed against. Dictation
+        that landed in between is merged onto the end rather than overwritten;
+        a draft that was logged in between is refused, so the page can put the
+        leftover words back instead of resurrecting a filed point.
         """
-        r = self.controller.voice.drop_comment(index)
-        self.controller.push_voice_state("edited", "")
-        return r
+        try:
+            base_rev = int(base_rev)
+        except (TypeError, ValueError):
+            base_rev = -1
+        r = self.controller.draft.set_text(str(text or ""), base_rev)
+        if r.get("ok"):
+            self.controller.push_voice_state("typed" if not r.get("merged") else "merged", "")
+        out = self.controller.voice_snapshot()
+        out["result"] = {k: r.get(k) for k in ("ok", "merged", "reason")}
+        return out
 
-    def voice_drop_source(self, index):
-        r = self.controller.voice.drop_source(index)
+    def draft_meta(self, fields):
+        """Topic, tab and kind for the point being composed."""
+        fields = fields or {}
+        clean = {}
+        if "topic_id" in fields:
+            clean["topic_id"] = str(fields.get("topic_id") or "")
+        if "subtopic" in fields:
+            clean["subtopic"] = str(fields.get("subtopic") or "")
+        if "kind" in fields:
+            clean["kind"] = str(fields.get("kind") or "")
+        self.controller.draft.set_meta(clean)
         self.controller.push_voice_state("edited", "")
-        return r
+        return self.controller.voice_snapshot()
 
-    def voice_clear(self):
-        self.controller.voice.clear()
+    def draft_add_source(self, stype, value, note=""):
+        sid = self.controller.draft.add_source(str(stype or ""), value, str(note or ""),
+                                               origin="hand")
+        out = self.controller.voice_snapshot()
+        if not sid:
+            out["error"] = "Already attached, empty, or too many sources."
+        else:
+            self.controller.push_voice_state("edited", "")
+        return out
+
+    def draft_drop_source(self, sid):
+        """Removes are by hand only - a misheard spoken delete has no undo."""
+        try:
+            sid = int(sid)
+        except (TypeError, ValueError):
+            return self.controller.voice_snapshot()
+        self.controller.draft.drop_source(sid)
+        self.controller.push_voice_state("edited", "")
+        return self.controller.voice_snapshot()
+
+    def draft_clear(self):
+        self.controller.draft.clear()
         self.controller.push_voice_state("cleared", "")
         return self.controller.voice_snapshot()
+
+    def draft_log(self, text=None, base_rev=None):
+        """The Log button: settle the text the page is showing, then file it.
+
+        The page's latest keystrokes may not have been sent yet, so they come
+        along with the press rather than racing a debounce timer.
+        """
+        if text is not None:
+            r = self.draft_set(text, base_rev)
+            if not (r.get("result") or {}).get("ok"):
+                r["error"] = "The draft changed underneath - check it and log again."
+                return r
+        r = self.controller.run_voice_command("log", "", via="ui")
+        out = self.controller.voice_snapshot()
+        out["result"] = {k: r.get(k) for k in ("state", "detail", "topic_id", "entry_id", "sources")}
+        if r.get("error"):
+            out["error"] = r["error"]
+        return out
+
+    # --- held clips --------------------------------------------------------
+
+    def held_list(self):
+        return self.controller.held_list()
+
+    def held_use(self, hid):
+        try:
+            hid = int(hid)
+        except (TypeError, ValueError):
+            return {"error": "No such clip."}
+        r = self.controller.use_held(hid)
+        r["held"] = self.controller.held_list()
+        return r
+
+    def held_drop(self, hid=None):
+        if hid is not None:
+            try:
+                hid = int(hid)
+            except (TypeError, ValueError):
+                return {"error": "No such clip."}
+        return self.controller.drop_held(hid)
+
+    # --- microphone test and speaker check ---------------------------------
+
+    def mic_test_start(self, device=None, sensitivity=None):
+        return self.controller.mic_test_start(device=device, sensitivity=sensitivity)
+
+    def mic_levels(self, last=300):
+        return self.controller.mic_levels(last)
+
+    def mic_test_stop(self):
+        return self.controller.mic_test_stop()
+
+    def speaker_status(self):
+        return self.controller.speaker_status()
+
+    def speaker_download(self):
+        return self.controller.speaker_download()
+
+    def speaker_record_start(self):
+        return self.controller.enroll_record_start()
+
+    def speaker_record_stop(self):
+        return self.controller.enroll_record_stop()
+
+    def speaker_enroll_reset(self):
+        return self.controller.enroll_reset()
+
+    def speaker_enroll_finish(self):
+        return self.controller.enroll_finish()
+
+    def speaker_check(self):
+        return self.controller.speaker_check()
+
+    def speaker_save(self, fields):
+        return self.controller.speaker_save(fields)
 
     def toggle_voice(self, on=None):
         """Turn always-on voice on or off from whichever window asked."""
@@ -834,11 +1034,6 @@ class Controller:
         self.full = None
         self.popup_hwnd = 0
         self.full_hwnd = 0
-        # What Ctrl+Alt+V last read off the clipboard, until the popup
-        # collects it. Written on the hotkey thread, read on the JS-bridge
-        # thread, hence the lock.
-        self._pending_clip = None
-        self._clip_lock = threading.Lock()
         self.popup_visible = True
         self.full_visible = False
         self.quitting = False
@@ -848,12 +1043,33 @@ class Controller:
         # rather than four attributes because they are registered, stopped
         # and re-registered as a set, and a set is easier to not half-update.
         self.voice_hotkeys = {}
-        # What has been said and copied since the last Trail-Log. Its own
-        # lock lives inside it; three threads reach it (audio, Win32 hotkey,
-        # JS bridge).
-        self.voice = voicecmd.VoiceBuffer()
+        # The one point being composed - dictated, typed, or both. Its own
+        # lock lives inside it; four threads reach it (utterance threads,
+        # Win32 hotkey, JS bridge, the tray).
+        self.draft = voicecmd.Draft()
+        # Commands run one at a time: "log" said while the Log button is being
+        # pressed must not file the same draft into two entries.
+        self._command_lock = threading.RLock()
         self.voice_state = "off"
         self.voice_detail = ""
+        self.voice_heard = ""
+        # Clips the speaker check held aside (see _hold).
+        self.held = []
+        self._held_lock = threading.Lock()
+        self._held_seq = 0
+        # The speaker model, loaded on first use - 26 MB and ~0.3 s, not
+        # worth paying for someone who never turns the check on.
+        self._verifier = None
+        self._verifier_lock = threading.Lock()
+        # Settings' microphone test and voice enrollment: at most one open
+        # at a time, and never alongside a second copy of itself.
+        self.mic_test = None
+        self._mic_test_lock = threading.Lock()
+        self._enroll_clips = []
+        # Set while a sentence is being recorded for the voiceprint. The live
+        # microphone hears it too, and a sentence read aloud for enrollment is
+        # not a note - it must not be dictated into the draft.
+        self._enrolling = threading.Event()
         self.popup_mini = False
         self.asr_logger = None
         # Guards apply_asr()'s read-modify-write of asr_logger: apply_asr is
@@ -1023,67 +1239,146 @@ class Controller:
             if not cfg.get("enabled"):
                 self.push_asr_state("off", "")
                 return
-            self.asr_logger = asr.VoiceLogger(cfg, self.on_asr_utterance, self.push_asr_state)
+            # A fresh logger counts from 1 again, so it gets a fresh order.
+            order = _InOrder(self.apply_heard)
+            self.asr_logger = asr.VoiceLogger(
+                cfg, lambda wav, seq: self.on_asr_utterance(wav, seq, order),
+                self.push_asr_state)
             try:
                 self.asr_logger.start()
             except Exception:
                 traceback.print_exc()
                 self.push_asr_state("error", "Could not start voice logging.")
 
-    def on_asr_utterance(self, wav_bytes):
-        """Runs on VoiceLogger's own capture thread, not the UI thread — same
-        cross-thread discipline as on_clipboard_hotkey/push_asr_state."""
-        cfg = self.store.config.get("asr") or {}
-        self.push_asr_state("transcribing", "")
+    def on_asr_utterance(self, wav_bytes, seq=None, order=None):
+        """The slow half of one utterance, on the utterance's own thread.
+
+        Several of these run at once - transcription is a network call, and a
+        second sentence should not wait for the first one's round trip. What
+        they produce is then APPLIED strictly in the order it was said, by
+        ``order`` (an _InOrder), because the draft and the commands are
+        order-sensitive: "session Rust" followed by a sentence must create the
+        topic before the sentence lands, however the two calls raced.
+
+        Always delivers, even on failure - a sequence number that never
+        arrives would hold back everything said after it.
+        """
+        item = {"seq": seq, "wav": wav_bytes}
         try:
-            result = asr.transcribe(cfg, wav_bytes)
+            if self._enrolling.is_set():
+                item["skip"] = True
+            else:
+                item.update(self.hear(wav_bytes))
         except Exception:
             traceback.print_exc()
-            self.push_asr_state("error", "Transcription failed.")
-            return
+            item["error"] = "Transcription failed."
+        if order is not None and seq is not None:
+            order.deliver(seq, item)
+        else:
+            self.apply_heard(item)
+
+    def hear(self, wav_bytes):
+        """Speaker check, then transcription - in that order, so a voice that
+        is not the owner's is never sent anywhere."""
+        gate = self.speaker_gate(wav_bytes)
+        if gate.get("hold"):
+            return {"held": True, "score": gate.get("score"), "why": gate.get("why") or ""}
+        cfg = self.store.config.get("asr") or {}
+        self.push_asr_state("transcribing", "")
+        result = asr.transcribe(cfg, wav_bytes)
         if result.get("error"):
-            self.push_asr_state("error", result["error"])
+            return {"error": result["error"]}
+        out = {"text": result.get("text") or "", "language": result.get("language") or ""}
+        if gate.get("short"):
+            out["short"] = True
+        if gate.get("score") is not None:
+            out["score"] = gate["score"]
+        return out
+
+    def apply_heard(self, item):
+        """The ordered half: one utterance's result, applied. Runs on whichever
+        utterance thread is draining _InOrder, one at a time."""
+        if item.get("skip"):
             return
-        self.on_voice_transcript(result.get("text") or "")
+        if item.get("error"):
+            self.push_asr_state("error", item["error"])
+            return
+        if item.get("held"):
+            why = item.get("why") or ""
+            score = item.get("score")
+            self._hold(item.get("wav"), score, "", why or "another voice")
+            if why:
+                self.push_voice_state("held", "Held aside - the voice check could not run: " + why)
+            else:
+                self.push_voice_state("held", "Another voice - held aside%s."
+                                      % ((" (match %.2f)" % score) if score is not None else ""))
+            return
+        text = (item.get("text") or "").strip()
+        if item.get("short") and text:
+            # Too short to check whose voice it was. A certain command is let
+            # through - "log" is half a second, and a gate that blocked every
+            # command would be switched off within the hour. Anything else
+            # this short is held, not dropped.
+            p = voicecmd.parse(text)
+            if not (p["command"] and p["form"] in voicecmd.CERTAIN_FORMS):
+                self._hold(item.get("wav"), None, text, "too short to check the voice")
+                self.push_voice_state("held", "Too short to check the voice - held aside.")
+                return
+        self.on_voice_transcript(text)
 
     def on_voice_transcript(self, text):
-        """One transcript in: a Trail-* command, or a comment for the buffer.
+        """One transcript in: a command, or words for the draft.
 
-        Split out from on_asr_utterance so the whole decision path is
-        testable without a microphone or a transcription call - which matters
-        more here than anywhere else in the app, because this runs several
-        times a minute and a wrong answer either loses a thought or closes a
-        topic.
+        Split out from the audio path so the whole decision is testable
+        without a microphone - it runs several times a minute, and a wrong
+        answer either loses a thought or closes a topic.
 
-        With voice.always_on off this is the pre-existing behaviour: every
-        utterance becomes its own point immediately.
+        With voice.always_on off this is the older behaviour: every utterance
+        becomes its own point immediately.
         """
         text = (text or "").strip()
         cfg = self.store.config.get("voice") or {}
         if not cfg.get("always_on", True):
             self._log_asr_text(text)
-            return
+            return {"action": "logged-directly"}
         if not text:
             self.push_asr_state("listening", "")
-            return
+            return {"action": "nothing"}
+        decision = {"action": "text", "text": text, "reason": "commands-off"}
+        parsed = None
         if cfg.get("commands", True):
-            m = voicecmd.match(text)
-            if m["command"]:
-                self.run_voice_command(m["command"], m["argument"], via="voice")
-                return
-        self.voice.add_comment(text)
-        self.push_voice_state("heard", _snip(text))
+            parsed = voicecmd.parse(text)
+            verdict = None
+            if parsed["command"] and parsed["form"] in voicecmd.OPINION_FORMS:
+                self.push_voice_state("deciding", _snip(text))
+                verdict = judge.command_intents(self.store.config.get("judge") or {},
+                                                [parsed]).get(0)
+            decision = voicecmd.decide(parsed, verdict)
+        self.voice_heard = text
+        if decision["action"] == "command":
+            self.run_voice_command(decision["command"], decision["argument"], via="voice")
+            return decision
+        if not self.draft.append(decision["text"], origin="voice"):
+            self.push_voice_state("error", "The draft is full - log it or clear it first.")
+            return decision
+        detail = _snip(text)
+        if parsed and parsed["form"] in voicecmd.OPINION_FORMS and decision["reason"] == "no-opinion":
+            # "session Rust" with no second opinion available stays text -
+            # say so, or the user waits for a topic that is never coming.
+            detail = ('Kept as text - no second opinion to tell a name from a sentence. '
+                      'Say "trail %s ..." to make it a command.' % parsed["command"])
+        self.push_voice_state("heard", detail)
+        return decision
 
-    # --- the command dispatcher ---------------------------------------------
+    # --- the commands ------------------------------------------------------
 
     def run_voice_command(self, name, argument="", via="voice"):
-        """Execute one command, whether it was spoken or pressed.
+        """Execute one command, whether it was spoken, pressed, or clicked.
 
-        One entry point for both, so a hotkey and a wake word can never drift
-        apart: Ctrl+Alt+S and "Trail-Log" are this call with a different
-        ``via``. Reached from the audio thread and from the Win32 hotkey
-        thread, never from the UI thread - so everything it touches is the
-        store (locked), the buffer (locked), or evaluate_js/ctypes. Never a
+        One entry point for all three, so a hotkey, a button and a spoken word
+        can never drift apart. Reached from utterance threads, the Win32
+        hotkey thread and the JS bridge - so everything it touches is the
+        store (locked), the draft (locked), or evaluate_js/ctypes. Never a
         pywebview property; see challenge C5.
 
         Returns a small dict for tests and the JS bridge. The live windows are
@@ -1098,11 +1393,12 @@ class Controller:
         }.get(name)
         if handler is None:
             return {"error": "Unknown command: %s" % name}
-        try:
-            result = handler(argument)
-        except Exception:
-            traceback.print_exc()
-            result = {"error": "That command failed."}
+        with self._command_lock:
+            try:
+                result = handler(argument)
+            except Exception:
+                traceback.print_exc()
+                result = {"error": "That command failed."}
         if result.get("error"):
             self.push_voice_state("error", result["error"])
         else:
@@ -1110,11 +1406,10 @@ class Controller:
         return result
 
     def _open_topic(self):
-        """The topic a command should act on, re-checked at the moment of use.
+        """The newest open topic, re-checked at the moment of use.
 
-        The same race _log_asr_text guards: time passes between hearing a
-        command and acting on it, and the UI thread can close the topic in
-        between.
+        Time passes between hearing a command and acting on it, and the UI
+        thread can close the topic in between.
         """
         topic = self.store.last_open_topic()
         if topic is None:
@@ -1124,12 +1419,22 @@ class Controller:
             return None
         return t
 
-    def _voice_save(self, _argument=""):
-        """Trail-Save / Ctrl+Alt+V: park the clipboard as a pending source.
+    def _target_topic(self, meta=None):
+        """Where the draft is going: the topic chosen in the draft if it is
+        still open, else the newest open one."""
+        meta = meta if meta is not None else self.draft.meta()
+        tid = (meta or {}).get("topic_id") or ""
+        if tid:
+            t = self.store.find_topic(tid)
+            if t and t.get("status") == "open":
+                return t
+        return self._open_topic()
 
-        Nothing is written to the store - the source joins the buffer and is
-        committed with the comments by Trail-Log. An image stays a data URL
-        and is handed to add_entry, which writes the file itself.
+    def _voice_save(self, _argument=""):
+        """"save" / Ctrl+Alt+V: attach the clipboard to the draft as a source.
+
+        Nothing is written to the store - the source is filed with the text
+        by "log". An image stays a data URL until add_entry writes the file.
         """
         try:
             data = clipboard.read()
@@ -1145,38 +1450,54 @@ class Controller:
             kind = "string"
         if kind not in ("link", "string", "image"):
             return {"error": "Nothing usable on the clipboard."}
-        if not self.voice.add_source(kind, value):
-            return {"state": "duplicate", "detail": "Already attached."}
-        return {"state": "source",
+        if not self.draft.add_source(kind, value, origin="voice"):
+            return {"state": "duplicate", "detail": "Already attached.", "kind": kind}
+        return {"state": "source", "kind": kind,
                 "detail": "Image attached." if kind == "image" else _snip(value)}
 
     def _voice_log(self, _argument=""):
-        """Trail-Log / Ctrl+Alt+S: commit the buffer as one point.
+        """"log" / Ctrl+Alt+S / the Log button: file the draft as one point.
 
-        The buffer is drained only after add_entry succeeds. Draining first
-        would be shorter and would throw the user's words away every time the
-        store refused the write.
+        Take first, then write, then put it back if the write failed: the
+        drain is atomic with the read, so a sentence that arrives during the
+        write is never drained without being filed.
         """
-        snap = self.voice.snapshot()
-        if snap["empty"]:
+        taken = self.draft.take()
+        if not taken["text"] and not taken["sources"]:
             return {"error": "Nothing to log yet."}
-        if not snap["text"].strip():
-            return {"error": "Sources are attached, but nothing was said yet."}
-        t = self._open_topic()
+        if not taken["text"]:
+            self.draft.restore(taken)
+            return {"error": "Sources are attached, but the point has no text yet."}
+        t = self._target_topic(taken["meta"])
         if t is None:
-            return {"error": "No open topic - say Trail-Session to start one."}
-        r = self.store.add_entry(t["id"], "", snap["text"], kind="note",
-                                 sources=snap["sources"])
+            self.draft.restore(taken)
+            return {"error": "No open topic - say “session” and a name to start one."}
+        # The tab belongs to the topic it was chosen under. If the draft fell
+        # back to another topic (its own was closed meanwhile), the tab does
+        # not follow it there.
+        sub = taken["meta"].get("subtopic") or ""
+        if t["id"] != taken["meta"].get("topic_id") and sub not in (t.get("subtopics") or []):
+            sub = ""
+        explicit = taken["meta"].get("kind") or ""
+        # Typed points keep the popup's old default; dictated ones are notes
+        # until the second opinion says otherwise - each path's behaviour from
+        # before the two were one draft.
+        kind = explicit or ("note" if taken["origin"] == "voice" else "claim")
+        r = self.store.add_entry(t["id"], sub, taken["text"], kind=kind,
+                                 sources=taken["sources"])
         if r.get("error"):
+            self.draft.restore(taken)
             return {"error": r["error"]}
-        self.voice.take()
         self.refresh_full()
-        self.refine_kind(t["id"], r.get("entry_id"), snap["text"],
-                         bool(snap["sources"]))
-        return {"state": "logged", "detail": _snip(snap["text"])}
+        if not explicit and taken["origin"] == "voice":
+            self.refine_kind(t["id"], r.get("entry_id"), taken["text"],
+                             bool(taken["sources"]))
+        return {"state": "logged", "detail": _snip(taken["text"]),
+                "topic_id": t["id"], "entry_id": r.get("entry_id"),
+                "sources": len(taken["sources"])}
 
     def refine_kind(self, tid, eid, text, has_source):
-        """Ask the judge whether a captured line is really a note.
+        """Ask the judge whether a dictated point is really a note.
 
         Everything captured by voice or from Telegram is stored as a note,
         because at capture time nobody asked. In scientific mode that is
@@ -1209,104 +1530,418 @@ class Controller:
         judge.in_background(work)
 
     def _voice_finish(self, _argument=""):
-        """Trail-Finish / Ctrl+Alt+F: close the open topic.
+        """"finish" / Ctrl+Alt+F: file what is in the draft, then close the topic.
 
-        Anything still buffered is logged first. Closing a topic and silently
-        discarding the sentence said ten seconds earlier is exactly the kind
-        of loss that makes people stop trusting voice input.
+        If the draft cannot be filed, the topic stays open - closing it and
+        leaving the words stranded is the loss that makes people stop
+        trusting voice.
         """
-        t = self._open_topic()
+        t = self._target_topic()
         if t is None:
             return {"error": "No open topic to finish."}
-        if self.voice.snapshot()["text"].strip():
-            self._voice_log()
+        if self.draft.snapshot()["text"].strip():
+            r = self._voice_log()
+            if r.get("error"):
+                return {"error": "Not finished - the draft could not be filed: " + r["error"]}
         r = self.store.close_topic(t["id"])
         if r.get("error"):
             return {"error": r["error"]}
-        self.voice.clear()
+        self.draft.set_meta({"topic_id": "", "subtopic": ""})
         self.refresh_full()
         return {"state": "finished", "detail": t.get("title") or ""}
 
     def _voice_session(self, argument=""):
-        """Trail-Session / Ctrl+Alt+N: start a new topic.
+        """"session <name>" / Ctrl+Alt+N: start a new topic, and file into it.
 
         An unnamed session is still a session: rather than refuse and lose
         whatever gets said next, it takes a dated title the user can rename.
-        A buffer left over from the previous topic is logged into THAT topic
-        first, so a comment never lands under a heading it was not said
-        under.
+        A draft left over from the previous topic is filed into THAT topic
+        first, so words never land under a heading they were not said under.
+        With no previous topic, the draft simply carries into the new one.
         """
         title = (argument or "").strip()
-        if self.voice.snapshot()["text"].strip():
-            if self._open_topic() is not None:
-                self._voice_log()
-            else:
-                self.voice.clear()
+        if self.draft.snapshot()["text"].strip() and self._target_topic() is not None:
+            r = self._voice_log()
+            if r.get("error"):
+                return {"error": "No new session - the draft could not be filed: " + r["error"]}
         if not title:
             title = "Session " + datetime.now().strftime("%Y-%m-%d %H:%M")
         r = self.store.start_topic(title)
         if r.get("error"):
             return {"error": r["error"]}
+        t = self.store.last_open_topic()
+        self.draft.set_meta({"topic_id": (t or {}).get("id") or "", "subtopic": ""})
         self.refresh_full()
         return {"state": "session", "detail": title}
 
     def _voice_tab(self, argument=""):
-        """Trail-Tab / Ctrl+Alt+T: add a sub-topic to the open topic.
+        """"tab <name>" / Ctrl+Alt+T: a sub-topic, and file what follows under it.
 
-        An unnamed tab is numbered from the count already there, so saying it
-        twice gives Tab 1 and Tab 2 rather than failing on a duplicate name.
+        An unnamed tab is numbered from the count already there. Naming a tab
+        that exists switches to it rather than failing.
         """
-        t = self._open_topic()
+        t = self._target_topic()
         if t is None:
-            return {"error": "No open topic - say Trail-Session first."}
+            return {"error": "No open topic - say “session” and a name first."}
         name = (argument or "").strip()
+        subs = t.get("subtopics") or []
         if not name:
-            name = "Tab %d" % (len(t.get("subtopics") or []) + 1)
-        r = self.store.add_subtopic(t["id"], name)
+            name = "Tab %d" % (len(subs) + 1)
+        existed = name in subs
+        if not existed:
+            r = self.store.add_subtopic(t["id"], name)
+            if r.get("error"):
+                return {"error": r["error"]}
+        self.draft.set_meta({"topic_id": t["id"], "subtopic": name})
+        self.refresh_full()
+        return {"state": "tab", "detail": ("Back to " if existed else "") + name}
+
+    # --- held clips (the speaker gate) --------------------------------------
+
+    #: Clips the speaker check held aside, newest last. Kept in memory only -
+    #: other people's voices are not written to disk - and capped, because a
+    #: busy room would otherwise grow this without end.
+    HELD_MAX = 12
+
+    def _hold(self, wav, score, text, reason):
+        with self._held_lock:
+            self._held_seq += 1
+            self.held.append({"id": self._held_seq, "wav": wav or b"",
+                              "score": None if score is None else round(float(score), 3),
+                              "text": text or "", "reason": reason,
+                              "at": datetime.now().strftime("%H:%M:%S"),
+                              "seconds": round(max(0, len(wav or b"") - 44) / 32000.0, 1)})
+            del self.held[:-self.HELD_MAX]
+
+    def held_list(self):
+        with self._held_lock:
+            return [{k: v for k, v in h.items() if k != "wav"} for h in self.held]
+
+    def use_held(self, hid):
+        """Put a held clip into the draft after all - the owner's call, by hand.
+
+        Transcribed now if it was never sent (a clip held for its voice), and
+        always appended as text: a held clip is never run as a command, since
+        whoever said it was, by definition, not verified.
+        """
+        with self._held_lock:
+            found = next((h for h in self.held if h["id"] == hid), None)
+            if found:
+                self.held.remove(found)
+        if not found:
+            return {"error": "That clip is gone."}
+        text = found["text"]
+        if not text:
+            r = asr.transcribe(self.store.config.get("asr") or {}, found["wav"])
+            if r.get("error"):
+                with self._held_lock:
+                    self.held.append(found)
+                return {"error": r["error"]}
+            text = (r.get("text") or "").strip()
+        if text:
+            self.draft.append(text, origin="voice")
+        self.push_voice_state("heard", _snip(text) if text else "Nothing in that clip.")
+        return {"ok": True, "text": text}
+
+    def drop_held(self, hid=None):
+        with self._held_lock:
+            if hid is None:
+                self.held.clear()
+            else:
+                self.held[:] = [h for h in self.held if h["id"] != hid]
+        return {"ok": True, "held": self.held_list()}
+
+    # --- whose voice is it ---------------------------------------------------
+
+    def models_dir(self):
+        return data_dir() / "models"
+
+    def verifier(self):
+        """The speaker model, loaded once. None, with the reason, if it cannot be."""
+        with self._verifier_lock:
+            if self._verifier is not None:
+                return self._verifier, ""
+            ok, why = speaker.available()
+            if not ok:
+                return None, why
+            if not speaker.model_ready(self.models_dir()):
+                return None, "The voice model is not downloaded."
+            try:
+                self._verifier = speaker.Verifier(speaker.model_path(self.models_dir()))
+            except Exception as e:
+                traceback.print_exc()
+                return None, "The voice model would not load: %s" % e
+            return self._verifier, ""
+
+    @staticmethod
+    def _threshold(cfg):
+        """The saved match threshold. 0.0 is a value, not "unset"."""
+        t = (cfg or {}).get("threshold")
+        try:
+            return float(speaker.DEFAULT_THRESHOLD if t is None or t == "" else t)
+        except (TypeError, ValueError):
+            return float(speaker.DEFAULT_THRESHOLD)
+
+    def speaker_gate(self, wav_bytes):
+        """Is this the owner speaking? Runs before anything leaves the machine.
+
+        ``{}`` means no check is configured - pass. ``{"score": s}`` passed.
+        ``{"hold": True, "score": s}`` is someone else, or a check that could
+        not run: with the check switched on, a broken model holds clips
+        rather than letting every voice in the room through, and the held
+        list says why. ``{"short": True}`` is too little speech to tell -
+        apply_heard decides what that may still do.
+        """
+        cfg = self.store.config.get("speaker") or {}
+        enrolled = cfg.get("embedding") or []
+        if not cfg.get("enabled") or not enrolled:
+            return {}
+        v, why = self.verifier()
+        if v is None:
+            return {"hold": True, "score": None, "why": why}
+        try:
+            pcm, sr = speaker.wav_to_pcm(wav_bytes)
+            sensitivity = (self.store.config.get("asr") or {}).get("sensitivity", 50)
+            speech = asr.speech_only(pcm, sensitivity=sensitivity, samplerate=sr)
+            emb = v.embed(speech, samplerate=sr)
+        except Exception:
+            traceback.print_exc()
+            return {"hold": True, "score": None, "why": "The voice check failed."}
+        if emb is None:
+            return {"short": True}
+        score = speaker.cosine(emb, enrolled)
+        threshold = self._threshold(cfg)
+        if not speaker.is_owner(score, threshold):
+            return {"hold": True, "score": score}
+        return {"score": score}
+
+    def speaker_status(self):
+        cfg = self.store.config.get("speaker") or {}
+        ok, why = speaker.available()
+        return {
+            "runtime": ok, "runtime_error": why,
+            "model": speaker.model_ready(self.models_dir()),
+            "model_mb": round(speaker.MODEL_BYTES / 1e6, 1),
+            "enabled": bool(cfg.get("enabled")),
+            "enrolled": bool(cfg.get("embedding")),
+            "threshold": self._threshold(cfg),
+            "default_threshold": speaker.DEFAULT_THRESHOLD,
+            "clips": int(cfg.get("clips") or 0),
+            "seconds": float(cfg.get("seconds") or 0),
+            "consistency": float(cfg.get("consistency") or 0),
+            "enrolled_at": cfg.get("enrolled_at") or "",
+            "recorded": len(self._enroll_clips),
+            "held": self.held_list(),
+        }
+
+    def speaker_download(self):
+        r = speaker.download_model(self.models_dir())
         if r.get("error"):
             return {"error": r["error"]}
-        self.refresh_full()
-        return {"state": "tab", "detail": name}
+        return self.speaker_status()
+
+    # --- the microphone test, and recording for enrollment -------------------
+
+    def mic_test_start(self, device=None, keep_audio=False, max_seconds=30, sensitivity=None):
+        """Open the chosen microphone just to watch it.
+
+        While voice is listening, the live logger already has the microphone
+        and its own meter - the test shows that instead of opening a second
+        stream on the same device, which WASAPI may refuse.
+        """
+        cfg = self.store.config.get("asr") or {}
+        device = (cfg.get("device") or "") if device is None else str(device)
+        with self._mic_test_lock:
+            if self.mic_test is not None:
+                self.mic_test.stop()
+                self.mic_test = None
+            if not keep_audio and self.asr_logger is not None \
+                    and device == (cfg.get("device") or ""):
+                return {"ok": True, "shared": True, "note": "Showing the live microphone."}
+            if sensitivity is None:
+                sensitivity = cfg.get("sensitivity", 50)
+            try:
+                sensitivity = max(0, min(100, int(sensitivity)))
+            except (TypeError, ValueError):
+                sensitivity = 50
+            m = asr.MicMonitor(device=device, sensitivity=sensitivity,
+                               max_seconds=max_seconds, keep_audio=keep_audio)
+            r = m.start()
+            if r.get("error"):
+                return {"error": r["error"]}
+            self.mic_test = m
+            return {"ok": True, "shared": False, "note": r.get("note") or ""}
+
+    def mic_levels(self, last=300):
+        """The newest wave buckets: the test monitor's if one is open, else the
+        live logger's, else nothing."""
+        with self._mic_test_lock:
+            m = self.mic_test
+        if m is not None:
+            out = m.meter.read(last)
+            out["running"] = m.running
+            out["source"] = "test"
+            if m.error:
+                out["error"] = m.error
+            return out
+        lg = self.asr_logger
+        if lg is not None and getattr(lg, "meter", None) is not None:
+            out = lg.meter.read(last)
+            out["running"] = True
+            out["source"] = "live"
+            return out
+        return {"running": False, "source": "", "lo": [], "hi": [], "rms": [],
+                "seq": 0, "bucket_ms": asr.LevelMeter.BUCKET_MS, "threshold": 0}
+
+    def mic_test_stop(self):
+        with self._mic_test_lock:
+            m, self.mic_test = self.mic_test, None
+        if self._enrolling.is_set():
+            # An enrollment recording abandoned (the page was left).
+            threading.Timer(1.5, self._enrolling.clear).start()
+        if m is not None:
+            m.stop()
+        return {"ok": True}
+
+    def enroll_record_start(self):
+        """Start recording one enrollment sentence, with the wave showing."""
+        r = self.mic_test_start(keep_audio=True, max_seconds=20)
+        if r.get("ok"):
+            self._enrolling.set()
+        return r
+
+    def enroll_record_stop(self):
+        """Stop, keep the speech part of the recording, report how much."""
+        with self._mic_test_lock:
+            m, self.mic_test = self.mic_test, None
+        # The live microphone's VAD closes an utterance ~0.6 s after the
+        # speech ends; keep suppressing until that one has been cut.
+        threading.Timer(1.5, self._enrolling.clear).start()
+        if m is None:
+            return {"error": "Nothing was recording."}
+        m.stop()
+        sensitivity = (self.store.config.get("asr") or {}).get("sensitivity", 50)
+        speech = asr.speech_only(m.audio(), sensitivity=sensitivity)
+        seconds = len(speech) / 32000.0
+        if seconds < speaker.MIN_SPEECH_SECONDS:
+            return {"error": "Only %.1f s of speech was heard - read the whole sentence, "
+                             "a little louder." % seconds, "seconds": round(seconds, 1)}
+        self._enroll_clips.append(speech)
+        return {"ok": True, "seconds": round(seconds, 1), "recorded": len(self._enroll_clips)}
+
+    def enroll_reset(self):
+        self._enroll_clips = []
+        return self.speaker_status()
+
+    def enroll_finish(self):
+        """Turn the recorded sentences into the owner's voiceprint and save it.
+
+        Only the averaged embedding is stored - 256 numbers, not the audio.
+        The check is switched on here, because enrolling is the owner asking
+        for it; it can be switched off again beside the same button.
+        """
+        v, why = self.verifier()
+        if v is None:
+            return {"error": why}
+        clips, self._enroll_clips = self._enroll_clips, []
+        r = speaker.enroll(v, clips)
+        if r.get("error"):
+            return {"error": "Could not build a voiceprint: %s" % r["error"]}
+        cfg = dict(self.store.config.get("speaker") or {})
+        cfg.update({"enabled": True, "embedding": r["embedding"], "clips": r["clips"],
+                    "seconds": round(r["seconds"], 1),
+                    "consistency": round(r["consistency"], 3),
+                    "enrolled_at": datetime.now().isoformat(timespec="seconds")})
+        cfg.setdefault("threshold", speaker.DEFAULT_THRESHOLD)
+        self.store.config["speaker"] = cfg
+        self.store.save_config()
+        self.push_voice_state(self.voice_state, self.voice_detail)
+        return self.speaker_status()
+
+    def speaker_check(self):
+        """Record-and-score, for "does it still know me?". Uses the clip just
+        recorded with enroll_record_start/stop, without keeping it."""
+        v, why = self.verifier()
+        if v is None:
+            return {"error": why}
+        cfg = self.store.config.get("speaker") or {}
+        if not cfg.get("embedding"):
+            return {"error": "No voice enrolled yet."}
+        if not self._enroll_clips:
+            return {"error": "Record a sentence first."}
+        clip = self._enroll_clips.pop()
+        emb = v.embed(clip)
+        if emb is None:
+            return {"error": "Too short to check."}
+        score = speaker.cosine(emb, cfg["embedding"])
+        threshold = self._threshold(cfg)
+        return {"ok": True, "score": round(score, 3), "threshold": threshold,
+                "match": speaker.is_owner(score, threshold)}
+
+    def speaker_save(self, fields):
+        """Switch the check on or off, move the threshold, or forget the voice."""
+        fields = fields or {}
+        cfg = dict(self.store.config.get("speaker") or {})
+        if "enabled" in fields:
+            cfg["enabled"] = bool(fields["enabled"]) and bool(cfg.get("embedding"))
+        if "threshold" in fields:
+            try:
+                cfg["threshold"] = max(0.0, min(1.0, float(fields["threshold"])))
+            except (TypeError, ValueError):
+                return {"error": "The threshold must be a number between 0 and 1."}
+        if fields.get("forget"):
+            cfg.update({"enabled": False, "embedding": [], "clips": 0, "seconds": 0.0,
+                        "consistency": 0.0, "enrolled_at": ""})
+        self.store.config["speaker"] = cfg
+        self.store.save_config()
+        self.push_voice_state(self.voice_state, self.voice_detail)
+        return self.speaker_status()
+
+    # --- the windows ---------------------------------------------------------
 
     def voice_snapshot(self):
-        """The buffer plus the open topic, for a window that just opened.
+        """The draft plus everything the voice bar shows, in one payload.
 
         A window that was hidden missed every push while it was away, so it
-        pulls once on show rather than waiting for the next thing to be said.
+        pulls this once on show rather than waiting for the next sentence.
         """
-        payload = dict(self.voice.snapshot())
-        t = self._open_topic()
-        payload["topic"] = (t or {}).get("title") or ""
-        payload["topic_id"] = (t or {}).get("id") or ""
-        payload["state"] = self.voice_state
-        payload["detail"] = self.voice_detail
-        payload["always_on"] = bool((self.store.config.get("voice") or {}).get("always_on", True))
+        draft = self.draft.snapshot()
+        t = self._target_topic(draft["meta"])
         _asr = self.store.config.get("asr") or {}
-        payload["enabled"] = bool(_asr.get("enabled"))
-        # "Configured" is what decides whether the popup shows the voice card
-        # at all. Someone who has never set voice up gets a capture form, not a
-        # dormant panel; someone who has gets to see that it is off, which is
-        # the state you cannot discover from a hidden card.
-        payload["configured"] = bool((_asr.get("api_key") or "").strip())
-        payload["listening"] = bool(self.asr_logger is not None)
-        payload["mini"] = bool(self.popup_mini)
-        return payload
+        _voice = self.store.config.get("voice") or {}
+        _sp = self.store.config.get("speaker") or {}
+        return {
+            "draft": draft,
+            "topic": (t or {}).get("title") or "",
+            "topic_id": (t or {}).get("id") or "",
+            "subtopic": draft["meta"].get("subtopic") or "",
+            "state": self.voice_state,
+            "detail": self.voice_detail,
+            "heard": self.voice_heard,
+            "always_on": bool(_voice.get("always_on", True)),
+            "enabled": bool(_asr.get("enabled")),
+            # "Configured" decides whether the popup shows the voice strip at
+            # all: someone who never set voice up gets a capture form, not a
+            # dormant panel.
+            "configured": bool((_asr.get("api_key") or "").strip()),
+            "listening": bool(self.asr_logger is not None),
+            "mini": bool(self.popup_mini),
+            "held": len(self.held),
+            "speaker_on": bool(_sp.get("enabled") and _sp.get("embedding")),
+        }
 
     def push_voice_state(self, state, detail=""):
-        """Tell both windows what just happened, with the buffer alongside.
+        """Tell both windows what just happened, with the draft alongside.
 
-        The buffer travels with every push rather than being fetched after
-        one: the mini window's whole job is to show what is waiting, and a
-        push followed by a round-trip would let it render a count that was
-        already stale. Same JSON-encoding discipline as push_telegram_state -
-        a transcript snippet must never be able to break out of the argument
-        list.
+        The draft travels with every push rather than being fetched after
+        one: a push followed by a round-trip would let the bar render a draft
+        that was already stale. JSON-encoded - a transcript must never be able
+        to break out of the argument list.
         """
         self.voice_state = state
         self.voice_detail = detail or ""
         try:
-            payload = self.voice_snapshot()
-            js = "voiceState(%s)" % json.dumps(payload)
+            js = "voiceState(%s)" % json.dumps(self.voice_snapshot())
         except Exception:
             return
         for window, visible in ((self.popup, self.popup_visible),
@@ -1557,60 +2192,17 @@ class Controller:
         except Exception:
             pass
 
-    def _voice_is_live(self):
-        """True when a microphone is open AND always-on mode is on.
-
-        Both halves matter: asr.enabled with always_on off is the older
-        dictation behaviour, which has no buffer to attach a source to.
-        """
-        cfg = self.store.config.get("voice") or {}
-        return bool(self.asr_logger is not None and cfg.get("always_on", True))
-
     def on_clipboard_hotkey(self):
-        """Ctrl+Alt+V (by default): read whatever was last copied and hand it
-        to the quick-capture popup as a pending source. Nothing is written
-        to the store - the hotkey fills the form, the user writes the point
-        and logs it. Fires on the Win32 hotkey message-loop thread, same as
-        toggle_popup, so the pywebview calls below are direct and guarded.
+        """Ctrl+Alt+V (by default): attach whatever was last copied to the
+        draft, and show the popup so the user can see it land.
 
-        The payload is parked on the controller and pulled by the popup
-        (Api.take_clipboard_capture) rather than pushed through
-        evaluate_js: an image is a multi-megabyte data URL, and a bridge
-        return is the path that already carries those for the per-row
-        paste buttons."""
-        # While always-on voice is actually listening, this chord means
-        # "attach that to what I am dictating", not "open a form" - the user
-        # is talking, not typing, and the popup would steal focus from
-        # whatever they copied it out of. Same key, same intent, different
-        # composition surface. With voice off it behaves exactly as before.
-        if self._voice_is_live():
-            self.run_voice_command("save", "", via="hotkey")
-            self.show_popup()
-            return
-        try:
-            data = clipboard.read()
-        except Exception:
-            data = {"type": "none", "value": None, "meta": {}}
-        kind = data.get("type") or "none"
-        value = data.get("value") if kind != "none" else None
-        if kind == "text" and isinstance(value, str):
-            value = value[:2000]
-        with self._clip_lock:
-            self._pending_clip = {"type": kind, "value": value}
+        One behaviour whether or not voice is on - there is one draft now,
+        and a copied link is a source for the point being composed, spoken or
+        typed. Fires on the Win32 hotkey message-loop thread: the draft is
+        locked and the window calls are show/evaluate_js only (challenge C5).
+        """
+        self.run_voice_command("save", "", via="hotkey")
         self.show_popup()
-        try:
-            if self.popup is not None:
-                self.popup.evaluate_js("clipboardCaptured()")
-        except Exception:
-            pass
-
-    def take_clipboard_capture(self):
-        """Hand the parked hotkey payload to the popup, once. A second call
-        (or a call with nothing parked) answers type "none" so the popup
-        can never attach the same capture twice."""
-        with self._clip_lock:
-            data, self._pending_clip = self._pending_clip, None
-        return data or {"type": "none", "value": None}
 
     def toggle_popup(self):
         if self.popup is None:
@@ -1720,6 +2312,10 @@ class Controller:
                 self.asr_logger.stop()
             except Exception:
                 pass
+        try:
+            self.mic_test_stop()
+        except Exception:
+            pass
         if self.telegram_bridge:
             try:
                 self.telegram_bridge.stop()

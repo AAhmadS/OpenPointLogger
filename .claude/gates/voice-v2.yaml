@@ -1,0 +1,262 @@
+# Slice: voice-v2 - one draft, plain commands, only my voice, a real microphone list
+#
+# Branch: voice-v2. Not merged, not pushed. Phase: build. Posture: builder.
+# Supersedes parts of always-on-voice.yaml (the Trail- grammar and the separate
+# voice buffer are gone) and overrides one prune in jev-integration.yaml.
+
+slice: voice-v2
+date: 2026-09-27
+requested: |
+  - voice on and hand log are not distinct. They happen interleaving and an ASR'd text is editable by hand
+  - Trial-log, Trail-finish, ... are hard to say, instead we provide log, finish, tab, Tsession NAME, ... as
+    commands, in order to know if we are facing a command or a text to log, we will use Jev for classification,
+    Also, currently we will only support Persian or English for ASR. So the model should decode to Either, and
+    no other languages
+  - An issue one might have is non-white noise in the background. I mean noise of other people talking. An
+    interesting idea is to provide a system so that we identify who is talking and if it matches our person we
+    log what we recognize. For this, I guess the recognition pipeline would be: A MODEL THAT IDENTIFIES PERSON"S
+    TONE + LLM + Jev
+  - Apparently there is an issue in the microphones list. I see tens of microphones in there. We need to cap
+    this to what we have. We need to be able to test our mics as well, with the bar showing voice being heard as
+    a 1D wave.
+
+# ---------------------------------------------------------------------------
+# How the request was read. Each line is an interpretation the owner can
+# overturn cheaply; none of them was confirmed with the owner.
+# ---------------------------------------------------------------------------
+
+interpretations:
+  - item: 1
+    read_as: >
+      One editable draft (voicecmd.Draft) that dictation and typing both write into. The popup's
+      point box IS the draft. An edit typed against an older revision is merged, not applied over
+      dictation that arrived meanwhile.
+  - item: 2
+    read_as: >
+      Plain words with no wake word: log, save, finish, session [NAME], tab [NAME], in English and
+      Persian. Code decides every form it can decide exactly. Jev is asked only about
+      "session/tab + words", the one form code cannot tell from a sentence ("session Rust" vs
+      "session times were short today"). ASR output is restricted to fa/en.
+  - item: 3
+    read_as: >
+      "A MODEL THAT IDENTIFIES PERSON'S TONE + LLM + Jev" was read as: speaker verification
+      (WeSpeaker ResNet34, local ONNX) -> the transcription model -> Jev for the command decision.
+      NOT ESTABLISHED whether the owner meant a separate LLM step as well; none was built.
+  - item: 4
+    read_as: >
+      Microphones listed by name, once each, from one host API (WASAPI), loopback and speakers
+      removed. A live 1D wave in Settings (Test microphone) and on the popup's voice bar.
+
+owner_override:
+  prune_overridden: jev-integration.yaml -> pruned -> "voicecmd.py - matching a spoken command to an action"
+  why: The owner asked for Jev to classify command vs text, by name.
+  how_far: >
+    Only as far as code cannot go. Bare and wake-word commands stay a grammar match, so the prune's
+    reason still holds for them. Jev decides the argument form only, and its absence fails closed to
+    text with a visible hint.
+  dropped: >
+    A command at the END of a sentence ("that is the idea, log") was measured and dropped: it could
+    not be told from a list ending in the same word. evals/command_eval_2026-09-27.txt lists those six
+    cases as known misses, decided by code and never sent.
+
+# ---------------------------------------------------------------------------
+# Gates
+# ---------------------------------------------------------------------------
+
+gates:
+
+  - id: V1
+    what: Command vs text for "session/tab + words" is separable by Jev
+    kind: deterministic
+    status: pass
+    evidence: >
+      evals/command_eval.py over evals/command_cases.json, output in evals/command_eval_2026-09-27.txt.
+      Model jev-1.13.0, 25 cases asked, 2 runs, "TOTAL: 50/50 correct across 2 run(s)". Commands scored
+      0.82-0.96, dictation 0.02-0.08, threshold 0.50 (judge.THRESHOLDS["command_name_min"]),
+      run-to-run drift mean 0.004 max 0.040. Key found at TYPESAFE_API_KEY; the value is never printed.
+    limit: >
+      Claude wrote the cases and the labels, the same limit as jev-integration J8. The owner has not
+      labelled a single real utterance.
+
+  - id: V2
+    what: Persian band for the command question
+    kind: deterministic
+    status: pass
+    evidence: "fa: 12/12 correct (6 cases x 2 runs), in the same eval output."
+    limit: Six cases, all clean. It shows Persian is not broken, not that it is as reliable as English.
+
+  - id: V3
+    what: No second opinion fails closed to text, and says so
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_voice_session.py section 7: unconfigured, "tab open questions" stays in the draft, no
+      tab is made, and the push reads 'Kept as text - ... Say "trail tab ..." to make it a command.'
+      Settings shows the same note when judge.available() is false. The owner's installed config has
+      no TypeSafe key, so today "session X" stays text and "trail session X" is the way to force it.
+
+  - id: V4
+    what: A sentence that mentions a command does not run it
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_voicecmd.py section 2 (10 sentences) and tests/test_voice_session.py section 11
+      (5 sentences through the controller). None files, tabs or closes anything.
+
+  - id: V5
+    what: Transcripts are Persian or English only
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_asr.py section 6 against a mock endpoint: a French decode is re-decoded as English, an
+      Arabic one as Persian, each with exactly one retry carrying the hint; English and Persian cost one
+      request; a pinned language is sent once; a third language saved in config is ignored; a failed
+      retry is an error and never the third-language text. Api.save_asr stores only "", "fa" or "en"
+      (tests/test_voice_session.py section 19).
+    limit: No real audio was decoded. Whether the owner's provider honours the language hint is unmeasured.
+
+  - id: V6
+    what: Dictation and typing never overwrite each other
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_voicecmd.py "typing and dictation at once", "logged while you typed", "take and
+      restore" and a 4-thread hammer; tests/test_voice_session.py section 13 through Api.draft_set /
+      draft_log. Stale edits over an unseen edit are refused with the current text, not applied.
+
+  - id: V7
+    what: Utterances apply in the order they were said
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_voice_session.py section 15: _InOrder holds past a gap, skips it after the stall,
+      ignores a late number; and the race that matters - "trail session X" transcribed slowly and the
+      next sentence transcribed fast - still creates the topic before the sentence lands.
+
+  - id: V8
+    what: Another voice is never sent to be transcribed, and is recoverable
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_voice_session.py section 16, with a fake verifier: a clip scored below the threshold
+      makes zero transcription calls and changes nothing; it is held with its score; "Use it"
+      transcribes it then and appends it as TEXT (a held clip never runs a command); the held list is
+      capped at 12, carries no audio, and is memory-only. With the check on and the model missing,
+      clips are held, not let through.
+    limit: >
+      Clips under one second cannot be checked. They ARE sent to be transcribed (so a quick "log" still
+      works), then used only if they are a bare or wake-word command, else held with their words.
+      Settings now says this in so many words; before this slice's last edit it said other voices
+      were "not sent", which was not true of sub-second clips.
+
+  - id: V9
+    what: The speaker threshold separates the owner from other people
+    kind: human
+    status: unmeasured
+    blocking: false
+    evidence: >
+      Not measured on the owner. speaker.DEFAULT_THRESHOLD = 0.55 comes from three Mandarin speakers on
+      clean recordings (lowest same-speaker 0.6561, highest different-speaker 0.3598), per the comment
+      above the constant in speaker.py. The owner speaks Persian and English into a laptop microphone
+      array in a room with other people.
+    to_resolve: >
+      Enroll in Settings -> Only my voice, press "Record a check" for yourself and for a colleague, and
+      move the slider so your score sits well above it and theirs well below.
+
+  - id: V10
+    what: The speaker check is not an access control
+    kind: deterministic
+    status: pass
+    evidence: >
+      It is a noise filter. A recording of the owner passes it, and it guards nothing but which clips
+      get transcribed. No auth or crypto changed in this slice, so G7.5 does not apply. The model
+      download is checked against a fixed SHA-256 (speaker.MODEL_SHA256) and happens only
+      when the owner presses Download.
+
+  - id: V11
+    what: The microphone list shows each real microphone once
+    kind: deterministic
+    status: pass
+    evidence: >
+      tests/test_asr.py section 7 on a fake PortAudio with 15 entries across MME / DirectSound / WASAPI /
+      WDM-KS (loopback, speakers, mapper, a duplicate): 2 microphones, default first, ids are names.
+      Saved names survive MME's 31-character cut and old saved indexes; an unplugged microphone falls
+      back to the default with a note. On this machine, asr.list_devices() returned exactly one
+      microphone on 2026-09-27: "Microphone Array (AMD Audio Device)", marked default.
+
+  - id: V12
+    what: The wave and the new UI render
+    kind: deterministic
+    status: pass
+    evidence: >
+      Headless Edge (Chromium, the engine WebView2 embeds) rendered the popup and Settings with a mocked
+      bridge whose answers came from the real Api over a temp store: voice bar with the wave, draft box
+      with source chips, mini bar, the enrolled "Only my voice" card with held clips, the command table
+      with its Persian column. That render found a real regression - the mini bar's content was 176 px
+      in a 150 px window and the page scrolled the header away - fixed by MINI_H = 176 and a scroll
+      reset on collapse, then re-measured at 176/176, scrollTop 0. JS syntax gate: node --check passes
+      on both script blocks.
+    limit: Not the real window, not a real microphone feeding the wave. See V13.
+
+  - id: V13
+    what: Someone has spoken into the packaged exe and it worked
+    kind: human
+    status: unmeasured
+    blocking: false
+    evidence: >
+      No. Every voice check in the suite injects transcripts or synthetic WAVs. Nothing this session put
+      a real voice through the microphone, the VAD, an ASR endpoint, or the speaker model inside the
+      packaged exe. The keyboard half is confirmed: the installed exe holds Ctrl+Alt+P/V/S/F/N/T
+      (HotkeyListener.probe from outside reports all six HELD).
+    to_resolve: >
+      With the installed exe: Settings -> Test microphone and watch the wave; say a sentence, then type
+      into the box while saying another, then say "log"; say "trail session Test"; enroll your voice
+      and have someone else speak.
+
+  - id: V14
+    what: Nothing touches a pywebview Window property off the UI thread (C5)
+    kind: deterministic
+    status: pass
+    evidence: >
+      New window calls are show / hide / evaluate_js only; the mini resize goes through ctypes
+      SetWindowPos (_set_window_size). grep for ".resize(", ".move(", "on_top =" in point_logger.py
+      finds only comments explaining why they are not used.
+
+  - id: V15
+    what: Voice cannot remove anything
+    kind: deterministic
+    status: pass
+    evidence: >
+      No destructive verb in voicecmd.COMMANDS; run_voice_command refuses remove/delete/drop/clear;
+      "delete that" is dictation. Sources are removed by hand only (draft_drop_source).
+      tests/test_voice_session.py section 14.
+
+  - id: V16
+    what: The build carries the speaker model's runtime
+    kind: deterministic
+    status: pass
+    evidence: >
+      Trailmark.spec hiddenimports gained onnxruntime and numpy; the contrib onnxruntime hook ran, and
+      build/Trailmark/EXE-00.toc lists onnxruntime.dll, onnxruntime_providers_shared.dll and
+      onnxruntime_pybind11_state.pyd.
+    limit: The model itself (26.5 MB) is not bundled; it downloads on request into the data folder.
+
+test_run: |
+  2026-09-27, .venv/Scripts/python.exe, every tests/test_*.py, exit code first:
+  0  pass=76 fail=0  tests/test_asr.py
+  0  pass=7 fail=0  tests/test_clipboard.py
+  0  pass=24 fail=0  tests/test_clipboard_hotkey.py
+  0  pass=102 fail=0  tests/test_export.py
+  0  ok-lines=1  tests/test_hotkey.py
+  0  pass=73 fail=0  tests/test_judge.py
+  0  ok-lines=1  tests/test_llm.py
+  0  pass=68 fail=0  tests/test_persian.py
+  0  pass=134 fail=0  tests/test_persian_export.py
+  0  pass=25 fail=0  tests/test_science.py
+  0  pass=34 fail=0  tests/test_speaker.py
+  0  ok-lines=12  tests/test_store.py
+  0  pass=47 fail=0  tests/test_telegram.py
+  0  pass=269 fail=0  tests/test_voice_session.py
+  0  pass=101 fail=0  tests/test_voicecmd.py
+  node --check OK POPUP_HTML_0.js
+  node --check OK MAIN_HTML_0.js

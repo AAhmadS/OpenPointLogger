@@ -14,7 +14,10 @@ a = Analysis(
     # treat the dependency as optional/best-effort rather than pulling in its
     # hook. Listing it here forces PyInstaller's first-party sounddevice hook
     # to run, which is what actually collects the bundled PortAudio binary.
-    hiddenimports=['webview.platforms.winforms', 'sounddevice'],
+    # 'onnxruntime' and 'numpy' for the same reason: speaker.py imports both
+    # inside functions, behind speaker.available()'s try/except, and the
+    # contrib onnxruntime hook is what collects its provider DLLs.
+    hiddenimports=['webview.platforms.winforms', 'sounddevice', 'onnxruntime', 'numpy'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -4,6 +4,8 @@ config.json
 .env
 attachments/
 exports/
+# downloaded models (the speaker check's 26 MB ONNX file)
+models/
 
 # python
 __pycache__/

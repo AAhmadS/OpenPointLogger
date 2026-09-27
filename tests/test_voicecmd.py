@@ -1,13 +1,16 @@
-"""Headless tests for voicecmd.py - the spoken command grammar and buffer.
+"""Headless tests for voicecmd.py - the spoken commands and the one draft.
 
-No audio, no network, no store. Every case here is a string that a speech
-model could plausibly hand back, and the question is always the same one:
-instruction, or comment?
+No audio, no network, no store. Two halves:
 
-The bias under test is asymmetric. A missed command costs a repeat; a false
-command closes a topic or logs half a thought. So the false-positive cases
-below (section 2) are the ones that matter most, and they are deliberately
-the sentences a person would actually say while using Trailmark.
+1. parse/decide. Every case is a string a speech model could plausibly hand
+   back, and the question is always: instruction, or words to keep? The bias
+   is asymmetric - a missed command costs a repeat, a false one closes a topic
+   or files half a thought - so the false-positive cases (section 2) matter
+   most, and they are sentences a person would actually say.
+
+2. Draft. Dictation and typing write into the same text from different
+   threads. The merge rules are what keep a sentence said while you were
+   typing from being erased by your keystroke.
 """
 
 import pathlib
@@ -34,277 +37,283 @@ def check(label, ok, detail=""):
         FAILS.append(label)
 
 
-def cmd(text):
-    return voicecmd.match(text)["command"]
-
-
-def arg(text):
-    return voicecmd.match(text)["argument"]
+def parsed(text):
+    p = voicecmd.parse(text)
+    return p["command"], p["form"], p["argument"]
 
 
 # ---------------------------------------------------------------------------
-# 1. The five commands, said cleanly
+# 1. Plain words, said on their own - no wake word
 # ---------------------------------------------------------------------------
-print("\n-- clean commands --")
+print("\n-- plain commands --")
 
 for spoken, want in [
-    ("Trail-Save", "save"),
-    ("Trail-Log", "log"),
-    ("Trail-Finish", "finish"),
-    ("Trail-Session", "session"),
-    ("Trail-Tab", "tab"),
+    ("log", "log"), ("Log.", "log"), ("save", "save"), ("Save!", "save"),
+    ("finish", "finish"), ("finished", "finish"),
+    ("session", "session"), ("tab", "tab"),
+    # fillers around the word are still the word
+    ("log it", "log"), ("um log", "log"), ("okay save", "save"), ("save this", "save"),
 ]:
-    check("%r -> %s" % (spoken, want), cmd(spoken) == want, cmd(spoken))
+    c, form, _ = parsed(spoken)
+    check("%r -> %s (bare)" % (spoken, want), c == want and form == "bare", (c, form))
 
-# The hyphen is how it is written; the space is how ASR returns it.
-for spoken, want in [("trail save", "save"), ("trail log", "log"),
-                     ("trail finish", "finish"), ("trail session", "session"),
-                     ("trail tab", "tab")]:
-    check("%r -> %s" % (spoken, want), cmd(spoken) == want, cmd(spoken))
+print("\n-- Persian --")
+for spoken, want in [
+    ("\u0644\u0627\u06af", "log"),                       # لاگ
+    ("\u0644\u0627\u06af \u06a9\u0646", "log"),          # لاگ کن
+    ("\u0627\u06cc\u0646\u0648 \u0644\u0627\u06af \u06a9\u0646", "log"),   # اینو لاگ کن
+    ("\u0633\u06cc\u0648", "save"),                      # سیو
+    ("\u0641\u06cc\u0646\u06cc\u0634", "finish"),        # فینیش
+]:
+    c, form, _ = parsed(spoken)
+    check("%s -> %s (bare)" % (spoken, want), c == want and form == "bare", (c, form))
 
-# Case and trailing punctuation are the transcriber's, not the speaker's.
-check("'TRAIL LOG.' -> log", cmd("TRAIL LOG.") == "log", cmd("TRAIL LOG."))
-check("'Trail, save!' -> save", cmd("Trail, save!") == "save", cmd("Trail, save!"))
+# The wake word still works, and is how a named session is forced without a
+# second opinion.
+print("\n-- wake word --")
+for spoken, want, want_arg in [
+    ("Trail-Log", "log", ""), ("trail log", "log", ""), ("traillog", "log", ""),
+    ("trial log", "log", ""), ("trail lock", "log", ""),
+    ("Trail-Save", "save", ""), ("trail finish", "finish", ""),
+    ("Trail-Session Rust", "session", "Rust"),
+    ("trail session Postgres migration", "session", "Postgres migration"),
+    ("trail tab intro", "tab", "intro"),
+    ("\u062a\u0631\u06cc\u0644 \u0644\u0627\u06af", "log", ""),   # تریل لاگ
+]:
+    c, form, a = parsed(spoken)
+    check("%r -> %s %r (wake)" % (spoken, want, want_arg),
+          c == want and form == "wake" and a == want_arg, (c, form, a))
 
 
 # ---------------------------------------------------------------------------
-# 2. FALSE POSITIVES - the cases that cost real work
+# 2. Sentences that mention a command are words, not commands
 # ---------------------------------------------------------------------------
-print("\n-- must NOT fire --")
+print("\n-- no accidental commands --")
 
-for spoken in [
+for sentence in [
     "the trail logs are in the folder",
-    "trail log the sources for this one",          # log takes no argument
-    "I need to finish the trail before dark",
-    "we should save the trail data somewhere",
-    "this is the trail marking system",
-    "trailing whitespace broke the parser",
-    "her session on the trail was long",
-    "open a new tab in the browser",               # no wake word
-    "save this",                                   # no wake word
-    "finish",                                      # no wake word
-    "log",                                         # no wake word
-    "session",                                     # no wake word
-    "",                                            # silence
+    "trail log the sources for this one",
+    "I want to finish the trail tomorrow",
+    "log the sources",
+    "save the file to disk",
+    "finish the chapter first",
+    # A command at the END of a sentence was measured and could not be told
+    # from a list ending in the same word, so it is dictation. Say it alone.
+    "that is the idea, log",
+    "log log",
+    "",
     "   ",
-    "trail",                                       # wake word with no verb
-    "trail something else entirely",               # wake word, unknown verb
 ]:
-    check("%r stays a comment" % spoken, cmd(spoken) is None, cmd(spoken))
+    c, form, _ = parsed(sentence)
+    check("%r is not a command" % sentence, c is None, (c, form))
 
 
 # ---------------------------------------------------------------------------
-# 3. ASR mangling - what the model really returns
+# 3. session/tab + words: code cannot tell, so it asks - and without an answer
+#    it keeps the words
 # ---------------------------------------------------------------------------
-print("\n-- mangled but intended --")
+print("\n-- the argument form --")
 
-for spoken, want in [
-    ("trials save", "save"),        # plural wake word
-    ("trial save", "save"),         # the classic trail/trial transposition
-    ("trail safe", "save"),         # save/safe
-    ("trail lock", "log"),          # log/lock
-    ("trail logged", "log"),
-    ("trail finished", "finish"),
-    ("trail finnish", "finish"),
-    ("trail sessions", "session"),
-    ("trail tap", "tab"),           # tab/tap
-    ("traillog", "log"),            # the space was dropped entirely
-    ("trailsave", "save"),
-    ("trailfinish", "finish"),
+for spoken, want, want_arg in [
+    ("session Rust borrow checker", "session", "Rust borrow checker"),
+    ("tab open questions", "tab", "open questions"),
+    ("session times were short today", "session", "times were short today"),
+    ("tab completion is broken", "tab", "completion is broken"),
+    ("\u0633\u0634\u0646 \u0628\u0631\u0631\u0633\u06cc \u0645\u0646\u0627\u0628\u0639", "session",
+     "\u0628\u0631\u0631\u0633\u06cc \u0645\u0646\u0627\u0628\u0639"),     # سشن بررسی منابع
 ]:
-    got = cmd(spoken)
-    check("%r -> %s" % (spoken, want), got == want, got)
+    c, form, a = parsed(spoken)
+    check("%r is a candidate, not a verdict" % spoken,
+          c == want and form == "argument" and a == want_arg, (c, form, a))
+    check("%r is in OPINION_FORMS" % spoken, form in voicecmd.OPINION_FORMS)
 
-# Filler around a bare command is ignored.
-for spoken, want in [("ok trail log", "log"), ("trail log please", "log"),
-                     ("hey trail finish", "finish"), ("so, trail save, now", "save"),
-                     ("alright trail log then", "log")]:
-    got = cmd(spoken)
-    check("%r -> %s" % (spoken, want), got == want, got)
-
-
-# ---------------------------------------------------------------------------
-# 4. Arguments - the two commands that name something
-# ---------------------------------------------------------------------------
-print("\n-- arguments --")
-
-check("session argument kept verbatim",
-      arg("Trail-Session Rust borrow checker") == "Rust borrow checker",
-      arg("Trail-Session Rust borrow checker"))
-check("session keeps capitals",
-      arg("trail session Postgres Migration") == "Postgres Migration",
-      arg("trail session Postgres Migration"))
-check("tab argument",
-      arg("Trail-Tab open questions") == "open questions",
-      arg("Trail-Tab open questions"))
-check("no argument is empty, not None",
-      arg("trail session") == "", repr(arg("trail session")))
-
-# A hyphen inside the ARGUMENT must survive - normalisation splits hyphens,
-# so this is the case that catches a naive token-count slice.
-check("hyphenated argument word survives",
-      arg("trail tab borrow-checker") == "borrow-checker",
-      arg("trail tab borrow-checker"))
-check("hyphenated argument among others",
-      arg("Trail-Session lock-free queues in Rust") == "lock-free queues in Rust",
-      arg("Trail-Session lock-free queues in Rust"))
-
-# Leading filler must not eat the first word of the argument.
-check("leading filler does not shift the argument",
-      arg("ok trail session Rust borrow checker") == "Rust borrow checker",
-      arg("ok trail session Rust borrow checker"))
-# Trailing filler must not be taken as the argument.
-check("trailing filler dropped from the argument",
-      arg("trail session Rust please") == "Rust",
-      arg("trail session Rust please"))
-check("trailing sentence punctuation dropped",
-      arg("Trail-Tab open questions.") == "open questions",
-      arg("Trail-Tab open questions."))
-# A joined wake+verb still finds its argument.
-check("joined command keeps its argument",
-      arg("trailsession Rust borrow checker") == "Rust borrow checker",
-      arg("trailsession Rust borrow checker"))
-
-# A no-argument command with trailing words is a SENTENCE, not a command with
-# an ignored argument. This is the rule that keeps "trail log the sources"
-# from silently logging.
-check("'trail save the link' is not a command",
-      cmd("trail save the link") is None, cmd("trail save the link"))
+p = voicecmd.parse("session Rust")
+d = voicecmd.decide(p)
+check("no second opinion -> the words are kept as text",
+      d["action"] == "text" and d["text"] == "session Rust" and d["reason"] == "no-opinion", d)
+d = voicecmd.decide(p, "text")
+check("second opinion says sentence -> text", d["action"] == "text", d)
+d = voicecmd.decide(p, "command")
+check("second opinion says name -> command with the name",
+      d["action"] == "command" and d["command"] == "session" and d["argument"] == "Rust", d)
+d = voicecmd.decide(voicecmd.parse("log"), "text")
+check("a certain form ignores a verdict it never asked for",
+      d["action"] == "command" and d["command"] == "log", d)
+d = voicecmd.decide(voicecmd.parse("the trail logs are in the folder"), "command")
+check("a verdict cannot turn a non-candidate into a command", d["action"] == "text", d)
+check("the certain forms are wake and bare", set(voicecmd.CERTAIN_FORMS) == {"wake", "bare"})
 
 
 # ---------------------------------------------------------------------------
-# 5. Persian - the wake word and verbs in Persian script, and Persian arguments
+# 4. The grammar table Settings shows
 # ---------------------------------------------------------------------------
-print("\n-- persian --")
-
-check("persian wake + persian verb (تریل لاگ)",
-      cmd("تریل لاگ") == "log",
-      cmd("تریل لاگ"))
-check("persian wake + latin verb (تریل log)",
-      cmd("تریل log") == "log",
-      cmd("تریل log"))
-check("latin wake + persian verb (trail سیو)",
-      cmd("trail سیو") == "save",
-      cmd("trail سیو"))
-# Arabic yeh vs Farsi yeh: the same word, two code points, one must fold.
-check("arabic-yeh spelling of the wake word folds",
-      cmd("تريل لاگ") == "log",
-      cmd("تريل لاگ"))
-# A Persian argument must come back intact, RTL text and all.
-persian_arg = "بررسی بازار"  # بررسی بازار
-check("persian argument preserved",
-      arg("trail session " + persian_arg) == persian_arg,
-      arg("trail session " + persian_arg))
-# Persian comma as trailing punctuation.
-check("persian comma stripped from the argument",
-      arg("trail tab " + persian_arg + "،") == persian_arg,
-      arg("trail tab " + persian_arg + "،"))
-# Persian digits fold to ASCII so a numbered tab is usable.
-check("persian digits fold in normalise",
-      voicecmd.normalise("۲۳") == ["23"],
-      voicecmd.normalise("۲۳"))
-# A Persian sentence that happens to be a comment must stay a comment.
-check("persian sentence stays a comment",
-      cmd("این یک نکته است") is None,
-      cmd("این یک نکته است"))
-
-
-# ---------------------------------------------------------------------------
-# 6. The grammar description used by Settings
-# ---------------------------------------------------------------------------
-print("\n-- describe_grammar --")
+print("\n-- grammar --")
 
 g = voicecmd.describe_grammar()
-check("describes all five commands", len(g) == 5, len(g))
-check("every row has say/summary",
-      all(r.get("say") and r.get("summary") for r in g), g)
-check("session and tab are the two that take an argument",
-      sorted(r["command"] for r in g if r["argument"]) == ["session", "tab"],
-      [r["command"] for r in g if r["argument"]])
+check("five commands", [r["command"] for r in g] == ["log", "save", "finish", "session", "tab"],
+      [r["command"] for r in g])
+check("no row asks for the old Trail- prefix", not [r for r in g if "Trail" in r["say"]],
+      [r["say"] for r in g])
+check("session and tab take a name", [r["command"] for r in g if r["argument"]] == ["session", "tab"])
+check("every row has a Persian form", all(r["persian"] for r in g))
+check("no command removes anything",
+      not [r for r in g if any(w in r["summary"].lower() for w in ("remove", "delete", "drop"))])
 
 
 # ---------------------------------------------------------------------------
-# 7. VoiceBuffer
+# 5. The draft
 # ---------------------------------------------------------------------------
-print("\n-- buffer --")
+print("\n-- draft: appending --")
 
-b = voicecmd.VoiceBuffer()
-check("starts empty", b.is_empty())
-check("blank comment rejected", b.add_comment("   ") is False)
-check("comment accepted", b.add_comment("first thought") is True)
-b.add_comment("second thought")
-b.add_source("link", "https://example.org/a")
-check("duplicate link rejected", b.add_source("link", "https://example.org/a") is False)
-check("distinct link accepted", b.add_source("link", "https://example.org/b") is True)
-check("bad source type rejected", b.add_source("video", "x") is False)
-check("empty source value rejected", b.add_source("link", "  ") is False)
+dr = voicecmd.Draft()
+check("starts empty", dr.is_empty() and dr.snapshot()["rev"] == 0)
+check("blank text is refused", dr.append("   ") is False and dr.is_empty())
+dr.append("first sentence")
+dr.append("second sentence")
+s = dr.snapshot()
+check("dictation joins with one space", s["text"] == "first sentence second sentence", s["text"])
+check("origin is voice", s["origin"] == "voice", s["origin"])
+check("words counted", s["words"] == 4, s["words"])
 
-snap = b.snapshot()
-check("snapshot counts comments", snap["count_comments"] == 2, snap["count_comments"])
-check("snapshot counts sources", snap["count_sources"] == 2, snap["count_sources"])
-check("snapshot joins text", snap["text"] == "first thought second thought", snap["text"])
-check("snapshot not empty", snap["empty"] is False)
-check("snapshot does not drain", b.is_empty() is False)
+print("\n-- draft: typing and dictation at once --")
 
-# Two images that differ must both survive - deduplication is for links and
-# strings only, because two screenshots are two pieces of evidence.
-b.add_source("image", "data:image/png;base64,AAAA")
-check("identical image is NOT deduplicated",
-      b.add_source("image", "data:image/png;base64,AAAA") is True)
+# The window read rev r, the user edited, and a sentence arrived before the
+# edit was sent. The edit must not erase the sentence.
+r0 = dr.snapshot()["rev"]
+dr.append("said while typing")
+res = dr.set_text("First sentence, corrected. Second sentence", r0)
+check("a stale edit merges instead of failing", res["ok"] and res["merged"], res)
+check("the edit wins AND the new sentence survives, after it",
+      res["text"] == "First sentence, corrected. Second sentence said while typing", res["text"])
+check("an edited draft is the hand's", res["origin"] == "hand", res["origin"])
 
-took = b.take()
-check("take returns the contents", took["count_comments"] == 2, took["count_comments"])
-check("take drains", b.is_empty() is True)
-check("take twice is empty the second time", b.take()["empty"] is True)
+# Up to date: a plain set.
+res = dr.set_text("replaced entirely", res["rev"])
+check("a current edit is a plain set", res["ok"] and not res["merged"] and res["text"] == "replaced entirely", res)
 
-# Mutating what snapshot() handed back must not reach inside the buffer.
-b2 = voicecmd.VoiceBuffer()
-b2.add_comment("keep me")
-s2 = b2.snapshot()
-s2["comments"].append("injected")
-s2["sources"].append({"type": "link", "value": "nope"})
-check("snapshot lists are copies", b2.snapshot()["count_comments"] == 1,
-      b2.snapshot()["count_comments"])
+# Setting over a set the window never saw is refused - both are edits of the
+# same text and neither can be merged onto the other.
+r1 = dr.snapshot()["rev"]
+dr.set_text("someone else's edit", r1)
+res = dr.set_text("my edit", r1)
+check("an edit over an unseen edit is refused as stale", not res["ok"] and res["reason"] == "stale", res)
+check("and the refusal carries what to show", res["text"] == "someone else's edit", res["text"])
+check("a rev from the future is stale", dr.set_text("x", 10 ** 6)["reason"] == "stale")
 
-# The cap keeps a forgotten session from growing without bound.
-b3 = voicecmd.VoiceBuffer()
-for i in range(voicecmd.VoiceBuffer.MAX_COMMENTS + 25):
-    b3.add_comment("c%d" % i)
-snap3 = b3.snapshot()
-check("comments capped at MAX_COMMENTS",
-      snap3["count_comments"] == voicecmd.VoiceBuffer.MAX_COMMENTS,
-      snap3["count_comments"])
-check("the cap drops OLDEST, keeps newest",
-      snap3["comments"][-1] == "c%d" % (voicecmd.VoiceBuffer.MAX_COMMENTS + 24),
-      snap3["comments"][-1])
+print("\n-- draft: logged while you typed --")
 
-# Three real threads write while one reads: the buffer is touched from the
-# audio thread, the Win32 hotkey thread and the JS-bridge thread.
-b4 = voicecmd.VoiceBuffer()
+dr = voicecmd.Draft()
+dr.append("the point being dictated")
+r0 = dr.snapshot()["rev"]
+taken = dr.take()
+check("take returns the text", taken["text"] == "the point being dictated", taken)
+check("take empties the draft", dr.is_empty())
+# The window had typed onto the end of what was just filed.
+res = dr.set_text("the point being dictated and a new thought", r0)
+check("text typed onto the END of a filed draft is kept", res["ok"] and res["text"] == "and a new thought", res)
+# An edit in the MIDDLE of filed text cannot be kept - it was already filed.
+dr2 = voicecmd.Draft()
+dr2.append("alpha beta")
+r0 = dr2.snapshot()["rev"]
+dr2.take()
+res = dr2.set_text("alpha GAMMA beta", r0)
+check("an edit inside filed text is refused as logged", not res["ok"] and res["reason"] == "logged", res)
+check("and nothing is resurrected", dr2.is_empty())
+
+print("\n-- draft: take and restore --")
+
+dr = voicecmd.Draft()
+dr.append("keep me")
+dr.add_source("link", "https://example.org/a")
+dr.set_meta({"topic_id": "t1", "subtopic": "intro", "kind": "quote"})
+taken = dr.take()
+check("take carries sources with their values", taken["sources"][0]["value"] == "https://example.org/a", taken)
+check("take carries where it goes", taken["meta"] == {"topic_id": "t1", "subtopic": "intro", "kind": "quote"}, taken["meta"])
+check("after take, the destination stays and the kind resets",
+      dr.meta() == {"topic_id": "t1", "subtopic": "intro", "kind": ""}, dr.meta())
+dr.append("arrived during the failed write")
+dr.restore(taken)
+s = dr.snapshot()
+check("restore puts the text back, BEFORE what arrived meanwhile",
+      s["text"] == "keep me arrived during the failed write", s["text"])
+check("restore puts the sources back", s["count_sources"] == 1 and s["sources"][0]["value"] == "https://example.org/a", s["sources"])
+check("restore puts the kind back", s["meta"]["kind"] == "quote", s["meta"])
+check("an edit over a restore is stale, not merged",
+      dr.set_text("x", taken["rev"])["reason"] == "stale")
+
+print("\n-- draft: sources --")
+
+dr = voicecmd.Draft()
+a = dr.add_source("link", "https://example.org/x")
+check("a source gets an id", a > 0, a)
+check("the same link twice is not cited twice", dr.add_source("link", "https://example.org/x") == 0)
+i1 = dr.add_source("image", "data:image/png;base64,AAAA")
+i2 = dr.add_source("image", "data:image/png;base64,AAAA")
+check("images are never deduplicated", i1 and i2 and i1 != i2, (i1, i2))
+check("an unknown type is refused", dr.add_source("file", "C:/x") == 0)
+check("an empty value is refused", dr.add_source("link", "  ") == 0)
+s = dr.snapshot()
+check("the snapshot never carries image data",
+      all(x["value"] == "" for x in s["sources"] if x["type"] == "image"), s["sources"])
+check("take does carry the image data",
+      [x["value"] for x in voicecmd.Draft.take(dr)["sources"] if x["type"] == "image"][0].startswith("data:"))
+dr = voicecmd.Draft()
+a = dr.add_source("link", "https://example.org/1")
+b = dr.add_source("link", "https://example.org/2")
+dr.drop_source(a)
+check("drop by id removes that one", [x["id"] for x in dr.snapshot()["sources"]] == [b])
+check("a stale id is a no-op, not a crash", dr.drop_source(a)["ok"] is False)
+
+print("\n-- draft: meta --")
+
+dr = voicecmd.Draft()
+dr.set_meta({"kind": "gossip", "topic_id": "t", "evil": "x"})
+check("an unknown kind is refused", dr.meta()["kind"] == "", dr.meta())
+check("an unknown key is ignored", "evil" not in dr.meta(), dr.meta())
+check("a known key is kept", dr.meta()["topic_id"] == "t")
+
+print("\n-- draft: limits --")
+
+dr = voicecmd.Draft()
+check("an append past MAX_CHARS is refused, not trimmed",
+      dr.append("x" * (voicecmd.Draft.MAX_CHARS + 1)) is False and dr.is_empty())
+check("a set past MAX_CHARS is refused",
+      dr.set_text("x" * (voicecmd.Draft.MAX_CHARS + 1), 0)["reason"] == "too long")
+for i in range(voicecmd.Draft.MAX_SOURCES + 5):
+    dr.add_source("link", "https://example.org/%d" % i)
+check("sources capped", dr.snapshot()["count_sources"] == voicecmd.Draft.MAX_SOURCES)
+
+# Four real threads: utterance threads, the hotkey thread and the JS bridge
+# all reach the draft.
+print("\n-- draft: threads --")
+
+dr = voicecmd.Draft()
 errors = []
 
 
 def _hammer(n):
     try:
-        for i in range(200):
-            b4.add_comment("t%d-%d" % (n, i))
-            b4.add_source("link", "https://example.org/%d-%d" % (n, i))
-            b4.snapshot()
+        for i in range(150):
+            dr.append("t%d-%d" % (n, i))
+            dr.add_source("link", "https://example.org/%d-%d" % (n, i))
+            s = dr.snapshot()
+            dr.set_text(s["text"] + " edit", s["rev"])
+            if i % 50 == 49:
+                dr.restore(dr.take())
     except Exception as e:          # pragma: no cover - a failure is the point
         errors.append(repr(e))
 
 
-threads = [threading.Thread(target=_hammer, args=(n,)) for n in range(3)]
+threads = [threading.Thread(target=_hammer, args=(n,)) for n in range(4)]
 for t in threads:
     t.start()
 for t in threads:
     t.join()
-check("concurrent writers raise nothing", not errors, errors)
-final = b4.snapshot()
-check("concurrent writes land within the caps",
-      final["count_comments"] == voicecmd.VoiceBuffer.MAX_COMMENTS
-      and final["count_sources"] == voicecmd.VoiceBuffer.MAX_SOURCES,
-      (final["count_comments"], final["count_sources"]))
+check("concurrent writers raise nothing", not errors, errors[:3])
+s = dr.snapshot()
+check("every dictated piece survived the concurrent edits",
+      all(("t%d-149" % n) in s["text"] for n in range(4)), s["words"])
+check("revisions only go up", s["rev"] > 0)
 
 
 print()

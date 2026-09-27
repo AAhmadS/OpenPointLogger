@@ -70,18 +70,22 @@ DEFAULT_CONFIG = {
         "endpoint": "https://openrouter.ai/api/v1",
         "model": "whisper-1",
         "api_key": "",
+        # "" = Persian or English, decided per utterance; "fa" / "en" pins
+        # one. No other language is ever accepted (asr.ALLOWED_LANGUAGES).
         "language": "",
+        # A microphone's name from asr.list_devices(), "" for the default.
         "device": "",
         "sensitivity": 50,
     },
     # Always-on voice. Only reachable once asr.enabled is on, so this section
     # starts nothing by itself; it decides what a running microphone DOES.
     #
-    # always_on on means a transcript is either a Trail-* command or a comment
-    # parked in the buffer until Trail-Log commits it. Off restores the older
-    # behaviour, where every utterance became its own point immediately - kept
-    # because it is the right shape for dictating a list, and because somebody
-    # already has it in their habits.
+    # always_on on means a transcript is either a command ("log", "session
+    # Rust") or words appended to the draft - the same editable text the
+    # popup's box shows, so typing and dictation compose one point. Off
+    # restores the older behaviour, where every utterance became its own
+    # point immediately - kept because it is the right shape for dictating a
+    # list, and because somebody already has it in their habits.
     #
     # The four keys are the ones the owner named. They are stored as bare
     # letters with the modifiers shared, because that is how they were asked
@@ -96,6 +100,21 @@ DEFAULT_CONFIG = {
         # The quick-capture window collapsed to a bar. Persisted so an
         # always-on session that was left collapsed comes back collapsed.
         "mini": False,
+    },
+    # Only log the owner's voice. Off by default and useless until enrolled:
+    # the embedding is a voiceprint computed on this machine from a few
+    # sentences the owner reads in Settings, and it never leaves the machine -
+    # the check runs locally (speaker.py), before any audio is sent anywhere.
+    # A clip that does not match is held, not deleted: Settings lists the last
+    # few, and any of them can still be transcribed into the draft.
+    "speaker": {
+        "enabled": False,
+        "threshold": 0.55,     # speaker.DEFAULT_THRESHOLD - see its provenance
+        "embedding": [],
+        "clips": 0,
+        "seconds": 0.0,
+        "consistency": 0.0,
+        "enrolled_at": "",
     },
     # Scientific mode. Off by default: it changes how every export reads, and a
     # person keeping a reading log is not automatically writing a paper.
@@ -312,7 +331,7 @@ class Store:
         if CONFIG_FILE.exists():
             try:
                 saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr", "telegram", "voice", "judge"):
+                for section in ("hotkey", "clipboard", "llm", "export", "categories", "appearance", "science", "asr", "telegram", "voice", "judge", "speaker"):
                     if section in saved and isinstance(saved[section], dict):
                         # voice.keys is a dict inside a section dict, so a
                         # plain update() would let a saved file that names
@@ -346,6 +365,13 @@ class Store:
         tg["token_set"] = bool(tg.get("token"))
         tg["token"] = ""
         config["telegram"] = tg
+        # The voiceprint stays in Python. The page only needs to know there
+        # is one; 256 floats on every state push would be noise, and a
+        # biometric has no business in a web view's memory.
+        sp = dict(config.get("speaker") or {})
+        sp["enrolled"] = bool(sp.get("embedding"))
+        sp["embedding"] = []
+        config["speaker"] = sp
         return {"topics": topics, "config": config, "providers": PROVIDERS,
                 "exports": self.list_exports(), "templates": self.list_templates(),
                 "judge_info": _judge_info()}

@@ -293,6 +293,253 @@ except Exception as e:
     check("save_asr('') does not raise", False, e)
 
 
+
+# ---------------------------------------------------------------------------
+# 6. Persian or English only: the verdict, and the retry it drives
+# ---------------------------------------------------------------------------
+print("\n-- Persian or English only --")
+
+V = asr.language_verdict
+check("only fa and en are allowed", asr.ALLOWED_LANGUAGES == ("fa", "en"), asr.ALLOWED_LANGUAGES)
+for text, detected, want, why in [
+    ("I think the borrow checker is right here", None, None, "English stays"),
+    ("امروز چند منبع تازه "
+     "پیدا کردم", None, None, "Persian stays"),
+    ("I read the مقاله today and it was good", None, None,
+     "English with a Persian word stays"),
+    ("هذا هو المصدر الذي "
+     "وجدته في المكتبة", None, "fa",
+     "Arabic goes back as Persian"),
+    ("یہ ایک ٹیسٹ ہے", None, "fa",
+     "Urdu goes back as Persian"),
+    ("Je pense que c'est très important", None, "en", "French (accents) goes back as English"),
+    ("ik denk dat dit heel belangrijk", None, "en", "Dutch (no English word in six) goes back as English"),
+    ("这是一个测试", None, "fa", "another script goes back, Persian first"),
+    ("hello there", "english", None, "the provider saying English settles it"),
+    ("سلام", "persian", None, "the provider saying Persian settles it"),
+    ("hallo", "german", "en", "the provider naming a third language sends it back"),
+    ("123 456", None, None, "digits alone are no language"),
+    ("", None, None, "nothing is no language"),
+]:
+    got = V(text, detected)
+    check("verdict: %s" % why, got == want, (got, want))
+
+LANG_CALLS = []
+LANG_MODE = {"first": {"text": "hello"}, "fail_retry": False}
+FA_REPLY = "به نظرم این خیلی مهم است"
+
+
+class LangHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        marker = b'name="language"\r\n\r\n'
+        lang = ""
+        if marker in raw:
+            lang = raw.split(marker, 1)[1].split(b"\r\n", 1)[0].decode()
+        LANG_CALLS.append(lang)
+        if lang and LANG_MODE["fail_retry"]:
+            self.send_response(500)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if lang == "en":
+            body = {"text": "I think this is very important", "language": "english"}
+        elif lang == "fa":
+            body = {"text": FA_REPLY, "language": "persian"}
+        else:
+            body = LANG_MODE["first"]
+        out = json.dumps(body).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        self.wfile.write(out)
+
+    def log_message(self, *args):
+        pass
+
+
+lang_server = HTTPServer(("127.0.0.1", 0), LangHandler)
+threading.Thread(target=lang_server.serve_forever, daemon=True).start()
+lcfg = {"endpoint": "http://127.0.0.1:%d" % lang_server.server_address[1],
+        "model": "whisper-1", "api_key": "test-key", "language": ""}
+
+
+def run(first, language="", fail_retry=False):
+    LANG_CALLS.clear()
+    LANG_MODE.update({"first": first, "fail_retry": fail_retry})
+    return asr.transcribe(dict(lcfg, language=language), test_wav_bytes)
+
+
+r = run({"text": "Je pense que c'est très important", "language": "french"})
+check("a French decode is decoded again, as English",
+      r.get("text") == "I think this is very important" and r.get("language") == "en"
+      and r.get("retried") is True, r)
+check("...by exactly one retry, with the hint", LANG_CALLS == ["", "en"], LANG_CALLS)
+r = run({"text": "هذا هو المصدر الذي",
+         "language": "arabic"})
+check("an Arabic decode is decoded again, as Persian",
+      r.get("language") == "fa" and r.get("text") == FA_REPLY and LANG_CALLS == ["", "fa"], (r, LANG_CALLS))
+r = run({"text": "the lifetime is too short", "language": "english"})
+check("English costs one request", LANG_CALLS == [""] and r.get("language") == "en"
+      and not r.get("retried"), (r, LANG_CALLS))
+r = run({"text": "این منبع خوبی است",
+         "language": "persian"})
+check("Persian costs one request", LANG_CALLS == [""] and r.get("language") == "fa", (r, LANG_CALLS))
+r = run({"text": "whatever"}, language="fa")
+check("a pinned language is sent once, as the hint", LANG_CALLS == ["fa"] and r.get("language") == "fa",
+      (r, LANG_CALLS))
+r = run({"text": "the lifetime is too short"}, language="de")
+check("a third language in config is ignored, not sent", LANG_CALLS == [""], LANG_CALLS)
+r = run({"text": "Je pense que c'est très important", "language": "french"}, fail_retry=True)
+check("a failed retry is an error, never the French text",
+      "error" in r and "neither Persian nor English" in r["error"] and "text" not in r, r)
+check("...and the key is not in it", "test-key" not in r.get("error", ""), r)
+lang_server.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# 7. The microphone list: one row per real microphone
+# ---------------------------------------------------------------------------
+print("\n-- microphone list --")
+
+import types  # noqa: E402
+
+
+class FakeSD:
+    class WasapiSettings:
+        def __init__(self, auto_convert=False):
+            self.auto_convert = auto_convert
+
+    def __init__(self, apis, devices, default_api=0):
+        self._apis, self._devices = apis, devices
+        self.default = types.SimpleNamespace(hostapi=default_api)
+
+    def query_hostapis(self, index=None):
+        return self._apis if index is None else self._apis[index]
+
+    def query_devices(self):
+        return self._devices
+
+
+MIC = "Microphone Array (AMD Audio Device)"
+JABRA = "Headset Microphone (Jabra Evolve2 65)"
+
+
+def dev(name, api, ins=2, outs=0):
+    return {"name": name, "hostapi": api, "max_input_channels": ins, "max_output_channels": outs}
+
+
+# What one laptop with a headset looks like to PortAudio: the same two
+# microphones once per host API (MME cutting names at 31 characters), plus
+# the mapper pseudo-devices, a loopback, speakers, and a driver that lists a
+# microphone twice. This is the "tens of microphones" list.
+RAW = [
+    dev("Microsoft Sound Mapper - Input", 0),           # 0  MME
+    dev(MIC[:31], 0),                                    # 1
+    dev(JABRA[:31], 0, 1),                               # 2
+    dev("Stereo Mix (Realtek(R) Audio)", 0),             # 3
+    dev("Speakers (Realtek(R) Audio)", 0, 0, 2),         # 4
+    dev("Primary Sound Capture Driver", 1),              # 5  DirectSound
+    dev(MIC, 1),                                         # 6
+    dev(JABRA, 1, 1),                                    # 7
+    dev(MIC, 2),                                         # 8  WASAPI
+    dev(JABRA, 2, 1),                                    # 9
+    dev("Stereo Mix (Realtek(R) Audio)", 2),             # 10
+    dev("Speakers (Realtek(R) Audio)", 2, 0, 2),         # 11
+    dev(JABRA, 2, 1),                                    # 12 listed twice
+    dev(MIC, 3),                                         # 13 WDM-KS
+    dev(JABRA, 3, 1),                                    # 14
+]
+APIS = [{"name": "MME", "default_input_device": 1},
+        {"name": "Windows DirectSound", "default_input_device": 6},
+        {"name": "Windows WASAPI", "default_input_device": 9},
+        {"name": "Windows WDM-KS", "default_input_device": -1}]
+
+_saved_sd = sys.modules.get("sounddevice")
+sd = FakeSD(APIS, RAW)
+sys.modules["sounddevice"] = sd
+try:
+    listed = asr.list_devices()
+    check("%d raw entries become 2 microphones" % len(RAW), [d["name"] for d in listed] == [JABRA, MIC],
+          [d["name"] for d in listed])
+    check("the system default is marked, and first", listed and listed[0]["default"]
+          and not listed[1]["default"], listed)
+    check("a microphone's id is its name, which survives a reboot",
+          all(d["id"] == d["name"] for d in listed), listed)
+    check("no loopback, speaker or mapper entry",
+          not [d for d in listed if "Stereo" in d["name"] or "Speakers" in d["name"]
+               or "Mapper" in d["name"] or "Primary" in d["name"]], listed)
+
+    R = asr.resolve_device
+    check("'' is the system default", R(sd, "") == (None, None, ""), R(sd, ""))
+    idx, extra, note = R(sd, JABRA)
+    check("a name opens its WASAPI entry", idx == 9 and note == "", (idx, note))
+    check("...converting to 16 kHz", isinstance(extra, FakeSD.WasapiSettings) and extra.auto_convert, extra)
+    check("an MME-truncated saved name still finds the microphone", R(sd, MIC[:31])[0] == 8, R(sd, MIC[:31]))
+    check("an old saved index is translated by name", R(sd, "2")[0] == 9, R(sd, "2"))
+    idx, extra, note = R(sd, "USB Microphone (Blue Yeti)")
+    check("an unplugged microphone falls back to the default, and says so",
+          idx is None and "not connected" in note, (idx, note))
+    check("a stale index falls back too", R(sd, "99")[0] is None and R(sd, "99")[2], R(sd, "99"))
+    check("a speaker's index is not a microphone", R(sd, "4")[0] is None, R(sd, "4"))
+
+    # No WASAPI (a stripped driver): the default API, deduplicated.
+    sys.modules["sounddevice"] = FakeSD(APIS[:2], [d for d in RAW if d["hostapi"] < 2], default_api=0)
+    names = [d["name"] for d in asr.list_devices()]
+    check("without WASAPI: the default API, no loopback, no duplicates",
+          len(names) == len(set(n.lower() for n in names)) and not [n for n in names if "Stereo" in n]
+          and MIC[:31] in names, names)
+
+    sys.modules["sounddevice"] = None      # the import fails
+    check("no audio library -> an empty list, not a crash", asr.list_devices() == [])
+finally:
+    if _saved_sd is not None:
+        sys.modules["sounddevice"] = _saved_sd
+    else:
+        sys.modules.pop("sounddevice", None)
+
+
+# ---------------------------------------------------------------------------
+# 8. The wave: LevelMeter and speech_only
+# ---------------------------------------------------------------------------
+print("\n-- level meter --")
+
+
+def pcm(seconds, amp):
+    n = int(16000 * seconds)
+    return struct.pack("<%dh" % n, *[amp if (i // 20) % 2 else -amp for i in range(n)])
+
+
+m = asr.LevelMeter(samplerate=16000, threshold_rms=1100)
+m.feed(pcm(0.1, 0) + pcm(0.1, 16384))
+d = m.read(300)
+check("one bucket per 10 ms", len(d["hi"]) == 20 and d["bucket_ms"] == 10, len(d["hi"]))
+check("silence reads flat", d["hi"][0] == 0 and d["lo"][0] == 0 and d["rms"][0] == 0,
+      (d["hi"][0], d["rms"][0]))
+check("a half-scale tone reads half-scale", d["hi"][-1] == 0.5 and d["lo"][-1] == -0.5,
+      (d["hi"][-1], d["lo"][-1]))
+check("the VAD threshold is on the same scale", abs(d["threshold"] - 1100 / 32768.0) < 1e-3, d["threshold"])
+check("the loud part is above it, the silence below",
+      d["rms"][-1] >= d["threshold"] > d["rms"][0], (d["rms"][-1], d["threshold"]))
+m.feed(pcm(5.0, 1000))
+d = m.read(1000)
+check("keeps four seconds, not everything", len(d["hi"]) == asr.LevelMeter.KEEP, len(d["hi"]))
+check("but counts every bucket, so the page can tell new from old", d["seq"] == 520, d["seq"])
+check("read(n) returns the newest n", len(m.read(10)["hi"]) == 10)
+check("the payload is JSON for the bridge", bool(json.dumps(m.read(50))))
+
+print("\n-- speech_only --")
+
+check("silence has no speech", asr.speech_only(pcm(1.0, 0)) == b"")
+clip = pcm(1.0, 0) + pcm(0.5, 8000) + pcm(1.0, 0)
+sp = asr.speech_only(clip)
+check("the silence around speech is dropped, a little padding kept",
+      0.5 * 32000 <= len(sp) <= 0.85 * 32000, len(sp) / 32000.0)
+check("all-speech is kept whole (to the frame)", len(asr.speech_only(pcm(1.0, 8000))) >= 0.97 * 32000)
+check("higher sensitivity keeps quieter speech",
+      len(asr.speech_only(pcm(1.0, 700), sensitivity=100)) > len(asr.speech_only(pcm(1.0, 700), sensitivity=0)))
+
 print()
 print("ALL CHECKS PASSED" if not FAILS else "FAILED: " + ", ".join(FAILS))
 sys.exit(1 if FAILS else 0)

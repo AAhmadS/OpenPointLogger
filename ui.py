@@ -313,47 +313,47 @@ section{overflow-y:auto;flex:1}
   padding-top:8px;margin-top:2px}
 .recent b{color:var(--content);font-weight:600}
 
-/* Always-on voice.
+/* Voice and typing write into ONE draft.
+
+   The draft lives in Python (voicecmd.Draft) because dictation lands there
+   from threads this page cannot see. The box below is a view of it: what was
+   said appears as text, and a misheard word is fixed the way a typo is.
 
    The mini bar is not a second window - it is THIS window resized by ctypes
    (see Controller.set_popup_mini) with a class on <body>. A real second
    window would double the hotkey, focus, topmost and GIL-deadlock surface
-   for what is a layout change.
-
-   What the bar is allowed to show is deliberately narrow: what voice is
-   doing, what is waiting to be filed, and the commands. Removing a buffered
-   comment stays in the expanded card, because at 150px tall a delete target
-   sits a few pixels from Log, and a mis-click there has no undo. */
+   for what is a layout change. Removing a source stays in the full view:
+   at 150px tall a delete target sits a few pixels from Log, and a mis-click
+   there has no undo. */
 #voiceSec{flex:none;overflow:visible}
-.vcard{padding:12px;display:flex;flex-direction:column;gap:8px}
+.vcard{padding:11px 12px;display:flex;flex-direction:column;gap:7px}
 .vhead{display:flex;align-items:center;gap:7px;min-width:0}
 .vstate{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650;
   padding:3px 9px;border-radius:var(--r-pill);background:var(--surface-sunken);
-  color:var(--content-secondary);white-space:nowrap}
+  color:var(--content-secondary);white-space:nowrap;max-width:62%;overflow:hidden;text-overflow:ellipsis}
 .vstate .d{width:6px;height:6px;border-radius:50%;background:var(--content-muted);flex:none}
 .vstate.on{color:var(--accent);background:var(--accent-tint)}
 .vstate.on .d{background:var(--accent);animation:pulse 1.6s ease-in-out infinite}
 .vstate.err{color:var(--danger);background:var(--danger-tint)}
 .vstate.err .d{background:var(--danger);animation:none}
 .vcounts{display:flex;gap:5px;flex:none}
-.vpill{font-size:10.5px;padding:2px 8px;border-radius:var(--r-pill);
-  background:var(--surface-sunken);color:var(--content-secondary);white-space:nowrap}
+.vpill{font-size:10.5px;padding:2px 8px;border-radius:var(--r-pill);border:0;
+  background:var(--surface-sunken);color:var(--content-secondary);white-space:nowrap;font-family:inherit}
 .vpill.hot{background:var(--accent-tint);color:var(--accent);font-weight:650}
+button.vpill{cursor:pointer}
 .vtopic{flex:1;min-width:0;font-size:11px;color:var(--content-muted);text-align:right;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The wave: what the microphone is hearing right now, drawn from the same
+   10 ms buckets the VAD decides on. Accent where it was loud enough to count
+   as speech, muted where it was not - so "why did it not hear me" has an
+   answer you can see. */
+.vwave{display:block;width:100%;height:34px;border-radius:var(--r-sm);background:var(--surface-sunken)}
 .vheard{font-size:12px;line-height:1.35;color:var(--content-secondary);min-height:16px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vdraft{display:none}
 .vacts{display:flex;gap:5px}
 .vacts .btn{flex:1;font-size:11px;padding:6px 4px;min-width:0}
-.vhint{font-size:10.5px;color:var(--content-muted);letter-spacing:.02em;line-height:1.45}
-.vlist{display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto}
-.vrow{display:flex;gap:6px;align-items:flex-start;font-size:11.5px;line-height:1.35;
-  background:var(--surface-sunken);border-radius:var(--r-sm);padding:5px 6px 5px 8px}
-.vrow .t{flex:1;min-width:0;word-break:break-word}
-.vrow.src .t{color:var(--content-secondary)}
-.vrow .x{flex:none;border:0;background:transparent;color:var(--content-muted);cursor:pointer;
-  font-size:14px;line-height:1;padding:0 3px;border-radius:4px}
-.vrow .x:hover{color:var(--danger);background:var(--danger-tint)}
+.vacts .mini-only{display:none}
 .icobtn{flex:none;display:inline-flex;align-items:center;justify-content:center;
   width:24px;height:24px;padding:0;border-radius:var(--r-sm);border:1px solid var(--border);
   background:transparent;color:var(--content-secondary);cursor:pointer}
@@ -362,6 +362,12 @@ section{overflow-y:auto;flex:1}
   background:var(--accent-tint)}
 .icobtn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;
   stroke-linecap:round;stroke-linejoin:round}
+.dhead{display:flex;align-items:baseline;gap:8px}
+.dhead label{flex:1}
+.dmeta{font-size:10.5px;color:var(--content-muted);white-space:nowrap}
+.dmeta b{color:var(--accent);font-weight:650}
+#ptText{min-height:92px}
+.kinds .k.auto{font-style:italic}
 
 /* Collapsed. The window is 396x150 physical, so everything that is not the
    voice bar is removed from the flow rather than merely scrolled past. */
@@ -371,9 +377,14 @@ body.mini header img{height:18px}
 body.mini .app{font-size:12px}
 body.mini .hk,body.mini #openApp{display:none}
 body.mini #noTopic,body.mini #logPanel{display:none!important}
-body.mini .vcard{padding:9px 10px;gap:6px}
-body.mini .vlist,body.mini .vhint{display:none}
-body.mini .vheard{-webkit-line-clamp:1;min-height:0}
+body.mini .vcard{padding:8px 10px;gap:5px}
+body.mini .vwave{height:22px}
+body.mini .vheard{display:none}
+body.mini .vdraft{display:block;font-size:11.5px;line-height:1.3;color:var(--content);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px}
+body.mini .vacts .full-only{display:none}
+body.mini .vacts .mini-only{display:block}
+body.mini .vtopic{display:none}
 </style></head><body>
 <div class="win">
   <header class="glass pywebview-drag-region">
@@ -394,47 +405,53 @@ body.mini .vheard{-webkit-line-clamp:1;min-height:0}
         <span class="vcounts" id="vCounts"></span>
         <span class="vtopic" id="vTopic" dir="auto"></span>
       </div>
+      <canvas class="vwave" id="vWave" aria-label="Microphone level"></canvas>
       <div class="vheard" id="vHeard" dir="auto"></div>
+      <div class="vdraft" id="vDraft" dir="auto"></div>
       <div class="vacts">
-        <button class="btn primary" id="vLog" type="button" title="Trail-Log">Log</button>
-        <button class="btn ghost" id="vSave" type="button" title="Trail-Save">Source</button>
-        <button class="btn ghost" id="vTab" type="button" title="Trail-Tab">Tab</button>
-        <button class="btn ghost" id="vSess" type="button" title="Trail-Session">Session</button>
-        <button class="btn ghost" id="vFin" type="button" title="Trail-Finish">Finish</button>
+        <button class="btn primary mini-only" id="vLog" type="button" title="Same as saying “log”">Log</button>
+        <button class="btn ghost" id="vSave" type="button" title="Attach the clipboard - same as saying “save”">Source</button>
+        <button class="btn ghost full-only" id="vTab" type="button" title="A new sub-topic - same as saying “tab”">Tab</button>
+        <button class="btn ghost full-only" id="vSess" type="button" title="A new topic - same as saying “session”">Session</button>
+        <button class="btn ghost" id="vFin" type="button" title="File the draft and close the topic - same as saying “finish”">Finish</button>
       </div>
-      <div class="vhint" id="vHint"></div>
-      <div class="vlist" id="vList"></div>
     </div>
   </section>
 
   <section id="noTopic" hidden>
     <div class="card glass fade">
       <div class="big">Start a topic</div>
-      <p class="muted">No open topic yet. Give this research a name to begin.</p>
+      <p class="muted" id="ntWhy">No open topic yet. Give this research a name to begin.</p>
       <input id="ntTitle" class="input" dir="auto" placeholder="Topic name — e.g. Rust borrow checker">
-      <button id="ntGo" class="btn primary full">Start topic</button>
+      <div class="logrow">
+        <button id="ntGo" class="btn primary">Start topic</button>
+        <button id="ntCancel" class="btn ghost" hidden>Cancel</button>
+      </div>
     </div>
   </section>
 
-  <section id="logPanel" hidden>
+  <section id="logPanel">
     <div class="card glass fade">
-      <div class="trow">
+      <div class="trow" id="tpRow">
         <select id="tpSel" class="input"></select>
         <button id="tpNew" class="chip">+ New</button>
       </div>
-      <label>Sub-topic</label>
-      <div class="chips" id="subChips"></div>
+      <div id="subRow">
+        <label>Sub-topic</label>
+        <div class="chips" id="subChips"></div>
+      </div>
       <div id="ptKinds" hidden>
         <label>This point is</label>
         <div class="kinds">
-          <button class="k on" data-kind="claim">Claim</button>
+          <button class="k auto" data-kind="">Auto</button>
+          <button class="k" data-kind="claim">Claim</button>
           <button class="k" data-kind="note">My note</button>
           <button class="k" data-kind="quote">Quotation</button>
         </div>
         <div class="k-hint" id="ptKindHint"></div>
       </div>
-      <label>Point</label>
-      <textarea id="ptText" class="input ta" dir="auto" rows="3" placeholder="Type or paste the point…" spellcheck="false"></textarea>
+      <div class="dhead"><label for="ptText">Point</label><span class="dmeta" id="ptMeta"></span></div>
+      <textarea id="ptText" class="input ta" dir="auto" rows="4" placeholder="Type, paste, or just talk — dictation lands here…" spellcheck="false"></textarea>
       <div class="srcbar">
         <input id="ptLink" class="input grow" placeholder="Paste a source link…">
         <button id="ptLinkAdd" class="chip">+ Link</button>
@@ -452,9 +469,10 @@ body.mini .vheard{-webkit-line-clamp:1;min-height:0}
       </div>
       <div class="logrow">
         <button id="ptGo" class="btn primary">Log point</button>
+        <button id="ptClear" class="btn ghost" title="Empty the draft - text and sources">Clear</button>
         <button id="ptHide" class="btn ghost">Hide</button>
       </div>
-      <div class="hint">Alt+Enter logs · Esc hides · hotkey toggles · Open app to review</div>
+      <div class="hint">Alt+Enter logs · Esc hides · say “log” to file what you dictated</div>
       <div class="recent" id="recent"></div>
     </div>
   </section>
@@ -462,16 +480,13 @@ body.mini .vheard{-webkit-line-clamp:1;min-height:0}
 <div id="toasts"></div>
 <script>
 let state={topics:[]};
-let topicId=null, subTopic="";
-let pLinks=[], pStrings=[], pImages=[];
-let pKind="claim";
 const KIND_HINT={
+  "":"Dictated points are filed as notes, typed ones as claims - and a dictated one is re-checked when the second opinion is on.",
   claim:"Taken from a source. It carries the citation.",
   note:"Your own thinking. It is kept separate and never given a citation - not even by the AI pass.",
   quote:"Verbatim from the source. Nothing, including the AI pass, may reword it."
 };
 const sciOn=()=>!!((state.config||{}).science||{}).enabled;
-let lastTopicId=null;
 const api=new Proxy({},{get:(_,p)=>{const pv=window.pywebview&&window.pywebview.api;return pv?pv[p]:(()=>Promise.resolve({error:"bridge not ready"}));}});
 
 const $=(s,r=document)=>r.querySelector(s);
@@ -482,37 +497,28 @@ const byId=i=>state.topics.find(t=>t.id===i);
 const openTopics=()=>state.topics.filter(t=>t.status==="open");
 const fmtTime=iso=>{if(!iso)return"";const d=new Date(iso);return d.toLocaleString(undefined,{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});};
 
-// Ctrl+Alt+V. Python parks what it read off the clipboard and calls this;
-// the popup pulls it over the bridge and attaches it as a pending source -
-// the same chips the paste buttons produce. Nothing is logged until the
-// user writes the point: the hotkey fills the form, it does not file.
+// Everything Python knows about the voice bar AND the draft, as last pushed.
+let voice={draft:{rev:0,text:"",origin:"",words:0,sources:[],count_sources:0,
+                  meta:{topic_id:"",subtopic:"",kind:""},empty:true},
+           state:"off",detail:"",heard:"",topic:"",topic_id:"",subtopic:"",
+           always_on:true,enabled:false,configured:false,listening:false,mini:false,
+           held:0,speaker_on:false};
+
+// Ctrl+Alt+V and "save" attach the clipboard in Python; this is the toast
+// that says so. Its own .cbtoast element rather than toast(): it carries an
+// icon for the detected kind and the (untrusted) excerpt as textContent.
 const CB_ICONS={
   link:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-1 1"/><path d="M12 8a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l1-1"/></svg>',
   image:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="9" r="1.2"/><path d="M17 13l-4-4-7 7"/></svg>',
   text:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h12M4 9h12M4 13h8"/></svg>'
 };
-async function clipboardCaptured(){
-  let d=null;
-  try{d=await api.take_clipboard_capture();}catch(e){d=null;}
-  if(!d||d.error){cbToast("error","Couldn't read the clipboard.");return;}
-  let detail="";
-  if(d.type==="image"){pImages.push({value:d.value,source:"paste"});detail="Image attached as a source.";}
-  else if(d.type==="link"){if(!pLinks.includes(d.value))pLinks.push(d.value);detail=d.value;}
-  else if(d.type==="text"){pStrings.push(d.value);detail=d.value.slice(0,120)+(d.value.length>120?"…":"");}
-  else{cbToast("error","Clipboard is empty.");return;}
-  renderAtt();
-  cbToast(d.type,detail);
-  const el=$("#ptText");if(el)el.focus();
-}
-// Its own .cbtoast element rather than toast(): it carries an icon for the
-// detected kind and the (untrusted) clipboard excerpt as textContent.
-function cbToast(kind,detailText){
+function cbToast(kind,headline,detailText){
   const d=document.createElement("div");
   d.className="cbtoast fade";
-  const headline=kind==="error"?"Nothing to attach":"Attached from clipboard — write the point, then log";
   d.innerHTML=`<div class="row1"><div class="ic">${CB_ICONS[kind]||CB_ICONS.text}</div>
-    <div class="txt"><b>${headline}</b><span></span></div></div>
+    <div class="txt"><b></b><span></span></div></div>
     <div class="prog"><i></i></div>`;
+  d.querySelector(".txt b").textContent=headline;
   d.querySelector(".txt span").textContent=detailText;
   document.getElementById("toasts").appendChild(d);
   const bar=d.querySelector(".prog i");
@@ -520,111 +526,227 @@ function cbToast(kind,detailText){
   setTimeout(()=>{d.classList.add("out");setTimeout(()=>d.remove(),280);},4000);
 }
 
-function renderMode(){
-  const opens=openTopics();
-  const no=$("#noTopic"), log=$("#logPanel");
-  if(!opens.length){
-    no.hidden=false;log.hidden=true;return;
-  }
-  no.hidden=true;log.hidden=false;
-  const kw=$("#ptKinds");
-  if(kw){
-    kw.hidden=!sciOn();
-    kw.querySelectorAll(".k").forEach(b=>b.classList.toggle("on",b.dataset.kind===pKind));
-    $("#ptKindHint").textContent=KIND_HINT[pKind]||"";
-  }
-  if(!topicId||!byId(topicId))topicId=lastTopicId&&byId(lastTopicId)?lastTopicId:opens[0].id;
-  const sel=$("#tpSel");
-  sel.innerHTML=opens.map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join("");
-  sel.value=topicId;
-  renderSubs();
-}
+// ---- the draft box ---------------------------------------------------------
+// The box sends its whole text back, with the revision it was typed against,
+// ~350 ms after the last keystroke. Python merges: a sentence dictated while
+// you typed is added after your text rather than overwritten by it. While a
+// keystroke is unsent, incoming dictation is NOT painted into the box - it
+// comes back with the reply to the send, added to the end of what you typed.
+const box=()=>$("#ptText");
+let baseRev=0, dirty=false, sending=null, sendTimer=null;
 
-function renderSubs(){
-  const t=byId(topicId);if(!t)return;
-  const wrap=$("#subChips");
-  const subs=[...(t.subtopics||[])];
-  const chips=subs.map(s=>`<button class="chip ${subTopic===s?"active":""}" data-s="${esc(s)}">${esc(s)}</button>`).join("");
-  wrap.innerHTML=`<button class="chip ${subTopic===""?"active":""}" data-s="">General</button>${chips}
-    <button class="chip accent" id="subAdd">+ add</button>`;
-  wrap.querySelectorAll("button[data-s]").forEach(b=>b.addEventListener("click",()=>{subTopic=b.dataset.s;renderSubs();}));
-  $("#subAdd").addEventListener("click",()=>{
-    const name=prompt("New sub-topic name:");
-    if(!name||!name.trim())return;
-    addSub(name);
-  });
+function setBox(text){
+  const el=box(); if(el.value===text)return;
+  const old=el.value,a=el.selectionStart,b=el.selectionEnd;
+  const atEnd=a===b&&a===old.length;
+  el.value=text;
+  if(document.activeElement===el){
+    if(text.startsWith(old)&&!atEnd){el.selectionStart=a;el.selectionEnd=b;}
+    else{el.selectionStart=el.selectionEnd=text.length;}
+  }
 }
+function draftIn(d,force){
+  if(!d||typeof d!=="object")return;
+  // Pushes come from several Python threads and can arrive out of order;
+  // a revision never goes backwards.
+  if(!force&&typeof d.rev==="number"&&d.rev<(voice.draft.rev||0))return;
+  voice.draft=d;
+  if(force||(!dirty&&!sending)){setBox(d.text||"");baseRev=d.rev||0;dirty=false;}
+  renderAtt();renderDraftMeta();
+}
+function scheduleSend(){clearTimeout(sendTimer);sendTimer=setTimeout(sendDraft,350);}
+function sendDraft(){
+  clearTimeout(sendTimer);sendTimer=null;
+  if(sending)return sending.then(()=>dirty?sendDraft():null);
+  if(!dirty)return Promise.resolve();
+  const text=box().value,base=baseRev;
+  dirty=false;
+  sending=Promise.resolve(api.draft_set(text,base)).then(r=>{
+    sending=null;
+    if(!r||r.error||!r.draft){dirty=true;return;}
+    const d=r.draft,res=r.result||{},now=box().value;
+    // The draft is reconciled here, by hand; the rest of the payload is
+    // ordinary voice-bar state.
+    const rest=Object.assign({},r);delete rest.draft;applyVoice(rest,false);
+    if(res.ok){
+      voice.draft=d;baseRev=d.rev;
+      if(now===text){setBox(d.text);}
+      else if(d.text.startsWith(text)){setBox(now+d.text.slice(text.length));}
+      else if(now.startsWith(text)){setBox(d.text+now.slice(text.length));}
+      dirty=box().value!==d.text;
+      if(dirty)scheduleSend();
+    }else if(res.reason==="logged"){
+      draftIn(d,true);
+      toast("That draft was just logged - the box now shows what came after it.","err");
+    }else if(res.reason==="too long"){
+      dirty=true;toast("The draft is too long to keep.","err");
+    }else{
+      // Changed underneath by something other than dictation (a failed log
+      // put its text back). What is in the box is what you are looking at,
+      // so it wins - re-sent against the new revision.
+      voice.draft=d;baseRev=d.rev;
+      if(d.text.startsWith(text)&&now===text){setBox(d.text);dirty=false;}
+      else{dirty=true;scheduleSend();}
+    }
+    renderAtt();renderDraftMeta();
+  }).catch(()=>{sending=null;dirty=true;});
+  return sending;
+}
+box().addEventListener("input",()=>{dirty=true;scheduleSend();renderDraftMeta();});
 
-function addSub(name){
-  api.add_subtopic(topicId,name).then(r=>{if(r.error)return toast(r.error,"err");state=r;renderSubs();});
+function renderDraftMeta(){
+  const d=voice.draft||{},el=$("#ptMeta");
+  const text=box().value,words=text.trim()?text.trim().split(/\\s+/).length:0;
+  const bits=[];
+  if(words)bits.push(words+(words>1?" words":" word"));
+  if(d.origin==="voice")bits.push("<b>dictated</b>");
+  else if(d.origin==="hand"&&words)bits.push("edited");
+  if(dirty||sending)bits.push("saving…");
+  el.innerHTML=bits.join(" · ");
+  const md=$("#vDraft");
+  if(md){
+    const t=(text||"").trim();
+    md.textContent=t?(t.length>60?"…"+t.slice(-60):t):(voice.listening?"Talk - say “log” to file it.":"");
+  }
 }
 
 async function logPoint(){
-  const text=$("#ptText").value;
-  if(!text.trim()){toast("Write the point first.","err");$("#ptText").focus();return;}
-  const sources=[];
-  pLinks.forEach(v=>sources.push({type:"link",value:v}));
-  pStrings.forEach(v=>sources.push({type:"string",value:v}));
-  pImages.forEach(v=>sources.push({type:"image",value:v.value}));
-  const r=await api.add_entry(topicId,subTopic,text,"","",null,sources,pKind);
-  if(r.error){toast(r.error,"err");return;}
-  state=r;lastTopicId=topicId;
-  $("#ptText").value="";$("#ptLink").value="";$("#ptStr").value="";pLinks=[];pStrings=[];pImages=[];
-  renderAtt();
-  const t=state.topics.find(t=>t.id===topicId);
-  $("#recent").innerHTML="<b>Logged</b> · "+fmtTime(t.entries.at(-1).created)+
-    (subTopic?" · "+esc(subTopic):"")+" · "+(t.entries.length)+" point(s) total";
-  toast("Point logged — "+sources.length+" source(s) attached.");
-  $("#ptText").focus();
+  await sendDraft();
+  if(!box().value.trim()){
+    toast((voice.draft.sources||[]).length?"Sources are attached - write or say the point too.":"Write the point first.","err");
+    box().focus();return;
+  }
+  let r;
+  try{r=await api.draft_log(null,null);}catch(e){r={error:"Bridge not ready."};}
+  if(r&&r.draft)draftIn(r.draft,true);
+  if(r)applyVoice(r,false);
+  if(!r||r.error){toast((r&&r.error)||"Could not log.","err");return;}
+  const res=r.result||{};
+  api.get_state().then(s=>{
+    if(!s||s.error)return;
+    state=s;renderMode();
+    const t=byId(res.topic_id);
+    if(t&&t.entries.length){
+      const e=t.entries.find(x=>x.id===res.entry_id)||t.entries.at(-1);
+      $("#recent").innerHTML="<b>Logged</b> · "+fmtTime(e.created)+
+        (e.subtopic?" · "+esc(e.subtopic):"")+" · "+esc(t.title)+" · "+t.entries.length+" point(s)";
+    }
+  });
+  toast("Point logged — "+(res.sources||0)+" source(s) attached.");
+  box().focus();
+}
+
+// ---- where it goes -----------------------------------------------------------
+function targetTopicId(){
+  const want=voice.topic_id||((voice.draft||{}).meta||{}).topic_id;
+  if(want&&byId(want)&&byId(want).status==="open")return want;
+  const o=openTopics();return o.length?o[o.length-1].id:null;
+}
+let creating=false;
+function renderMode(){
+  const opens=openTopics();
+  const no=$("#noTopic");
+  no.hidden=!(creating||!opens.length);
+  $("#ntCancel").hidden=!opens.length;
+  $("#ntWhy").textContent=opens.length?"A new topic - what you log next goes there."
+    :"No open topic yet. Name one - or say “session” and a name.";
+  $("#tpRow").hidden=!opens.length;$("#subRow").hidden=!opens.length;
+  $("#ptGo").disabled=!opens.length;
+  const kw=$("#ptKinds");
+  const kind=((voice.draft||{}).meta||{}).kind||"";
+  if(kw){
+    kw.hidden=!sciOn();
+    kw.querySelectorAll(".k").forEach(b=>b.classList.toggle("on",b.dataset.kind===kind));
+    $("#ptKindHint").textContent=KIND_HINT[kind]||"";
+  }
+  if(!opens.length)return;
+  const tid=targetTopicId();
+  const sel=$("#tpSel");
+  sel.innerHTML=opens.map(t=>`<option value="${esc(t.id)}">${esc(t.title)}</option>`).join("");
+  sel.value=tid;
+  renderSubs();
+}
+function renderSubs(){
+  const t=byId(targetTopicId());if(!t)return;
+  const cur=((voice.draft||{}).meta||{}).subtopic||"";
+  const wrap=$("#subChips");
+  const subs=[...(t.subtopics||[])];
+  if(cur&&!subs.includes(cur))subs.push(cur);
+  const chips=subs.map(s=>`<button class="chip ${cur===s?"active":""}" data-s="${esc(s)}">${esc(s)}</button>`).join("");
+  wrap.innerHTML=`<button class="chip ${cur===""?"active":""}" data-s="">General</button>${chips}
+    <button class="chip accent" id="subAdd">+ add</button>`;
+  wrap.querySelectorAll("button[data-s]").forEach(b=>b.addEventListener("click",()=>setMeta({topic_id:t.id,subtopic:b.dataset.s})));
+  $("#subAdd").addEventListener("click",()=>{
+    const name=prompt("New sub-topic name:");
+    if(!name||!name.trim())return;
+    api.add_subtopic(t.id,name.trim()).then(r=>{
+      if(r.error)return toast(r.error,"err");
+      state=r;setMeta({topic_id:t.id,subtopic:name.trim()});
+    });
+  });
+}
+async function setMeta(fields){
+  let r;try{r=await api.draft_meta(fields);}catch(e){r=null;}
+  if(r&&!r.error){applyVoice(r,false);}
+  renderMode();
 }
 
 function renderAtt(){
   const wrap=$("#attChips");const parts=[];
-  pLinks.forEach((v,i)=>parts.push(`<span class="chip active" data-rm="link-${i}" title="${esc(v)}">🔗 ${esc(v.slice(0,22))} ×</span>`));
-  pStrings.forEach((v,i)=>parts.push(`<span class="chip active" data-rm="str-${i}" title="${esc(v)}">“ ${esc(v.slice(0,18))} ×</span>`));
-  // Clipboard-pasted images have no File object, so there's no real filename or
-  // size to show - the label instead reflects which control produced the image
-  // (paste vs. file-picker), tracked via img.source.
-  pImages.forEach((img,i)=>{const label=img.source==="paste"?"Pasted image":"Screenshot";parts.push(`<span class="thumb-chip">
+  // Chips carry the draft's own source id: a "save" can land between this
+  // render and the click, and the chip clicked must be the one removed.
+  (voice.draft.sources||[]).forEach(s=>{
+    if(s.type==="image"){parts.push(`<span class="thumb-chip">
     <span class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 16l-5-5-9 9"/></svg></span>
-    <span class="thumb-meta"><span class="fn">${label}</span></span>
-    <button class="xbtn" data-rm="img-${i}" type="button" aria-label="Remove image"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
-  </span>`);});
-  wrap.innerHTML=parts.join("")||`<span class="muted" style="font-size:11.5px">add links, strings or screenshots — all will be cited</span>`;
-  wrap.querySelectorAll("[data-rm]").forEach(el=>el.addEventListener("click",()=>{
-    const k=el.dataset.rm;
-    if(k.startsWith("link-")) pLinks.splice(parseInt(k.split("-")[1]),1);
-    if(k.startsWith("str-")) pStrings.splice(parseInt(k.split("-")[1]),1);
-    if(k.startsWith("img-")) pImages.splice(parseInt(k.split("-")[1]),1);
-    renderAtt();
+    <span class="thumb-meta"><span class="fn">Image</span></span>
+    <button class="xbtn" data-rm="${s.id}" type="button" aria-label="Remove image"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+  </span>`);return;}
+    const mark=s.type==="link"?"🔗":"“";
+    parts.push(`<span class="chip active" data-rm="${s.id}" title="${esc(s.value)}">${mark} ${esc((s.value||"").slice(0,s.type==="link"?22:18))} ×</span>`);
+  });
+  wrap.innerHTML=parts.join("")||`<span class="muted" style="font-size:11.5px">links, strings or screenshots — all will be cited</span>`;
+  wrap.querySelectorAll("[data-rm]").forEach(el=>el.addEventListener("click",async()=>{
+    let r;try{r=await api.draft_drop_source(parseInt(el.dataset.rm,10));}catch(e){r=null;}
+    if(r&&r.draft)applyVoice(r,false);
   }));
+}
+async function addSource(type,value,msg){
+  let r;try{r=await api.draft_add_source(type,value,"");}catch(e){r={error:"Bridge not ready."};}
+  if(r&&r.draft)applyVoice(r,false);
+  if(!r||r.error){toast((r&&r.error)||"Could not attach it.","err");return false;}
+  if(msg)toast(msg);
+  return true;
 }
 
 $("#ntGo").addEventListener("click",async()=>{
   const title=$("#ntTitle").value;
+  const before=new Set(state.topics.map(t=>t.id));
   const r=await api.start_topic(title);
   if(r.error)return toast(r.error,"err");
-  state=r;topicId=r.topics.find(t=>t.status==="open").id;lastTopicId=topicId;
-  renderMode();$("#ptText").focus();
+  state=r;creating=false;$("#ntTitle").value="";
+  const made=r.topics.find(t=>!before.has(t.id));
+  if(made)await setMeta({topic_id:made.id,subtopic:""});
+  renderMode();box().focus();
 });
+$("#ntCancel").addEventListener("click",()=>{creating=false;renderMode();});
 $("#ntTitle").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ntGo").click();});
-$("#tpSel").addEventListener("change",e=>{topicId=e.target.value;lastTopicId=topicId;subTopic="";renderSubs();});
-$("#tpNew").addEventListener("click",()=>{topicId=null;$("#noTopic").hidden=false;$("#logPanel").hidden=true;$("#ntTitle").value="";$("#ntTitle").focus();});
-$("#ptLinkAdd").addEventListener("click",()=>{
+$("#tpSel").addEventListener("change",e=>setMeta({topic_id:e.target.value,subtopic:""}));
+$("#tpNew").addEventListener("click",()=>{creating=true;renderMode();$("#ntTitle").focus();});
+$("#ptLinkAdd").addEventListener("click",async()=>{
   const v=$("#ptLink").value.trim();if(!v)return;
   try{new URL(v);}catch(e){toast("That doesn't look like a URL.","err");return;}
-  pLinks.push(v);$("#ptLink").value="";renderAtt();toast("Link added ("+pLinks.length+").");
+  if(await addSource("link",v,"Link added."))$("#ptLink").value="";
 });
-$("#ptStrAdd").addEventListener("click",()=>{
+$("#ptStrAdd").addEventListener("click",async()=>{
   const v=$("#ptStr").value.trim();if(!v)return;
-  pStrings.push(v);$("#ptStr").value="";renderAtt();toast("Citation added ("+pStrings.length+").");
+  if(await addSource("string",v,"Citation added."))$("#ptStr").value="";
 });
 $("#ptLink").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ptLinkAdd").click();});
 $("#ptStr").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ptStrAdd").click();});
 $("#ptImgPaste").addEventListener("click",async()=>{
   const d=await api.read_clipboard();
-  if(d.type==="image"){pImages.push({value:d.value,source:"paste"});renderAtt();toast("Image pasted from clipboard.");}
-  else{toast("Clipboard has no image.","err");}
+  if(d.type==="image")addSource("image",d.value,"Image pasted from the clipboard.");
+  else toast("Clipboard has no image.","err");
 });
 $("#ptLinkPaste").addEventListener("click",async()=>{
   const d=await api.read_clipboard();
@@ -641,22 +763,28 @@ $("#ptStrPaste").addEventListener("click",async()=>{
 });
 $("#ptShot").addEventListener("change",e=>{
   const files=[...e.target.files]; if(!files.length) return;
-  let pending=files.length;
   files.forEach(f=>{
-    if(f.size>8*1024*1024){toast("Image too large (8 MB max).","err"); pending--; if(!pending) renderAtt(); return;}
+    if(f.size>8*1024*1024){toast("Image too large (8 MB max).","err");return;}
     const rd=new FileReader();
-    rd.onload=()=>{pImages.push({value:rd.result,source:"file"}); renderAtt(); toast("Screenshot attached ("+pImages.length+").");};
+    rd.onload=()=>addSource("image",rd.result,"Screenshot attached.");
     rd.readAsDataURL(f);
   });
   e.target.value="";
 });
-const ptKinds=$("#ptKinds");
-if(ptKinds) ptKinds.addEventListener("click",e=>{
+$("#ptKinds").addEventListener("click",e=>{
   const b=e.target.closest("[data-kind]"); if(!b) return;
-  pKind=b.dataset.kind; renderMode();
+  setMeta({kind:b.dataset.kind});
 });
 $("#ptGo").addEventListener("click",logPoint);
-$("#ptText").addEventListener("keydown",e=>{
+$("#ptClear").addEventListener("click",async()=>{
+  const d=voice.draft||{};
+  if(!box().value.trim()&&!(d.sources||[]).length)return;
+  if(!confirm("Empty the draft? The text and its sources are not logged anywhere."))return;
+  clearTimeout(sendTimer);dirty=false;
+  let r;try{r=await api.draft_clear();}catch(e){r=null;}
+  if(r&&r.draft){draftIn(r.draft,true);applyVoice(r,false);}
+});
+box().addEventListener("keydown",e=>{
   if(e.altKey && e.key==="Enter"){e.preventDefault();logPoint();}
 });
 $("#openApp").addEventListener("click",async()=>{
@@ -667,34 +795,50 @@ $("#openApp").addEventListener("click",async()=>{
   }catch(e){ /* bridge not ready, try fallback */ }
   setTimeout(()=>$("#openApp").textContent="Open app",900);
 });
-$("#ptHide").addEventListener("click",()=>api.hide_popup());
-document.addEventListener("keydown",e=>{if(e.key==="Escape")api.hide_popup();});
+$("#ptHide").addEventListener("click",()=>{sendDraft();api.hide_popup();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){sendDraft();api.hide_popup();}});
 document.addEventListener("wheel",e=>{if(e.ctrlKey)e.preventDefault();},{passive:false});
 
 
-// ---- always-on voice ------------------------------------------------------
-// The buffer lives in Python (voicecmd.VoiceBuffer), written from the audio
-// thread and the Win32 hotkey thread - neither of which can reach this
-// window. So this window never keeps its own copy: every render comes from a
-// payload Python pushed, or from one pull when the window is shown.
-let voice={comments:[],sources:[],count_comments:0,count_sources:0,empty:true,
-           state:"off",detail:"",topic:"",always_on:true,enabled:false,
-           configured:false,listening:false,mini:false};
-
+// ---- the voice bar -----------------------------------------------------------
 const V_LABEL={off:"Voice off",listening:"Listening",speech:"Speaking",
-  transcribing:"Transcribing",heard:"Heard",logged:"Logged",source:"Source added",
-  duplicate:"Already added",session:"New session",tab:"New tab",finished:"Finished",
-  edited:"Removed",cleared:"Cleared",ok:"Done",no_topic:"No open topic"};
+  transcribing:"Transcribing",deciding:"Deciding",heard:"Heard",logged:"Logged",
+  source:"Source added",duplicate:"Already added",session:"New session",tab:"Tab",
+  finished:"Finished",edited:"Listening",typed:"Listening",merged:"Listening",
+  cleared:"Cleared",ok:"Done",no_topic:"No open topic",held:"Held aside"};
 
+// Python calls this on every change. A push is also where a clipboard
+// attachment gets its toast - once, as it happens, not again on a refresh.
 function voiceState(payload){
-  if(payload&&typeof payload==="object"&&!payload.error)voice=Object.assign(voice,payload);
-  renderVoice();
+  applyVoice(payload,true);
 }
 window.voiceState=voiceState;
+let lastToastRev=-1;
+function applyVoice(payload,pushed){
+  if(!payload||typeof payload!=="object")return;
+  const d=payload.draft;
+  const rest=Object.assign({},payload);delete rest.draft;delete rest.result;delete rest.error;
+  Object.assign(voice,rest);
+  if(d)draftIn(d,false);
+  if(pushed&&(voice.state==="source"||voice.state==="duplicate")&&d&&d.rev!==lastToastRev){
+    lastToastRev=d.rev;
+    const src=(d.sources||[]).at(-1)||{};
+    if(voice.state==="duplicate")cbToast("text","Already attached",voice.detail||"");
+    else cbToast(src.type==="image"?"image":src.type==="link"?"link":"text",
+                 "Attached to the draft",voice.detail||"");
+  }
+  renderVoice();
+  if(pushed&&["session","tab","finished","logged"].includes(voice.state)){
+    api.get_state().then(s=>{if(s&&!s.error){state=s;renderMode();}}).catch(()=>{});
+  }
+}
 
 function popupMini(mini){
   voice.mini=!!mini;
   document.body.classList.toggle("mini",!!mini);
+  // Focusing the point box before the bar collapsed can leave the page
+  // scrolled; the bar has nothing to scroll to.
+  if(mini&&document.scrollingElement)document.scrollingElement.scrollTop=0;
   const b=$("#miniBtn");
   if(b){b.setAttribute("aria-checked",mini?"true":"false");
         b.title=mini?"Back to the full window":"Collapse to the voice bar";}
@@ -703,12 +847,7 @@ function popupMini(mini){
 window.popupMini=popupMini;
 
 function refreshVoice(){
-  api.voice_buffer().then(p=>{if(p&&!p.error)voiceState(p);}).catch(()=>{});
-}
-
-function vrow(kind,i,text,isSrc){
-  return '<div class="vrow'+(isSrc?" src":"")+'"><span class="t" dir="auto">'+esc(text)+'</span>'+
-    '<button class="x" type="button" data-vrm="'+kind+'-'+i+'" aria-label="Remove">&times;</button></div>';
+  api.draft_get().then(p=>{if(p&&!p.error)applyVoice(p,false);}).catch(()=>{});
 }
 
 function renderVoice(){
@@ -723,53 +862,88 @@ function renderVoice(){
   // is never a blank rectangle with nothing to click.
   sec.hidden=!(voice.enabled||live||voice.mini||voice.configured);
   document.body.classList.toggle("mini",!!voice.mini);
-  if(sec.hidden)return;
+  renderDraftMeta();
+  if(sec.hidden){stopWave();return;}
 
   const st=$("#vState");
-  st.className="vstate"+(live?" on":"")+(voice.state==="error"?" err":"");
+  const err=voice.state==="error";
+  st.className="vstate"+(live&&!err?" on":"")+(err?" err":"");
   let label=live?(V_LABEL[voice.state]||"Listening"):"Voice off";
-  if(voice.state==="error")label=voice.detail||"Voice error";
+  if(err)label=voice.detail||"Voice error";
   st.querySelector(".tx").textContent=label;
+  st.title=label;
 
-  const cc=voice.count_comments||0,cs=voice.count_sources||0,pills=[];
-  if(cc)pills.push('<span class="vpill hot">'+cc+(cc>1?" notes":" note")+'</span>');
-  if(cs)pills.push('<span class="vpill">'+cs+(cs>1?" sources":" source")+'</span>');
+  const pills=[];
+  const n=(voice.draft||{}).count_sources||0;
+  if(n)pills.push('<span class="vpill">'+n+(n>1?" sources":" source")+'</span>');
+  if(voice.held)pills.push('<button class="vpill hot" id="vHeld" type="button" title="Clips the voice check held aside - review them in Settings › Voice">'+voice.held+' held</button>');
+  if(voice.speaker_on)pills.push('<span class="vpill" title="Only your enrolled voice is transcribed">your voice</span>');
   $("#vCounts").innerHTML=pills.join("");
+  const hb=$("#vHeld");if(hb)hb.addEventListener("click",()=>api.show_full());
 
-  $("#vTopic").textContent=voice.topic||"no open topic";
+  $("#vTopic").textContent=(voice.topic||"no open topic")+(voice.subtopic?" › "+voice.subtopic:"");
 
   // Untrusted text (a transcript, a clipboard excerpt) only ever reaches the
   // DOM through textContent or esc().
   const h=$("#vHeard");
-  const last=(voice.comments&&voice.comments.length)?voice.comments[voice.comments.length-1]:"";
-  if(voice.state==="error")h.textContent="";
-  else if(last)h.textContent="\u201c"+last+"\u201d";
-  else if(voice.detail)h.textContent=voice.detail;
-  else if(live)h.textContent="Talk. Say Trail-Log to file it.";
+  if(err)h.textContent="";
+  else if(voice.detail&&!["listening","transcribing","speech","typed","merged","edited"].includes(voice.state))h.textContent=voice.detail;
+  else if(voice.heard)h.textContent="Heard: “"+voice.heard+"”";
+  else if(live)h.textContent="Talk - it lands in the box below. Say “log” to file it.";
   else if(voice.enabled)h.textContent="Starting the microphone…";
-  else h.textContent="Always-on voice is off. Click the microphone above to start.";
+  else h.textContent="Voice is off. Click the microphone above to start.";
+  ensureWave();
+}
 
-  const list=$("#vList");
-  const rows=[];
-  (voice.comments||[]).forEach((c,i)=>rows.push(vrow("c",i,c,false)));
-  (voice.sources||[]).forEach((sv,i)=>rows.push(
-    vrow("s",i,sv.type==="image"?"Image":(sv.value||""),true)));
-  list.innerHTML=rows.join("");
-  list.querySelectorAll("[data-vrm]").forEach(b=>b.addEventListener("click",async()=>{
-    const p=b.dataset.vrm.split("-"),i=parseInt(p[1],10);
-    let r;
-    try{r=p[0]==="c"?await api.voice_drop_comment(i):await api.voice_drop_source(i);}
-    catch(e){r=null;}
-    if(r&&r.ok===false)toast("That one is already gone.","err");
-    refreshVoice();
-  }));
+// ---- the wave ------------------------------------------------------------------
+let waveTimer=null, waveBusy=false;
+function ensureWave(){
+  if(!voice.listening||document.hidden){stopWave();return;}
+  if(waveTimer===null)waveTimer=setTimeout(waveTick,0);
+}
+function stopWave(){clearTimeout(waveTimer);waveTimer=null;drawWave(null);}
+function waveTick(){
+  waveTimer=null;
+  if(!voice.listening||document.hidden){drawWave(null);return;}
+  if(waveBusy){waveTimer=setTimeout(waveTick,90);return;}
+  waveBusy=true;
+  Promise.resolve(api.mic_levels(200)).then(drawWave).catch(()=>{}).finally(()=>{
+    waveBusy=false;
+    if(voice.listening&&!document.hidden)waveTimer=setTimeout(waveTick,90);
+  });
+}
+document.addEventListener("visibilitychange",ensureWave);
+function drawWave(d){
+  const c=$("#vWave");if(!c)return;
+  const dpr=window.devicePixelRatio||1,w=Math.max(1,c.clientWidth),h=Math.max(1,c.clientHeight);
+  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);}
+  const g=c.getContext("2d");g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);
+  const cs=getComputedStyle(document.documentElement);
+  const hot=cs.getPropertyValue("--accent").trim()||"#d9822b";
+  const cold=cs.getPropertyValue("--content-muted").trim()||"#888";
+  const mid=h/2;
+  g.globalAlpha=.35;g.fillStyle=cold;g.fillRect(0,mid-.5,w,1);g.globalAlpha=1;
+  if(!d||!d.hi||!d.hi.length)return;
+  const N=200,n=d.hi.length,step=w/N,thr=d.threshold||0;
+  // Square-root scale: quiet speech is a few percent of full scale, and on a
+  // linear axis it would be a flat line you cannot tell from silence.
+  const s=v=>Math.sign(v)*Math.sqrt(Math.abs(v));
+  for(let i=0;i<n;i++){
+    const x=(N-n+i)*step;
+    const top=mid-s(d.hi[i])*mid*.95, bot=mid-s(d.lo[i])*mid*.95;
+    g.fillStyle=(d.rms[i]>=thr&&thr>0)?hot:cold;
+    g.fillRect(x,Math.min(top,bot),Math.max(1,step*.7),Math.max(1,Math.abs(bot-top)));
+  }
 }
 
 async function vcmd(name){
+  if(name==="log"){return logPoint();}
+  await sendDraft();
   let r;
   try{r=await api.voice_command(name,"");}catch(e){r={error:"Bridge not ready."};}
   if(r&&r.error)toast(r.error,"err");
   refreshVoice();
+  api.get_state().then(s=>{if(s&&!s.error){state=s;renderMode();}}).catch(()=>{});
 }
 $("#vLog").addEventListener("click",()=>vcmd("log"));
 $("#vSave").addEventListener("click",()=>vcmd("save"));
@@ -784,6 +958,7 @@ $("#voiceBtn").addEventListener("click",async()=>{
   renderVoice();
   if(r&&r.warn)toast(r.warn,"err");
   else if(!voice.enabled)toast("Always-on voice off.");
+  refreshVoice();
 });
 $("#miniBtn").addEventListener("click",()=>{
   const next=!document.body.classList.contains("mini");
@@ -791,17 +966,8 @@ $("#miniBtn").addEventListener("click",()=>{
   api.set_popup_mini(next);     // round-trip and the bar should not lag it
 });
 
-function bootVoice(){
-  api.get_voice().then(v=>{
-    if(!v||v.error)return;
-    const el=$("#vHint");
-    if(el)el.textContent=(v.hotkeys||[]).map(x=>x.combo+" "+x.command).join("  \u00b7  ");
-    voiceState(v.buffer||{});
-  }).catch(()=>{});
-}
-
 function boot(){
-  bootVoice();
+  refreshVoice();
   api.get_state().then(r=>{
     state=r;
     const cfg=r.config||{};
@@ -810,8 +976,8 @@ function boot(){
     const cb=cfg.clipboard||{};
     $("#hkLabel").textContent=combo(cfg.hotkey||{})+" toggles"+(cb.enabled?" · "+combo({modifiers:cb.modifiers,key:cb.key||"V"})+" attaches the clipboard":"");
     $("#liveDot").hidden=r.topics.filter(t=>t.status==="open").length===0;
-    renderMode();
-    setTimeout(()=>{const el=$("#ptText");if(el)el.focus();},150);
+    renderMode();renderAtt();
+    setTimeout(()=>{const el=box();if(el)el.focus();},150);
   });
 }
 function applyTheme(pref){
@@ -824,7 +990,7 @@ function popupShown(){
   refreshVoice();
   api.get_state().then(r=>{if(r&&!r.error){state=r;
     applyTheme(((r.config||{}).appearance||{}).theme||"system");renderMode();}}).catch(()=>{});
-  setTimeout(()=>{const el=$("#ptText");if(el)el.focus();},120);
+  setTimeout(()=>{const el=box();if(el)el.focus();},120);
 }
 if(window.pywebview){boot();}else{window.addEventListener("pywebviewready",boot);}
 
@@ -975,6 +1141,14 @@ main{overflow-y:auto;padding:22px}
 .grow{flex:1;min-width:0}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+/* Settings › voice. The command table, the microphone wave, the sentence
+   to read for the voiceprint. */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+.tbl tr:last-child td{border-bottom:0}
+.mwave{display:block;width:100%;height:48px;margin-top:8px;border-radius:var(--r-sm);background:var(--surface-sunken)}
+.spk-sent{margin-top:8px;padding:12px 14px;border-radius:var(--r-lg);background:var(--surface-sunken);
+  font-size:15px;line-height:1.55;font-weight:550}
 .mod{display:inline-flex;gap:6px;align-items:center}
 .mod input{width:15px;height:15px;accent-color:var(--accent)}
 .kkey{width:90px;text-align:center;text-transform:uppercase;letter-spacing:.1em}
@@ -2212,12 +2386,28 @@ function settingsHtml(){
   const jd=c.judge||{}, ji=state.judge_info||{};
   const jdModel=ji.model||"jev", jdTh=ji.thresholds||{};
   const vcMods=(vc.modifiers||["ctrl","alt"]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+");
-  const vcRows=(state.voiceGrammar||[]).map(g=>`<tr><td><b>${esc(g.say)}</b></td><td>${esc(g.summary)}</td></tr>`).join("");
+  const vcRows=(state.voiceGrammar||[]).map(g=>`<tr><td><b>${esc(g.say)}</b></td><td>${esc(g.summary)}</td><td dir="rtl" class="muted">${esc(g.persian||"")}</td></tr>`).join("");
+  // "session <name>" is the one form code cannot settle - "session Rust" is a
+  // command, "session times were short" is a sentence - so it waits for a
+  // second opinion, and without one it stays text. Say so here, not only on
+  // the first failed attempt.
+  const vcOpinion=state.voiceOpinion?`<p class="muted">&ldquo;Session&rdquo; and &ldquo;tab&rdquo; with a name are checked by the second opinion (below), which tells a name from a sentence.</p>`
+    :`<p class="muted" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:10px 12px"><b>&ldquo;Session&rdquo; and &ldquo;tab&rdquo; with a name need the second opinion</b> (below) to tell a name from a sentence. Without it they are kept as text. To force the command, start with &ldquo;trail&rdquo;: &ldquo;trail session Rust&rdquo;.</p>`;
   const vcHot=(state.voiceHotkeys||[]);
   const vcKeyRow=(id,name,label)=>`<label>${label}<input id="${id}" class="input" maxlength="12" value="${esc(vcKeys[name]||"")}"></label>`;
   const tgStatus=state.telegramStatus||{state:"off",detail:"",username:"",pairing_code:tg.pairing_code||"",token_source:"none"};
   const asrDevs=state.asrDevices||[];
-  const asrDeviceOpts=asrDevs.length?asrDevs.map(d=>`<option value="${esc(d.id)}" ${String(asr.device)===String(d.id)?"selected":""}>${esc(d.name)}</option>`).join(""):`<option value="">Default</option>`;
+  // Names, not indexes: a name survives a reboot and a USB microphone being
+  // plugged in. A saved microphone that is not connected stays listed, marked,
+  // rather than silently becoming a different one.
+  const asrDevSaved=String(asr.device||"");
+  const asrDeviceOpts=`<option value="" ${asrDevSaved===""?"selected":""}>System default</option>`+
+    asrDevs.map(d=>`<option value="${esc(d.id)}" ${asrDevSaved===String(d.id)?"selected":""}>${esc(d.name)}${d.default?" (default)":""}</option>`).join("")+
+    ((asrDevSaved&&!asrDevs.some(d=>String(d.id)===asrDevSaved))?`<option value="${esc(asrDevSaved)}" selected>${esc(asrDevSaved)} (not connected)</option>`:"");
+  const asrLang=String(asr.language||"");
+  const asrLangOpts=[["","Persian or English"],["fa","Persian only"],["en","English only"]]
+    .map(([v,l])=>`<option value="${v}" ${asrLang===v?"selected":""}>${l}</option>`).join("");
+  const speakerBody=speakerHtml(state.speakerInfo);
   const styleOpts=CITE_STYLES.map(x=>`<option value="${x.id}" ${(sci.style||"numeric")===x.id?"selected":""}>${esc(x.label)}</option>`).join("");
   const styleHint=(CITE_STYLES.find(x=>x.id===(sci.style||"numeric"))||{}).hint||"";
   const tpls=state.templates||[];
@@ -2266,55 +2456,67 @@ function settingsHtml(){
       <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Always-on voice</b>
-          <p class="muted" style="margin:3px 0 0">The master switch. Listens on your microphone only while this is on, buffers what you say, and files it when you say a command or press a chord. Also on the tray menu and on the quick-capture popup.</p>
+          <p class="muted" style="margin:3px 0 0">The master switch. Listens on your microphone only while this is on. What you say lands as text in the quick-capture box, beside anything you type &mdash; fix a misheard word there like a typo &mdash; and is filed when you say &ldquo;log&rdquo; or press Log. Also on the tray menu and the quick-capture popup.</p>
         </div>
-        <button class="sw ${asr.enabled?"on":""}" id="asrSw" type="button" role="switch" aria-checked="${asr.enabled?"true":"false"}" aria-label="Enable auto-log speech as notes" style="flex:none"><span class="kn"></span></button>
+        <button class="sw ${asr.enabled?"on":""}" id="asrSw" type="button" role="switch" aria-checked="${asr.enabled?"true":"false"}" aria-label="Always-on voice" style="flex:none"><span class="kn"></span></button>
       </div>
       <div class="grid3" style="margin-top:12px">
         <label>Endpoint<input id="asrEndpoint" class="input" placeholder="https://openrouter.ai/api/v1" value="${esc(asr.endpoint||"")}"></label>
         <label>Model<input id="asrModel" class="input" placeholder="whisper-1" value="${esc(asr.model||"whisper-1")}"></label>
-        <label>Microphone<select id="asrDevice" class="input">${asrDeviceOpts}</select></label>
+        <label>Language<select id="asrLang" class="input">${asrLangOpts}</select></label>
       </div>
-      <p class="muted">Any OpenAI-compatible /audio/transcriptions endpoint &mdash; OpenAI, Groq&hellip; For Groq, use <b>https://api.groq.com/openai/v1</b> with model <b>whisper-large-v3-turbo</b>.</p>
+      <p class="muted">Any OpenAI-compatible /audio/transcriptions endpoint &mdash; OpenAI, Groq&hellip; For Groq, use <b>https://api.groq.com/openai/v1</b> with model <b>whisper-large-v3-turbo</b>. Transcripts are <b>Persian or English only</b>: if the transcriber answers in a third language, the clip is decoded again as Persian or English.</p>
       <div class="row">
         <label class="grow" style="min-width:200px">API key<input id="asrKey" class="input" type="password" placeholder="sk-…" value="${esc(asr.api_key||"")}"></label>
         <button class="btn ghost" id="asrShow">Show</button>
         <button class="btn primary" id="asrSave">Save settings</button>
       </div>
-      <label style="display:block;margin-top:12px">Sensitivity
+      <div class="row" style="margin-top:12px;align-items:flex-end">
+        <label class="grow" style="min-width:220px">Microphone<select id="asrDevice" class="input">${asrDeviceOpts}</select></label>
+        <button class="btn ghost" id="mtBtn" type="button">${micTestOn?"Stop test":"Test microphone"}</button>
+      </div>
+      <canvas class="mwave" id="mtWave" aria-label="Microphone level"></canvas>
+      <div class="muted" id="mtOut" style="min-height:16px">${micTestOn?esc(micNote):esc(asrDevs.length+" microphone"+(asrDevs.length===1?"":"s")+" found. Speakers, loopback and duplicate driver entries are left out.")}</div>
+      <label style="display:block;margin-top:8px">Sensitivity
         <input id="asrSensitivity" type="range" min="0" max="100" value="${asr.sensitivity!=null?asr.sensitivity:50}" style="width:100%;accent-color:var(--accent);margin-top:6px">
       </label>
-      <div class="row"><button class="btn ghost sm" id="asrTest">Test 5 seconds</button><span class="muted" id="asrTestOut"></span></div>
+      <p class="muted" style="margin-top:2px">In the test wave, the bars that light up are loud enough to count as speech at this sensitivity. Speak at your normal distance: your voice should light up, the room should not.</p>
+      <div class="row"><button class="btn ghost sm" id="asrTest">Transcribe 5 seconds</button><span class="muted" id="asrTestOut"></span></div>
       <div class="row" style="background:var(--accent-tint);border:1px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-top:12px;align-items:flex-start">
         <div>
-          <b style="display:block;font-size:12.5px;margin-bottom:4px">Voice logging is strictly opt-in.</b>
-          <p class="muted" style="margin:0">Trailmark only listens to your own microphone while this switch is on &mdash; never system audio, other apps, or call/loopback audio. Turning it off immediately stops capture. Nothing is recorded to disk; only the transcribed text becomes a logged point.</p>
+          <b style="display:block;font-size:12.5px;margin-bottom:4px">Voice is strictly opt-in.</b>
+          <p class="muted" style="margin:0">Trailmark only listens to your own microphone while this switch is on &mdash; never system audio, other apps, or call/loopback audio. Turning it off immediately stops capture. Nothing is recorded to disk; only the transcribed text lands in your draft.</p>
         </div>
       </div>
     </div>
     <div class="card glass fade">
+      <div class="card-h"><div class="card-t">Only my voice</div></div>
+      <p class="muted">For a room where other people talk. A small model on this machine compares every sentence with a voiceprint made from three sentences you read, <b>before</b> anything is sent to be transcribed. Other voices are held aside &mdash; not transcribed, not sent, not filed &mdash; and the last 12 stay listed below in case one was you. The exception is anything under a second, which is too short to check: see below. The voiceprint is 256 numbers in config.json; no audio is stored.</p>
+      ${speakerBody}
+    </div>
+    <div class="card glass fade">
       <div class="card-h"><div class="card-t">Commands &amp; hotkeys</div></div>
-      <p class="muted">How a buffered note becomes a point. These refine always-on voice above; none of them does anything while that switch is off.</p>
+      <p class="muted">How what you say becomes a point. These refine always-on voice above; none of them does anything while that switch is off.</p>
       <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
         <div style="flex:1;min-width:0">
-          <b style="font-size:12.5px;font-weight:650;display:block">Buffer, don&rsquo;t file each phrase</b>
-          <p class="muted" style="margin:3px 0 0">On means you decide when what you said becomes a point. Off is the older behaviour: every transcribed phrase is filed the moment it is heard.</p>
+          <b style="font-size:12.5px;font-weight:650;display:block">Compose, don&rsquo;t file each phrase</b>
+          <p class="muted" style="margin:3px 0 0">On: what you say joins the draft in quick capture, and you decide when it becomes a point. Off is the older behaviour: every transcribed phrase is filed the moment it is heard.</p>
         </div>
-        <button class="sw ${vc.always_on!==false?"on":""}" id="vcSw" type="button" role="switch" aria-checked="${vc.always_on!==false?"true":"false"}" aria-label="Buffer what I say" style="flex:none"><span class="kn"></span></button>
+        <button class="sw ${vc.always_on!==false?"on":""}" id="vcSw" type="button" role="switch" aria-checked="${vc.always_on!==false?"true":"false"}" aria-label="Compose what I say into a draft" style="flex:none"><span class="kn"></span></button>
       </div>
       <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Listen for spoken commands</b>
-          <p class="muted" style="margin:3px 0 0">A command only fires when the whole sentence <i>is</i> the command &mdash; &ldquo;trail log the sources for this one&rdquo; stays a note.</p>
+          <p class="muted" style="margin:3px 0 0">Say a command <i>on its own</i>: &ldquo;log&rdquo;, &ldquo;save&rdquo;, &ldquo;finish&rdquo;. &ldquo;Session&rdquo; and &ldquo;tab&rdquo; take a name: &ldquo;session Rust borrow checker&rdquo;. A command at the end of a sentence stays dictation &mdash; pause, then say it.</p>
         </div>
         <button class="sw ${vc.commands!==false?"on":""}" id="vcCmdSw" type="button" role="switch" aria-checked="${vc.commands!==false?"true":"false"}" aria-label="Listen for spoken commands" style="flex:none"><span class="kn"></span></button>
       </div>
-      <table class="tbl" style="margin-top:12px"><tbody>${vcRows||'<tr><td class="muted">No grammar loaded.</td></tr>'}</tbody></table>
-      <p class="muted">Spoken commands tolerate the mistakes transcribers make &mdash; <b>trial</b>, <b>trail safe</b>, <b>trail lock</b> all land. Persian works too: <b dir="rtl">&#1578;&#1585;&#1740;&#1604; &#1604;&#1575;&#1711;</b>.</p>
+      <table class="tbl" style="margin-top:12px"><tbody>${vcRows||'<tr><td class="muted">No commands loaded.</td></tr>'}</tbody></table>
+      ${vcOpinion}
       <div class="row" style="align-items:flex-start;gap:10px;margin-top:12px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Global hotkeys (${esc(vcMods)}+&hellip;)</b>
-          <p class="muted" style="margin:3px 0 0">The same five commands, without saying anything.</p>
+          <p class="muted" style="margin:3px 0 0">The same commands, without saying anything.</p>
         </div>
         <button class="sw ${vc.hotkeys!==false?"on":""}" id="vcHkSw" type="button" role="switch" aria-checked="${vc.hotkeys!==false?"true":"false"}" aria-label="Enable voice hotkeys" style="flex:none"><span class="kn"></span></button>
       </div>
@@ -2327,7 +2529,7 @@ function settingsHtml(){
       <div id="vcHkStatus" class="muted" style="margin-top:8px">${vcHot.length?vcHot.map(h=>esc(h.combo)+" &rarr; "+esc(h.command)+(h.registered?"":" <b class='taken'>(taken)</b>")).join(" &middot; "):"Not registered yet."}</div>
       <div class="row"><button class="btn primary" id="vcSave">Save settings</button></div>
       <div class="row" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:12px 14px;margin-top:10px;align-items:flex-start">
-        <p class="muted" style="margin:0">Removing a buffered note or source is done by hand, on the mini bar &mdash; never by voice. A misheard delete has no undo.</p>
+        <p class="muted" style="margin:0">Removing words or a source is done by hand, in the quick-capture box &mdash; never by voice. A misheard delete has no undo.</p>
       </div>
     </div>
     <div class="card glass fade">
@@ -2454,6 +2656,119 @@ function settingsHtml(){
   </div>`;
 }
 
+// ---- Settings › voice: the microphone test and "only my voice" ------------
+// Three sentences with different sounds in them. Read them in the language you
+// dictate in - mixing Persian and English is fine, and is what the check will
+// hear afterwards anyway.
+const SPK_SENTENCES=[
+  "I am writing down what I found today, so that I can check every source again later.",
+  "The quick brown fox jumps over the lazy dog, and then it runs all the way back home.",
+  "امروز چند منبع تازه پیدا کردم و می‌خواهم نکته‌های مهمش را یادداشت کنم."
+];
+let micTestOn=false, micRec=null, micTimer=null, spkRedo=false, micNote="", spkNote="";
+
+function speakerHtml(sp){
+  if(!sp)return `<p class="muted">Loading…</p>`;
+  const held=(sp.held||[]);
+  const heldHtml=held.length?`
+      <div style="margin-top:14px"><b style="font-size:12.5px;font-weight:650">Held aside</b>
+      <span class="muted"> &middot; newest last &middot; kept in memory until Trailmark closes</span></div>
+      <table class="tbl" style="margin-top:6px"><tbody>${held.map(h=>`<tr>
+        <td>${esc(h.at)}</td><td>${esc(h.seconds)} s</td>
+        <td>${esc(h.reason)}${h.score!=null?" &middot; match "+esc(h.score):""}${h.text?`<div dir="auto">&ldquo;${esc(h.text)}&rdquo;</div>`:""}</td>
+        <td style="white-space:nowrap;text-align:right"><button class="btn ghost sm" data-held-use="${h.id}">Use it</button>
+        <button class="btn ghost sm" data-held-drop="${h.id}">Drop</button></td></tr>`).join("")}</tbody></table>
+      <div class="row"><button class="btn ghost sm" id="heldDropAll">Drop all</button></div>`:"";
+  if(!sp.runtime)return `<p class="muted"><b>The voice check cannot run in this build:</b> ${esc(sp.runtime_error)}</p>`+heldHtml;
+  if(!sp.model)return `
+      <div class="row"><button class="btn primary" id="spkDl">Download the voice model (${esc(sp.model_mb)} MB)</button>
+      <span class="muted" id="spkOut">${esc(spkNote)}</span></div>
+      <p class="muted">WeSpeaker ResNet34, from the sherpa-onnx releases on GitHub. It is checked against a fixed SHA-256 before it is used, and saved next to your data.</p>`+heldHtml;
+  const rec=micRec==="enroll"||micRec==="check";
+  if(!sp.enrolled||spkRedo){
+    const n=sp.recorded||0;
+    const body=n<3?`
+      <div class="muted" style="margin-top:4px">Sentence ${n+1} of 3 &mdash; press Record, read it at your normal distance and volume, then press Stop.</div>
+      <div class="spk-sent" dir="auto">${esc(SPK_SENTENCES[n])}</div>`
+      :`<div class="spk-sent">Three sentences recorded.</div>`;
+    return body+`
+      <canvas class="mwave" id="spkWave" aria-label="Microphone level"></canvas>
+      <div class="row">
+        ${n<3?`<button class="btn ${rec?"danger":"primary"}" id="spkRec">${rec?"Stop":"Record"}</button>`
+             :`<button class="btn primary" id="spkSave">Save my voice</button>`}
+        ${n?`<button class="btn ghost" id="spkReset">Start over</button>`:""}
+        ${spkRedo?`<button class="btn ghost" id="spkCancel">Cancel</button>`:""}
+        <span class="muted" id="spkOut">${esc(spkNote)}</span>
+      </div>`+heldHtml;
+  }
+  const th=Number(sp.threshold||sp.default_threshold||0.55);
+  return `
+      <div class="row" style="align-items:flex-start;gap:10px;margin-top:6px">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px;font-weight:650;display:block">Only transcribe my voice</b>
+          <p class="muted" style="margin:3px 0 0">Enrolled ${esc((sp.enrolled_at||"").replace("T"," "))} from ${esc(sp.clips)} sentences (${esc(sp.seconds)} s of speech) &middot; the sentences matched each other at ${esc(sp.consistency)}.</p>
+        </div>
+        <button class="sw ${sp.enabled?"on":""}" id="spkSw" type="button" role="switch" aria-checked="${sp.enabled?"true":"false"}" aria-label="Only transcribe my voice" style="flex:none"><span class="kn"></span></button>
+      </div>
+      <label style="display:block;margin-top:10px">Match needed: <b id="spkThOut">${th.toFixed(2)}</b>
+        <input id="spkTh" type="range" min="30" max="90" step="1" value="${Math.round(th*100)}" style="width:100%;accent-color:var(--accent);margin-top:6px">
+      </label>
+      <p class="muted">${esc(sp.default_threshold)} is a starting point measured on three recorded speakers, not on you. Record a check: your own score should sit well above the line. If a colleague&rsquo;s score comes close to it, raise the line. Anything shorter than a second cannot be checked, so it <b>is</b> sent to be transcribed &mdash; that is what lets a quick &ldquo;log&rdquo; work &mdash; and is then used only if it is a command. Anything else that short is held with its words.</p>
+      <canvas class="mwave" id="spkWave" aria-label="Microphone level"></canvas>
+      <div class="row">
+        <button class="btn ${rec?"danger":"ghost"}" id="spkChk">${rec?"Stop and score":"Record a check"}</button>
+        <span class="muted" id="spkOut">${esc(spkNote)}</span>
+      </div>
+      <div class="row">
+        <button class="btn ghost sm" id="spkRedoBtn">Re-record my voice</button>
+        <button class="btn ghost sm" id="spkForget">Forget my voice</button>
+      </div>`+heldHtml;
+}
+
+// The wave in Settings. One loop for both canvases: the plain test and the
+// enrollment recording read the same monitor.
+function drawWaveOn(c,d){
+  if(!c)return;
+  const dpr=window.devicePixelRatio||1,w=Math.max(1,c.clientWidth),h=Math.max(1,c.clientHeight);
+  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);}
+  const g=c.getContext("2d");g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);
+  const cs=getComputedStyle(document.documentElement);
+  const hot=cs.getPropertyValue("--accent").trim()||"#d9822b";
+  const cold=cs.getPropertyValue("--content-muted").trim()||"#888";
+  const mid=h/2;
+  g.globalAlpha=.35;g.fillStyle=cold;g.fillRect(0,mid-.5,w,1);g.globalAlpha=1;
+  if(!d||!d.hi||!d.hi.length)return;
+  const N=300,n=d.hi.length,step=w/N,thr=d.threshold||0;
+  const s=v=>Math.sign(v)*Math.sqrt(Math.abs(v));
+  for(let i=0;i<n;i++){
+    const x=(N-n+i)*step;
+    const top=mid-s(d.hi[i])*mid*.95, bot=mid-s(d.lo[i])*mid*.95;
+    g.fillStyle=(d.rms[i]>=thr&&thr>0)?hot:cold;
+    g.fillRect(x,Math.min(top,bot),Math.max(1,step*.7),Math.max(1,Math.abs(bot-top)));
+  }
+}
+function micLoop(){
+  clearTimeout(micTimer);micTimer=null;
+  if(tab!=="settings"){if(micTestOn||micRec)stopMic();return;}
+  if(!micTestOn&&!micRec)return;
+  Promise.resolve(api.mic_levels(300)).then(d=>{
+    drawWaveOn($("#mtWave"),d);drawWaveOn($("#spkWave"),d);
+    if(d&&d.error){const o=$("#mtOut");if(o)o.textContent=d.error;}
+    // The monitor stops itself after 30 s so a forgotten test does not hold
+    // the microphone; the button follows it.
+    if(d&&d.source==="test"&&d.running===false&&micTestOn&&!micRec){micTestOn=false;renderMain();return;}
+    if(d&&d.source===""&&micTestOn){micTestOn=false;renderMain();return;}
+  }).catch(()=>{}).finally(()=>{if(micTestOn||micRec)micTimer=setTimeout(micLoop,80);});
+}
+function stopMic(){
+  micTestOn=false;micRec=null;clearTimeout(micTimer);micTimer=null;
+  Promise.resolve(api.mic_test_stop()).catch(()=>{});
+}
+async function refreshSpeaker(){
+  try{const r=await api.speaker_status();if(r&&!r.error)state.speakerInfo=r;}catch(e){}
+  if(tab==="settings")renderMain();
+}
+
 function asrState(state,detail){
   const chip=$("#asrChip");
   if(!chip)return;
@@ -2486,28 +2801,31 @@ function asrState(state,detail){
 }
 window.asrState=asrState;
 
-// Always-on voice. The full window is not the capture surface - the mini bar
-// is - so this is a status chip, not a second copy of the buffer: how many
-// thoughts are waiting, and the one action that files them.
-let mainVoice={count_comments:0,count_sources:0,always_on:true,listening:false,
-               state:"off",detail:"",topic:""};
+// Always-on voice. The full window is not the capture surface - quick capture
+// is - so this is a status chip: what is waiting in the draft, and whether
+// the voice check has held anything aside.
+let mainVoice={draft:{words:0,count_sources:0},always_on:true,listening:false,
+               state:"off",detail:"",topic:"",held:0};
 function voiceState(payload){
   if(payload&&typeof payload==="object"&&!payload.error)
     mainVoice=Object.assign(mainVoice,payload);
+  const sp=state.speakerInfo;
+  if(tab==="settings"&&sp&&(sp.held||[]).length!==(mainVoice.held||0))refreshSpeaker();
   const chip=$("#voiceChip");
   if(!chip)return;
   chip.classList.remove("show","listening","logged","error");
   const live=!!(mainVoice.always_on&&mainVoice.listening);
   if(!live){chip.innerHTML="";return;}
-  const cc=mainVoice.count_comments||0,cs=mainVoice.count_sources||0;
+  const d=mainVoice.draft||{},words=d.words||0,cs=d.count_sources||0,held=mainVoice.held||0;
   chip.classList.add("show");
-  chip.classList.add(mainVoice.state==="error"?"error":(cc||cs)?"logged":"listening");
+  chip.classList.add(mainVoice.state==="error"?"error":(words||cs)?"logged":"listening");
   chip.innerHTML='<span class="tx"></span>';
   let txt;
   if(mainVoice.state==="error")txt=mainVoice.detail||"Voice error";
-  else if(cc||cs)txt="Waiting to log: "+cc+(cc===1?" note":" notes")+
-    (cs?(" \u00b7 "+cs+(cs===1?" source":" sources")):"");
+  else if(words||cs)txt="In the draft: "+words+(words===1?" word":" words")+
+    (cs?(" · "+cs+(cs===1?" source":" sources")):"");
   else txt="Voice ready";
+  if(held&&mainVoice.state!=="error")txt+=" · "+held+" held";
   chip.querySelector(".tx").textContent=txt;
   const sw=$("#vcSw");
   if(sw){sw.classList.toggle("on",!!mainVoice.always_on);
@@ -2626,9 +2944,13 @@ function bindSettings(){
     api.get_voice().then(v=>{
       if(!v||v.error){state.voiceGrammar=[];return;}
       state.voiceGrammar=v.grammar||[];state.voiceHotkeys=v.hotkeys||[];
-      voiceState(v.buffer||{});render();
+      state.voiceOpinion=!!v.second_opinion;
+      voiceState(v.draft||{});render();
     }).catch(()=>{state.voiceGrammar=[];});
   }
+
+  if(state.speakerInfo===undefined){state.speakerInfo=null;refreshSpeaker();}
+  if(micTestOn||micRec)micLoop();
 
   // --- Telegram bridge ---
   if(!state.telegramStatus){
@@ -2641,8 +2963,8 @@ function bindSettings(){
       endpoint:$("#asrEndpoint").value,
       model:$("#asrModel").value,
       api_key:$("#asrKey").value,
-      language:"",
-      device:devVal!==""?Number(devVal):"",
+      language:$("#asrLang")?$("#asrLang").value:"",
+      device:devVal,
       sensitivity:Number($("#asrSensitivity").value)||0,
     };
   }
@@ -2764,6 +3086,141 @@ function bindSettings(){
     const r=await api.test_asr(5);
     if(r&&r.error){out.textContent="";toast(r.error,"err");}
     else out.textContent=(r&&r.text)?r.text:"(no speech detected)";
+  });
+
+  // --- the microphone test ---
+  async function startMicTest(){
+    const devEl=$("#asrDevice"),dev=devEl?devEl.value:"";
+    const o=$("#mtOut");if(o)o.textContent="Opening the microphone…";
+    let r;
+    try{r=await api.mic_test_start(dev,Number(($("#asrSensitivity")||{}).value||50));}
+    catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error){micTestOn=false;micNote="";renderMain();
+      const o2=$("#mtOut");if(o2)o2.textContent=(r&&r.error)||"Could not open the microphone.";return;}
+    micRec=null;micTestOn=true;
+    const saved=String(((state.config||{}).asr||{}).device||"");
+    micNote=r.shared?"Voice is on, so this is the live microphone at the saved sensitivity."
+      :(r.note||"Listening - speak, and watch the wave.")+
+       (dev!==saved?" Press Save settings to use this microphone.":"");
+    renderMain();micLoop();
+  }
+  const mtBtn=$("#mtBtn");
+  if(mtBtn) mtBtn.addEventListener("click",()=>{
+    if(micTestOn){stopMic();micNote="";renderMain();return;}
+    startMicTest();
+  });
+  ["asrDevice","asrSensitivity"].forEach(id=>{
+    const el=$("#"+id);
+    if(el) el.addEventListener("change",()=>{if(micTestOn)startMicTest();});
+  });
+
+  // --- only my voice ---
+  const spkDl=$("#spkDl");
+  if(spkDl) spkDl.addEventListener("click",async()=>{
+    spkDl.disabled=true;
+    const o=$("#spkOut");if(o)o.textContent="Downloading…";
+    let r;try{r=await api.speaker_download();}catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error){spkDl.disabled=false;spkNote=(r&&r.error)||"Download failed.";
+      const o2=$("#spkOut");if(o2)o2.textContent=spkNote;return;}
+    spkNote="";state.speakerInfo=r;renderMain();toast("Voice model downloaded and verified.");
+  });
+  const spkRec=$("#spkRec");
+  if(spkRec) spkRec.addEventListener("click",async()=>{
+    if(micRec==="enroll"){
+      micRec=null;clearTimeout(micTimer);
+      let r;try{r=await api.speaker_record_stop();}catch(e){r={error:"Bridge not ready."};}
+      spkNote=(r&&r.error)?r.error:("Kept "+r.seconds+" s of speech.");
+      if(r&&r.error)toast(r.error,"err");
+      await refreshSpeaker();return;
+    }
+    micTestOn=false;
+    let r;try{r=await api.speaker_record_start();}catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error){toast((r&&r.error)||"Could not open the microphone.","err");return;}
+    micRec="enroll";spkNote="Recording - read the sentence, then press Stop.";renderMain();micLoop();
+  });
+  const spkSave=$("#spkSave");
+  if(spkSave) spkSave.addEventListener("click",async()=>{
+    spkSave.disabled=true;
+    let r;try{r=await api.speaker_enroll_finish();}catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error){spkSave.disabled=false;toast((r&&r.error)||"Could not save the voiceprint.","err");
+      spkNote=(r&&r.error)||"";await refreshSpeaker();return;}
+    spkRedo=false;spkNote="Saved. From now on only your voice is transcribed.";
+    state.speakerInfo=r;renderMain();toast("Voiceprint saved - the check is on.");
+  });
+  const spkReset=$("#spkReset");
+  if(spkReset) spkReset.addEventListener("click",async()=>{
+    if(micRec)stopMic();spkNote="";
+    try{const r=await api.speaker_enroll_reset();if(r&&!r.error)state.speakerInfo=r;}catch(e){}
+    renderMain();
+  });
+  const spkCancel=$("#spkCancel");
+  if(spkCancel) spkCancel.addEventListener("click",async()=>{
+    if(micRec)stopMic();spkRedo=false;spkNote="";
+    try{const r=await api.speaker_enroll_reset();if(r&&!r.error)state.speakerInfo=r;}catch(e){}
+    renderMain();
+  });
+  const spkRedoBtn=$("#spkRedoBtn");
+  if(spkRedoBtn) spkRedoBtn.addEventListener("click",async()=>{
+    spkRedo=true;spkNote="The old voiceprint stays in use until you save the new one.";
+    try{const r=await api.speaker_enroll_reset();if(r&&!r.error)state.speakerInfo=r;}catch(e){}
+    renderMain();
+  });
+  const spkForget=$("#spkForget");
+  if(spkForget) spkForget.addEventListener("click",async()=>{
+    if(!confirm("Forget your voiceprint? The check turns off, and every voice is transcribed again."))return;
+    let r;try{r=await api.speaker_save({forget:true});}catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error)return toast((r&&r.error)||"Could not forget it.","err");
+    spkNote="";state.speakerInfo=r;renderMain();toast("Voiceprint forgotten.");
+  });
+  const spkSw=$("#spkSw");
+  if(spkSw) spkSw.addEventListener("click",async()=>{
+    const next=!spkSw.classList.contains("on");
+    let r;try{r=await api.speaker_save({enabled:next});}catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error)return toast((r&&r.error)||"Could not change it.","err");
+    state.speakerInfo=r;renderMain();
+    toast(next?"Only your voice is transcribed.":"Every voice is transcribed again.");
+  });
+  const spkTh=$("#spkTh");
+  if(spkTh){
+    spkTh.addEventListener("input",()=>{const o=$("#spkThOut");if(o)o.textContent=(spkTh.value/100).toFixed(2);});
+    spkTh.addEventListener("change",async()=>{
+      let r;try{r=await api.speaker_save({threshold:Number(spkTh.value)/100});}catch(e){r={error:"Bridge not ready."};}
+      if(!r||r.error)return toast((r&&r.error)||"Could not save it.","err");
+      state.speakerInfo=r;
+    });
+  }
+  const spkChk=$("#spkChk");
+  if(spkChk) spkChk.addEventListener("click",async()=>{
+    if(micRec==="check"){
+      micRec=null;clearTimeout(micTimer);
+      let r1;try{r1=await api.speaker_record_stop();}catch(e){r1={error:"Bridge not ready."};}
+      if(!r1||r1.error){spkNote=(r1&&r1.error)||"Nothing recorded.";await refreshSpeaker();return;}
+      let r;try{r=await api.speaker_check();}catch(e){r={error:"Bridge not ready."};}
+      spkNote=(!r||r.error)?((r&&r.error)||"Could not score it.")
+        :("Match "+r.score.toFixed(2)+" against a line of "+Number(r.threshold).toFixed(2)+" - "+
+          (r.match?"let through.":"this would be held aside."));
+      await refreshSpeaker();return;
+    }
+    micTestOn=false;
+    let r;try{r=await api.speaker_record_start();}catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error){toast((r&&r.error)||"Could not open the microphone.","err");return;}
+    micRec="check";spkNote="Recording - say a sentence or two, then press Stop.";renderMain();micLoop();
+  });
+  document.querySelectorAll("[data-held-use]").forEach(b=>b.addEventListener("click",async()=>{
+    b.disabled=true;
+    let r;try{r=await api.held_use(Number(b.dataset.heldUse));}catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error){b.disabled=false;toast((r&&r.error)||"Could not use it.","err");return;}
+    toast(r.text?"Added to the draft.":"Nothing was said in that clip.");
+    await refreshSpeaker();
+  }));
+  document.querySelectorAll("[data-held-drop]").forEach(b=>b.addEventListener("click",async()=>{
+    try{await api.held_drop(Number(b.dataset.heldDrop));}catch(e){}
+    await refreshSpeaker();
+  }));
+  const heldDropAll=$("#heldDropAll");
+  if(heldDropAll) heldDropAll.addEventListener("click",async()=>{
+    try{await api.held_drop(null);}catch(e){}
+    await refreshSpeaker();
   });
 
   // --- Telegram bridge ---
