@@ -284,6 +284,28 @@ label.mod .muted{font-weight:400}
   background:var(--surface-raised);transition:transform .14s var(--ease-standard)}
 .sw.on .kn{transform:translateX(15px);background:var(--accent-content)}
 
+/* --- Trailmark dialogs: the styled replacement for native prompt()/confirm().
+   The browser's own ("This page says…") box cannot be themed, so every naming
+   and every destructive question goes through this instead. Same markup in the
+   popup and the main window: a scrim plus a raised card built from the design
+   tokens above, so light/dark follow the theme for free. One instance at a
+   time; Esc / scrim click / Cancel resolves as cancel. */
+.tm-back{position:fixed;inset:0;z-index:200;display:flex;align-items:center;
+  justify-content:center;padding:18px;background:var(--scrim);animation:fade .16s ease}
+.tm-modal{width:min(420px,100%);max-height:calc(100vh - 36px);overflow-y:auto;
+  background:var(--surface-raised);border:1px solid var(--border-strong);
+  border-radius:var(--r-xl);box-shadow:var(--shadow-3);
+  padding:20px 20px 16px;display:flex;flex-direction:column;gap:10px}
+.tm-modal h3{margin:0;font-family:var(--font-display);font-size:15px;font-weight:700;
+  color:var(--content);word-break:break-word}
+.tm-modal p{margin:0;font-size:13px;line-height:1.55;color:var(--content-secondary);
+  word-break:break-word}
+.tm-modal p b{color:var(--content)}
+.tm-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap}
+.tm-actions .btn{min-width:96px}
+body.mini .tm-back{padding:10px}
+body.mini .tm-modal{padding:14px;gap:8px}
+
 """
 
 POPUP_HTML = """<!doctype html>
@@ -300,15 +322,26 @@ header img{width:auto;height:26px;object-fit:contain}
 .pulse{flex:none;width:7px;height:7px;border-radius:50%;background:var(--accent);
   box-shadow:0 0 0 3px var(--accent-tint);animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
-section{overflow-y:auto;flex:1}
+#unifiedSec{overflow-y:auto;flex:1}
 .card{padding:14px;display:flex;flex-direction:column;gap:9px}
+.unified{gap:12px}
+#voiceSec{display:flex;flex-direction:column;gap:7px}
+.udiv{height:1px;background:var(--border);margin:2px 0}
 .big{font-size:17px;font-weight:700}
 .trow{display:flex;gap:8px;align-items:center}
 .srcbar{display:flex;gap:7px}
+.srcbar .grow{flex:1;min-width:0}
 .attrow{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 .logrow{display:flex;gap:9px;margin-top:2px}
 .logrow .btn.primary{flex:1}
 .hint{font-size:11px;color:var(--content-muted);text-align:center;letter-spacing:.03em}
+.keys{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:6px}
+.kkey{font:600 10.5px var(--font-mono);padding:3px 8px;border-radius:var(--r-sm);
+  background:var(--surface-sunken);border:1px solid var(--border);
+  color:var(--content-muted);white-space:nowrap;
+  transition:background .3s,color .3s,border-color .3s}
+.kkey b{font-weight:700}
+.kkey.flash{background:var(--accent-tint);color:var(--accent);border-color:var(--accent)}
 .recent{font-size:11.5px;color:var(--content-secondary);border-top:1px solid var(--border);
   padding-top:8px;margin-top:2px}
 .recent b{color:var(--content);font-weight:600}
@@ -316,17 +349,20 @@ section{overflow-y:auto;flex:1}
 /* Voice and typing write into ONE draft.
 
    The draft lives in Python (voicecmd.Draft) because dictation lands there
-   from threads this page cannot see. The box below is a view of it: what was
-   said appears as text, and a misheard word is fixed the way a typo is.
+   from threads this page cannot see. The point box below is a view of it:
+   what was said is APPENDED to what was typed (voicecmd.Draft.append via
+   _join), and a misheard word is fixed the way a typo is.
 
+   Quick capture is ONE unified card under the top bar: voice bar (state +
+   wave), topic (start/select), then the point composer as-is. The old
+   Source/Tab/Session/Finish voice buttons are gone on purpose - those verbs
+   still work by voice and by global hotkey, but the card has a single action
+   row (Log point / Clear / Hide) so there is one place to file, not two.
+   Removing a source stays in the full view: at 150px tall a delete target
+   sits a few pixels from Log, and a mis-click there has no undo.
    The mini bar is not a second window - it is THIS window resized by ctypes
-   (see Controller.set_popup_mini) with a class on <body>. A real second
-   window would double the hotkey, focus, topmost and GIL-deadlock surface
-   for what is a layout change. Removing a source stays in the full view:
-   at 150px tall a delete target sits a few pixels from Log, and a mis-click
-   there has no undo. */
-#voiceSec{flex:none;overflow:visible}
-.vcard{padding:11px 12px;display:flex;flex-direction:column;gap:7px}
+   (see Controller.set_popup_mini) with a class on <body>. */
+.vcard{padding:0;display:flex;flex-direction:column;gap:7px}
 .vhead{display:flex;align-items:center;gap:7px;min-width:0}
 .vstate{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650;
   padding:3px 9px;border-radius:var(--r-pill);background:var(--surface-sunken);
@@ -351,9 +387,8 @@ button.vpill{cursor:pointer}
 .vheard{font-size:12px;line-height:1.35;color:var(--content-secondary);min-height:16px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .vdraft{display:none}
-.vacts{display:flex;gap:5px}
+.vacts{display:none;gap:5px}
 .vacts .btn{flex:1;font-size:11px;padding:6px 4px;min-width:0}
-.vacts .mini-only{display:none}
 .icobtn{flex:none;display:inline-flex;align-items:center;justify-content:center;
   width:24px;height:24px;padding:0;border-radius:var(--r-sm);border:1px solid var(--border);
   background:transparent;color:var(--content-secondary);cursor:pointer}
@@ -369,21 +404,23 @@ button.vpill{cursor:pointer}
 #ptText{min-height:92px}
 .kinds .k.auto{font-style:italic}
 
-/* Collapsed. The window is 396x150 physical, so everything that is not the
-   voice bar is removed from the flow rather than merely scrolled past. */
+/* Collapsed. The window is 396x176 physical, so everything that is not the
+   voice bar is removed from the flow rather than merely scrolled past.
+   The unified card stays a single card - mini only hides the topic/point
+   blocks and the shortcut hints, keeping voice bar + draft tail + Log. */
 body.mini .win{padding:8px;gap:5px}
 body.mini header{padding:5px 8px;gap:7px}
 body.mini header img{height:18px}
 body.mini .app{font-size:12px}
 body.mini .hk,body.mini #openApp{display:none}
-body.mini #noTopic,body.mini #logPanel{display:none!important}
-body.mini .vcard{padding:8px 10px;gap:5px}
+body.mini #noTopic,body.mini #topicSelWrap,body.mini #logPanel,
+body.mini #keyHints,body.mini #recent,body.mini .udiv{display:none!important}
+body.mini .card.unified{padding:8px 10px;gap:5px}
 body.mini .vwave{height:22px}
 body.mini .vheard{display:none}
 body.mini .vdraft{display:block;font-size:11.5px;line-height:1.3;color:var(--content);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px}
-body.mini .vacts .full-only{display:none}
-body.mini .vacts .mini-only{display:block}
+body.mini .vacts{display:flex}
 body.mini .vtopic{display:none}
 </style></head><body>
 <div class="win">
@@ -398,82 +435,86 @@ body.mini .vtopic{display:none}
     <div class="pulse" id="liveDot"></div>
   </header>
 
-  <section id="voiceSec" hidden>
-    <div class="card glass fade vcard">
-      <div class="vhead">
-        <span class="vstate" id="vState"><span class="d"></span><span class="tx">Voice off</span></span>
-        <span class="vcounts" id="vCounts"></span>
-        <span class="vtopic" id="vTopic" dir="auto"></span>
-      </div>
-      <canvas class="vwave" id="vWave" aria-label="Microphone level"></canvas>
-      <div class="vheard" id="vHeard" dir="auto"></div>
-      <div class="vdraft" id="vDraft" dir="auto"></div>
-      <div class="vacts">
-        <button class="btn primary mini-only" id="vLog" type="button" title="Same as saying “log”">Log</button>
-        <button class="btn ghost" id="vSave" type="button" title="Attach the clipboard - same as saying “save”">Source</button>
-        <button class="btn ghost full-only" id="vTab" type="button" title="A new sub-topic - same as saying “tab”">Tab</button>
-        <button class="btn ghost full-only" id="vSess" type="button" title="A new topic - same as saying “session”">Session</button>
-        <button class="btn ghost" id="vFin" type="button" title="File the draft and close the topic - same as saying “finish”">Finish</button>
-      </div>
-    </div>
-  </section>
-
-  <section id="noTopic" hidden>
-    <div class="card glass fade">
-      <div class="big">Start a topic</div>
-      <p class="muted" id="ntWhy">No open topic yet. Give this research a name to begin.</p>
-      <input id="ntTitle" class="input" dir="auto" placeholder="Topic name — e.g. Rust borrow checker">
-      <div class="logrow">
-        <button id="ntGo" class="btn primary">Start topic</button>
-        <button id="ntCancel" class="btn ghost" hidden>Cancel</button>
-      </div>
-    </div>
-  </section>
-
-  <section id="logPanel">
-    <div class="card glass fade">
-      <div class="trow" id="tpRow">
-        <select id="tpSel" class="input"></select>
-        <button id="tpNew" class="chip">+ New</button>
-      </div>
-      <div id="subRow">
-        <label>Sub-topic</label>
-        <div class="chips" id="subChips"></div>
-      </div>
-      <div id="ptKinds" hidden>
-        <label>This point is</label>
-        <div class="kinds">
-          <button class="k auto" data-kind="">Auto</button>
-          <button class="k" data-kind="claim">Claim</button>
-          <button class="k" data-kind="note">My note</button>
-          <button class="k" data-kind="quote">Quotation</button>
+  <section id="unifiedSec">
+    <div class="card glass fade unified">
+      <div id="voiceSec">
+        <div class="vhead">
+          <span class="vstate" id="vState"><span class="d"></span><span class="tx">Voice off</span></span>
+          <span class="vcounts" id="vCounts"></span>
+          <span class="vtopic" id="vTopic" dir="auto"></span>
         </div>
-        <div class="k-hint" id="ptKindHint"></div>
+        <canvas class="vwave" id="vWave" aria-label="Microphone level"></canvas>
+        <div class="vheard" id="vHeard" dir="auto"></div>
+        <div class="vdraft" id="vDraft" dir="auto"></div>
+        <div class="vacts">
+          <button class="btn primary" id="vLog" type="button" title="Same as saying “log”">Log</button>
+        </div>
       </div>
-      <div class="dhead"><label for="ptText">Point</label><span class="dmeta" id="ptMeta"></span></div>
-      <textarea id="ptText" class="input ta" dir="auto" rows="4" placeholder="Type, paste, or just talk — dictation lands here…" spellcheck="false"></textarea>
-      <div class="srcbar">
-        <input id="ptLink" class="input grow" placeholder="Paste a source link…">
-        <button id="ptLinkAdd" class="chip">+ Link</button>
-        <button id="ptLinkPaste" class="paste-btn" type="button" aria-label="Paste link from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
+      <div class="udiv"></div>
+      <div id="noTopic" hidden>
+        <div class="big">Start a topic</div>
+        <p class="muted" id="ntWhy">No open topic yet. Give this research a name to begin.</p>
+        <input id="ntTitle" class="input" dir="auto" placeholder="Topic name — e.g. Rust borrow checker">
+        <div class="logrow">
+          <button id="ntGo" class="btn primary">Start topic</button>
+          <button id="ntCancel" class="btn ghost" hidden>Cancel</button>
+        </div>
       </div>
-      <div class="srcbar">
-        <input id="ptStr" class="input grow" dir="auto" placeholder="Or a string citation…">
-        <button id="ptStrAdd" class="chip">+ String</button>
-        <button id="ptStrPaste" class="paste-btn" type="button" aria-label="Paste text from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
+      <div id="topicSelWrap">
+        <div class="trow" id="tpRow">
+          <select id="tpSel" class="input"></select>
+          <button id="tpNew" class="chip">+ New</button>
+        </div>
+        <div id="subRow">
+          <label>Sub-topic</label>
+          <div class="chips" id="subChips"></div>
+        </div>
       </div>
-      <div class="attrow">
-        <label class="chip">+ Screenshot<input id="ptShot" type="file" accept="image/*" hidden></label>
-        <button id="ptImgPaste" class="paste-btn" type="button" aria-label="Paste image from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
-        <div id="attChips" class="chips"></div>
+      <div class="udiv"></div>
+      <div id="logPanel">
+        <div id="ptKinds" hidden>
+          <label>This point is</label>
+          <div class="kinds">
+            <button class="k auto" data-kind="">Auto</button>
+            <button class="k" data-kind="claim">Claim</button>
+            <button class="k" data-kind="note">My note</button>
+            <button class="k" data-kind="quote">Quotation</button>
+          </div>
+          <div class="k-hint" id="ptKindHint"></div>
+        </div>
+        <div class="dhead"><label for="ptText">Point</label><span class="dmeta" id="ptMeta"></span></div>
+        <textarea id="ptText" class="input ta" dir="auto" rows="4" placeholder="Type, paste, or just talk — dictation lands here…" spellcheck="false"></textarea>
+        <div class="srcbar">
+          <input id="ptLink" class="input grow" placeholder="Paste a source link…">
+          <button id="ptLinkAdd" class="chip">+ Link</button>
+          <button id="ptLinkPaste" class="paste-btn" type="button" aria-label="Paste link from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
+        </div>
+        <div class="srcbar">
+          <input id="ptStr" class="input grow" dir="auto" placeholder="Or a string citation…">
+          <button id="ptStrAdd" class="chip">+ String</button>
+          <button id="ptStrPaste" class="paste-btn" type="button" aria-label="Paste text from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
+        </div>
+        <div class="attrow">
+          <label class="chip">+ Screenshot<input id="ptShot" type="file" accept="image/*" hidden></label>
+          <button id="ptImgPaste" class="paste-btn" type="button" aria-label="Paste image from clipboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="3" rx="1"/><path d="M6 4H4.5A1.5 1.5 0 0 0 3 5.5v11A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 15.5 4H14"/></svg></button>
+          <div id="attChips" class="chips"></div>
+        </div>
+        <div class="logrow">
+          <button id="ptGo" class="btn primary">Log point</button>
+          <button id="ptClear" class="btn ghost" title="Empty the draft - text and sources">Clear</button>
+          <button id="ptHide" class="btn ghost">Hide</button>
+        </div>
+        <div class="keys" id="keyHints">
+          <span class="kkey" data-k="toggle"><b>Ctrl+Alt+P</b> toggle</span>
+          <span class="kkey" data-k="attach"><b>Ctrl+Alt+V</b> attach</span>
+          <span class="kkey" data-k="log"><b>Ctrl+Alt+S</b> · Alt+Enter · say “log”</span>
+          <span class="kkey" data-k="session"><b>Ctrl+Alt+N</b> · say “session …”</span>
+          <span class="kkey" data-k="tab"><b>Ctrl+Alt+T</b> · say “tab …”</span>
+          <span class="kkey" data-k="finish"><b>Ctrl+Alt+F</b> · say “finish”</span>
+          <span class="kkey" data-k="hide"><b>Esc</b> hide</span>
+        </div>
+        <div class="recent" id="recent"></div>
       </div>
-      <div class="logrow">
-        <button id="ptGo" class="btn primary">Log point</button>
-        <button id="ptClear" class="btn ghost" title="Empty the draft - text and sources">Clear</button>
-        <button id="ptHide" class="btn ghost">Hide</button>
-      </div>
-      <div class="hint">Alt+Enter logs · Esc hides · say “log” to file what you dictated</div>
-      <div class="recent" id="recent"></div>
     </div>
   </section>
 </div>
@@ -493,9 +534,102 @@ const $=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const toast=(m,t="ok")=>{const d=document.createElement("div");d.className="toast "+t;d.textContent=m;
   document.getElementById("toasts").appendChild(d);setTimeout(()=>d.classList.add("out"),2200);setTimeout(()=>d.remove(),2600);};
+// --- Trailmark dialogs (styled prompt/confirm) --------------------------------
+// Native prompt()/confirm() render as unthemed browser chrome ("This page
+// says…"), so every naming / destructive question goes through these instead.
+// Same raised-card markup as the main window; text reaches the DOM through
+// textContent only, never innerHTML.
+let _tmSettle=null;
+function tmCloseDialog(result){
+  const back=document.querySelector(".tm-back");
+  if(back)back.remove();
+  if(_tmSettle){const f=_tmSettle;_tmSettle=null;try{f(result);}catch(e){}}
+}
+function tmConfirm(message,opts){
+  opts=opts||{};
+  return new Promise(resolve=>{
+    tmCloseDialog(undefined);
+    _tmSettle=resolve;
+    const prevFocus=document.activeElement;
+    const back=document.createElement("div");back.className="tm-back";
+    const box=document.createElement("div");box.className="tm-modal";
+    box.setAttribute("role","alertdialog");box.setAttribute("aria-modal","true");
+    const h=document.createElement("h3");h.textContent=opts.title||"Are you sure?";
+    const p=document.createElement("p");p.textContent=message;
+    const row=document.createElement("div");row.className="tm-actions";
+    const cancel=document.createElement("button");cancel.className="btn ghost";
+    cancel.type="button";cancel.textContent=opts.cancelText||"Cancel";
+    const ok=document.createElement("button");
+    ok.className="btn "+(opts.danger?"danger":"primary");
+    ok.type="button";ok.textContent=opts.okText||"Confirm";
+    row.appendChild(cancel);row.appendChild(ok);
+    box.appendChild(h);box.appendChild(p);box.appendChild(row);
+    back.appendChild(box);document.body.appendChild(back);
+    const done=v=>{if(prevFocus&&prevFocus.focus)try{prevFocus.focus();}catch(e){}tmCloseDialog(v);};
+    cancel.addEventListener("click",()=>done(false));
+    ok.addEventListener("click",()=>done(true));
+    back.addEventListener("mousedown",e=>{if(e.target===back)done(false);});
+    back.addEventListener("keydown",e=>{
+      if(e.key==="Escape"){e.preventDefault();done(false);}
+      if(e.key==="Enter"&&document.activeElement!==ok){e.preventDefault();done(true);}
+    });
+    setTimeout(()=>{try{ok.focus();}catch(e){}},30);
+  });
+}
+function tmPrompt(title,opts){
+  opts=opts||{};
+  return new Promise(resolve=>{
+    tmCloseDialog(undefined);
+    _tmSettle=resolve;
+    const prevFocus=document.activeElement;
+    const back=document.createElement("div");back.className="tm-back";
+    const box=document.createElement("div");box.className="tm-modal";
+    box.setAttribute("role","dialog");box.setAttribute("aria-modal","true");
+    const h=document.createElement("h3");h.textContent=title;
+    box.appendChild(h);
+    if(opts.hint){
+      const p=document.createElement("p");p.textContent=opts.hint;
+      box.appendChild(p);
+    }
+    const inp=document.createElement("input");
+    inp.className="input";inp.dir="auto";inp.spellcheck=false;
+    inp.placeholder=opts.placeholder||"";inp.value=opts.value||"";
+    inp.setAttribute("aria-label",title);
+    box.appendChild(inp);
+    const row=document.createElement("div");row.className="tm-actions";
+    const cancel=document.createElement("button");cancel.className="btn ghost";
+    cancel.type="button";cancel.textContent=opts.cancelText||"Cancel";
+    const ok=document.createElement("button");ok.className="btn primary";
+    ok.type="button";ok.textContent=opts.okText||"Add";
+    row.appendChild(cancel);row.appendChild(ok);
+    box.appendChild(row);
+    back.appendChild(box);document.body.appendChild(back);
+    const done=v=>{if(prevFocus&&prevFocus.focus)try{prevFocus.focus();}catch(e){}tmCloseDialog(v);};
+    cancel.addEventListener("click",()=>done(null));
+    const commit=()=>done(inp.value);
+    ok.addEventListener("click",commit);
+    back.addEventListener("mousedown",e=>{if(e.target===back)done(null);});
+    inp.addEventListener("keydown",e=>{
+      if(e.key==="Enter"){e.preventDefault();commit();}
+      else if(e.key==="Escape"){e.preventDefault();done(null);}
+      else if(e.key==="Tab"){/* let focus move to the buttons */}
+      e.stopPropagation();
+    });
+    back.addEventListener("keydown",e=>{if(e.key==="Escape"){e.preventDefault();done(null);}});
+    setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},30);
+  });
+}
 const byId=i=>state.topics.find(t=>t.id===i);
 const openTopics=()=>state.topics.filter(t=>t.status==="open");
 const fmtTime=iso=>{if(!iso)return"";const d=new Date(iso);return d.toLocaleString(undefined,{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});};
+// Gamification: flash the shortcut hint that matches the action just used.
+// Each .kkey carries data-k="toggle|attach|log|session|tab|finish|hide".
+function flashKey(name){
+  const el=document.querySelector('#keyHints [data-k="'+name+'"]');
+  if(!el)return;
+  el.classList.add("flash");
+  setTimeout(()=>el.classList.remove("flash"),900);
+}
 
 // Everything Python knows about the voice bar AND the draft, as last pushed.
 let voice={draft:{rev:0,text:"",origin:"",words:0,sources:[],count_sources:0,
@@ -611,6 +745,7 @@ function renderDraftMeta(){
 }
 
 async function logPoint(){
+  flashKey("log");
   await sendDraft();
   if(!box().value.trim()){
     toast((voice.draft.sources||[]).length?"Sources are attached - write or say the point too.":"Write the point first.","err");
@@ -646,12 +781,19 @@ let creating=false;
 function renderMode(){
   const opens=openTopics();
   const no=$("#noTopic");
-  no.hidden=!(creating||!opens.length);
-  $("#ntCancel").hidden=!opens.length;
-  $("#ntWhy").textContent=opens.length?"A new topic - what you log next goes there."
+  if(no)no.hidden=!(creating||!opens.length);
+  const tsw=$("#topicSelWrap");
+  if(tsw)tsw.hidden=!opens.length;
+  const ntC=$("#ntCancel");
+  if(ntC)ntC.hidden=!opens.length;
+  const ntW=$("#ntWhy");
+  if(ntW)ntW.textContent=opens.length?"A new topic - what you log next goes there."
     :"No open topic yet. Name one - or say “session” and a name.";
-  $("#tpRow").hidden=!opens.length;$("#subRow").hidden=!opens.length;
-  $("#ptGo").disabled=!opens.length;
+  const tpR=$("#tpRow"),sbR=$("#subRow");
+  if(tpR)tpR.hidden=!opens.length;
+  if(sbR)sbR.hidden=!opens.length;
+  const pg=$("#ptGo");
+  if(pg)pg.disabled=!opens.length;
   const kw=$("#ptKinds");
   const kind=((voice.draft||{}).meta||{}).kind||"";
   if(kw){
@@ -675,9 +817,10 @@ function renderSubs(){
   const chips=subs.map(s=>`<button class="chip ${cur===s?"active":""}" data-s="${esc(s)}">${esc(s)}</button>`).join("");
   wrap.innerHTML=`<button class="chip ${cur===""?"active":""}" data-s="">General</button>${chips}
     <button class="chip accent" id="subAdd">+ add</button>`;
-  wrap.querySelectorAll("button[data-s]").forEach(b=>b.addEventListener("click",()=>setMeta({topic_id:t.id,subtopic:b.dataset.s})));
-  $("#subAdd").addEventListener("click",()=>{
-    const name=prompt("New sub-topic name:");
+  wrap.querySelectorAll("button[data-s]").forEach(b=>b.addEventListener("click",()=>{flashKey("tab");setMeta({topic_id:t.id,subtopic:b.dataset.s});}));
+  $("#subAdd").addEventListener("click",async()=>{
+    flashKey("tab");
+    const name=await tmPrompt("New sub-topic",{hint:"Adds to "+t.title+".",placeholder:"Sub-topic name…",okText:"Add sub-topic"});
     if(!name||!name.trim())return;
     api.add_subtopic(t.id,name.trim()).then(r=>{
       if(r.error)return toast(r.error,"err");
@@ -719,6 +862,7 @@ async function addSource(type,value,msg){
 }
 
 $("#ntGo").addEventListener("click",async()=>{
+  flashKey("session");
   const title=$("#ntTitle").value;
   const before=new Set(state.topics.map(t=>t.id));
   const r=await api.start_topic(title);
@@ -731,21 +875,21 @@ $("#ntGo").addEventListener("click",async()=>{
 $("#ntCancel").addEventListener("click",()=>{creating=false;renderMode();});
 $("#ntTitle").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ntGo").click();});
 $("#tpSel").addEventListener("change",e=>setMeta({topic_id:e.target.value,subtopic:""}));
-$("#tpNew").addEventListener("click",()=>{creating=true;renderMode();$("#ntTitle").focus();});
+$("#tpNew").addEventListener("click",()=>{flashKey("session");creating=true;renderMode();$("#ntTitle").focus();});
 $("#ptLinkAdd").addEventListener("click",async()=>{
   const v=$("#ptLink").value.trim();if(!v)return;
   try{new URL(v);}catch(e){toast("That doesn't look like a URL.","err");return;}
-  if(await addSource("link",v,"Link added."))$("#ptLink").value="";
+  if(await addSource("link",v,"Link added.")){flashKey("attach");$("#ptLink").value="";}
 });
 $("#ptStrAdd").addEventListener("click",async()=>{
   const v=$("#ptStr").value.trim();if(!v)return;
-  if(await addSource("string",v,"Citation added."))$("#ptStr").value="";
+  if(await addSource("string",v,"Citation added.")){flashKey("attach");$("#ptStr").value="";}
 });
 $("#ptLink").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ptLinkAdd").click();});
 $("#ptStr").addEventListener("keydown",e=>{if(e.key==="Enter")$("#ptStrAdd").click();});
 $("#ptImgPaste").addEventListener("click",async()=>{
   const d=await api.read_clipboard();
-  if(d.type==="image")addSource("image",d.value,"Image pasted from the clipboard.");
+  if(d.type==="image"){addSource("image",d.value,"Image pasted from the clipboard.");flashKey("attach");}
   else toast("Clipboard has no image.","err");
 });
 $("#ptLinkPaste").addEventListener("click",async()=>{
@@ -779,7 +923,7 @@ $("#ptGo").addEventListener("click",logPoint);
 $("#ptClear").addEventListener("click",async()=>{
   const d=voice.draft||{};
   if(!box().value.trim()&&!(d.sources||[]).length)return;
-  if(!confirm("Empty the draft? The text and its sources are not logged anywhere."))return;
+  if(!await tmConfirm("The text and its sources are not logged anywhere.",{title:"Empty the draft?",okText:"Empty",danger:true}))return;
   clearTimeout(sendTimer);dirty=false;
   let r;try{r=await api.draft_clear();}catch(e){r=null;}
   if(r&&r.draft){draftIn(r.draft,true);applyVoice(r,false);}
@@ -795,8 +939,8 @@ $("#openApp").addEventListener("click",async()=>{
   }catch(e){ /* bridge not ready, try fallback */ }
   setTimeout(()=>$("#openApp").textContent="Open app",900);
 });
-$("#ptHide").addEventListener("click",()=>{sendDraft();api.hide_popup();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){sendDraft();api.hide_popup();}});
+$("#ptHide").addEventListener("click",()=>{flashKey("hide");sendDraft();api.hide_popup();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){flashKey("hide");sendDraft();api.hide_popup();}});
 document.addEventListener("wheel",e=>{if(e.ctrlKey)e.preventDefault();},{passive:false});
 
 
@@ -822,10 +966,17 @@ function applyVoice(payload,pushed){
   if(d)draftIn(d,false);
   if(pushed&&(voice.state==="source"||voice.state==="duplicate")&&d&&d.rev!==lastToastRev){
     lastToastRev=d.rev;
+    flashKey("attach");
     const src=(d.sources||[]).at(-1)||{};
     if(voice.state==="duplicate")cbToast("text","Already attached",voice.detail||"");
     else cbToast(src.type==="image"?"image":src.type==="link"?"link":"text",
                  "Attached to the draft",voice.detail||"");
+  }
+  if(pushed){
+    if(voice.state==="logged")flashKey("log");
+    else if(voice.state==="session")flashKey("session");
+    else if(voice.state==="tab")flashKey("tab");
+    else if(voice.state==="finished")flashKey("finish");
   }
   renderVoice();
   if(pushed&&["session","tab","finished","logged"].includes(voice.state)){
@@ -858,12 +1009,11 @@ function renderVoice(){
   if(vb){vb.setAttribute("aria-checked",voice.enabled?"true":"false");
          vb.title=voice.enabled?"Always-on voice is on — click to stop listening"
                                :"Always-on voice is off — click to start listening";}
-  // The bar stays up while collapsed even with voice off, so the mini window
-  // is never a blank rectangle with nothing to click.
-  sec.hidden=!(voice.enabled||live||voice.mini||voice.configured);
+  // Unified card: the voice block is always visible (Voice off included).
+  // Only the collapsed mini bar keeps the old gate, so it is never blank.
+  if(sec)sec.hidden=false;
   document.body.classList.toggle("mini",!!voice.mini);
   renderDraftMeta();
-  if(sec.hidden){stopWave();return;}
 
   const st=$("#vState");
   const err=voice.state==="error";
@@ -938,6 +1088,8 @@ function drawWave(d){
 
 async function vcmd(name){
   if(name==="log"){return logPoint();}
+  const map={save:"attach",tab:"tab",session:"session",finish:"finish"};
+  if(map[name])flashKey(map[name]);
   await sendDraft();
   let r;
   try{r=await api.voice_command(name,"");}catch(e){r={error:"Bridge not ready."};}
@@ -945,11 +1097,8 @@ async function vcmd(name){
   refreshVoice();
   api.get_state().then(s=>{if(s&&!s.error){state=s;renderMode();}}).catch(()=>{});
 }
-$("#vLog").addEventListener("click",()=>vcmd("log"));
-$("#vSave").addEventListener("click",()=>vcmd("save"));
-$("#vTab").addEventListener("click",()=>vcmd("tab"));
-$("#vSess").addEventListener("click",()=>vcmd("session"));
-$("#vFin").addEventListener("click",()=>vcmd("finish"));
+const _vLog=$("#vLog");
+if(_vLog)_vLog.addEventListener("click",()=>vcmd("log"));
 $("#voiceBtn").addEventListener("click",async()=>{
   let r;
   try{r=await api.toggle_voice();}catch(e){r={error:"Bridge not ready."};}
@@ -966,6 +1115,25 @@ $("#miniBtn").addEventListener("click",()=>{
   api.set_popup_mini(next);     // round-trip and the bar should not lag it
 });
 
+function renderKeyHints(cfg){
+  cfg=cfg||{};
+  const combo=h=>(h.modifiers||["ctrl","alt"]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+(h.key||"P");
+  const cb=cfg.clipboard||{};
+  const vc=cfg.voice||{},keys=vc.keys||{},mods=vc.modifiers||["ctrl","alt"];
+  const vcombo=k=>mods.map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+((keys[k]||k[0]||"").toUpperCase());
+  const set=(k,html)=>{
+    const el=document.querySelector('#keyHints [data-k="'+k+'"]');
+    if(el)el.innerHTML=html;
+  };
+  set("toggle","<b>"+esc(combo(cfg.hotkey||{}))+"</b> toggle");
+  if(cb.enabled)set("attach","<b>"+esc(combo({modifiers:cb.modifiers,key:cb.key||"V"}))+"</b> attach");
+  if(keys.log||keys.finish||keys.session||keys.tab){
+    if(keys.log)set("log","<b>"+esc(vcombo("log"))+"</b> · Alt+Enter · say “log”");
+    if(keys.session)set("session","<b>"+esc(vcombo("session"))+"</b> · say “session …”");
+    if(keys.tab)set("tab","<b>"+esc(vcombo("tab"))+"</b> · say “tab …”");
+    if(keys.finish)set("finish","<b>"+esc(vcombo("finish"))+"</b> · say “finish”");
+  }
+}
 function boot(){
   refreshVoice();
   api.get_state().then(r=>{
@@ -975,6 +1143,7 @@ function boot(){
     const combo=h=>(h.modifiers||["ctrl","alt"]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+(h.key||"P");
     const cb=cfg.clipboard||{};
     $("#hkLabel").textContent=combo(cfg.hotkey||{})+" toggles"+(cb.enabled?" · "+combo({modifiers:cb.modifiers,key:cb.key||"V"})+" attaches the clipboard":"");
+    renderKeyHints(cfg);
     $("#liveDot").hidden=r.topics.filter(t=>t.status==="open").length===0;
     renderMode();renderAtt();
     setTimeout(()=>{const el=box();if(el)el.focus();},150);
@@ -989,7 +1158,7 @@ function popupShown(){
   // A hidden window missed every push while it was away, so it pulls once.
   refreshVoice();
   api.get_state().then(r=>{if(r&&!r.error){state=r;
-    applyTheme(((r.config||{}).appearance||{}).theme||"system");renderMode();}}).catch(()=>{});
+    applyTheme(((r.config||{}).appearance||{}).theme||"system");renderKeyHints(r.config||{});renderMode();}}).catch(()=>{});
   setTimeout(()=>{const el=box();if(el)el.focus();},120);
 }
 if(window.pywebview){boot();}else{window.addEventListener("pywebviewready",boot);}
@@ -1357,6 +1526,90 @@ const $=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const toast=(m,t="ok")=>{const d=document.createElement("div");d.className="toast "+t;d.textContent=m;
   document.getElementById("toasts").appendChild(d);setTimeout(()=>d.classList.add("out"),2400);setTimeout(()=>d.remove(),2800);};
+// --- Trailmark dialogs (styled prompt/confirm) --------------------------------
+// Native prompt()/confirm() render as unthemed browser chrome ("This page
+// says…"), so every naming / destructive question goes through these instead.
+// Same raised-card markup as the quick-capture popup; text reaches the DOM
+// through textContent only, never innerHTML.
+let _tmSettle=null;
+function tmCloseDialog(result){
+  const back=document.querySelector(".tm-back");
+  if(back)back.remove();
+  if(_tmSettle){const f=_tmSettle;_tmSettle=null;try{f(result);}catch(e){}}
+}
+function tmConfirm(message,opts){
+  opts=opts||{};
+  return new Promise(resolve=>{
+    tmCloseDialog(undefined);
+    _tmSettle=resolve;
+    const prevFocus=document.activeElement;
+    const back=document.createElement("div");back.className="tm-back";
+    const box=document.createElement("div");box.className="tm-modal";
+    box.setAttribute("role","alertdialog");box.setAttribute("aria-modal","true");
+    const h=document.createElement("h3");h.textContent=opts.title||"Are you sure?";
+    const p=document.createElement("p");p.textContent=message;
+    const row=document.createElement("div");row.className="tm-actions";
+    const cancel=document.createElement("button");cancel.className="btn ghost";
+    cancel.type="button";cancel.textContent=opts.cancelText||"Cancel";
+    const ok=document.createElement("button");
+    ok.className="btn "+(opts.danger?"danger":"primary");
+    ok.type="button";ok.textContent=opts.okText||"Confirm";
+    row.appendChild(cancel);row.appendChild(ok);
+    box.appendChild(h);box.appendChild(p);box.appendChild(row);
+    back.appendChild(box);document.body.appendChild(back);
+    const done=v=>{if(prevFocus&&prevFocus.focus)try{prevFocus.focus();}catch(e){}tmCloseDialog(v);};
+    cancel.addEventListener("click",()=>done(false));
+    ok.addEventListener("click",()=>done(true));
+    back.addEventListener("mousedown",e=>{if(e.target===back)done(false);});
+    back.addEventListener("keydown",e=>{
+      if(e.key==="Escape"){e.preventDefault();done(false);}
+      if(e.key==="Enter"&&document.activeElement!==ok){e.preventDefault();done(true);}
+    });
+    setTimeout(()=>{try{ok.focus();}catch(e){}},30);
+  });
+}
+function tmPrompt(title,opts){
+  opts=opts||{};
+  return new Promise(resolve=>{
+    tmCloseDialog(undefined);
+    _tmSettle=resolve;
+    const prevFocus=document.activeElement;
+    const back=document.createElement("div");back.className="tm-back";
+    const box=document.createElement("div");box.className="tm-modal";
+    box.setAttribute("role","dialog");box.setAttribute("aria-modal","true");
+    const h=document.createElement("h3");h.textContent=title;
+    box.appendChild(h);
+    if(opts.hint){
+      const p=document.createElement("p");p.textContent=opts.hint;
+      box.appendChild(p);
+    }
+    const inp=document.createElement("input");
+    inp.className="input";inp.dir="auto";inp.spellcheck=false;
+    inp.placeholder=opts.placeholder||"";inp.value=opts.value||"";
+    inp.setAttribute("aria-label",title);
+    box.appendChild(inp);
+    const row=document.createElement("div");row.className="tm-actions";
+    const cancel=document.createElement("button");cancel.className="btn ghost";
+    cancel.type="button";cancel.textContent=opts.cancelText||"Cancel";
+    const ok=document.createElement("button");ok.className="btn primary";
+    ok.type="button";ok.textContent=opts.okText||"Add";
+    row.appendChild(cancel);row.appendChild(ok);
+    box.appendChild(row);
+    back.appendChild(box);document.body.appendChild(back);
+    const done=v=>{if(prevFocus&&prevFocus.focus)try{prevFocus.focus();}catch(e){}tmCloseDialog(v);};
+    cancel.addEventListener("click",()=>done(null));
+    const commit=()=>done(inp.value);
+    ok.addEventListener("click",commit);
+    back.addEventListener("mousedown",e=>{if(e.target===back)done(null);});
+    inp.addEventListener("keydown",e=>{
+      if(e.key==="Enter"){e.preventDefault();commit();}
+      else if(e.key==="Escape"){e.preventDefault();done(null);}
+      e.stopPropagation();
+    });
+    back.addEventListener("keydown",e=>{if(e.key==="Escape"){e.preventDefault();done(null);}});
+    setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},30);
+  });
+}
 const byId=i=>state.topics.find(t=>t.id===i);
 const escTop=s=>esc(s).replace(/\\n/g,"<br>");
 
@@ -1575,7 +1828,7 @@ function bindExports(root){
     e.stopPropagation(); api.open_path(b.dataset.openF);}));
   root.querySelectorAll("[data-remove]").forEach(b=>b.addEventListener("click",async e=>{
     e.stopPropagation();
-    if(!confirm("Remove this export? The folder and its files will be deleted. Your points are not touched.")) return;
+    if(!await tmConfirm("The folder and its files will be deleted. Your points are not touched.",{title:"Remove this export?",okText:"Remove",danger:true})) return;
     const r=await api.delete_export(b.dataset.remove);
     if(r.error) return toast(r.error,"err");
     state=r; render(); toast("Export removed.");
@@ -1994,14 +2247,18 @@ async function openExportDialog(t, closing){
 function detailHtml(t){
   const n=t.entries.length;
   const pill=t.status==="open"?`<span class="pill open">Open</span>`:`<span class="pill closed">Closed</span>`;
-  const subs=(t.subtopics||[]).map(s=>`<button class="chip ${filterSub===s?"active":""}" data-s="${esc(s)}">${esc(s)}<span style="opacity:.5">×</span></button>`).join("");
-  const subRow=subs||`<span class="muted">No sub-topics yet.</span>`;
+  // Filter-only chips: clicking narrows the entries below. Adding and deleting
+  // live next to the destination dropdown in the composer, where they are used.
+  // The whole card is hidden until a first sub-topic exists.
+  const subs=(t.subtopics||[]).map(s=>`<button class="chip ${filterSub===s?"active":""}" data-s="${esc(s)}">${esc(s)}</button>`).join("");
   const hasAI=state.config.llm&&state.config.llm.enabled&&(state.config.llm.api_key||"").trim()!=="";
   const acts=t.status==="open"
     ?`<button class="btn primary sm" id="tClose">Close &amp; export</button><button class="btn danger sm" id="tDel">Delete</button>`
     :`<button class="btn primary sm" id="tExp">Export report…</button>${hasAI?`<button class="btn ghost sm" id="tDraft">Draft AI summary</button>`:""}<button class="btn ghost sm" id="tReopen">Reopen</button><button class="btn danger sm" id="tDel">Delete</button>`;
   const composer=t.status==="open"?`<div class="card sub glass composer">
-    <div class="row"><select id="cSub" class="input grow"></select>
+    <div class="row"><select id="cSub" class="input grow" title="File the point under this sub-topic"></select>
+      <button class="chip accent" id="cSubAdd" title="Create a new sub-topic">+ add</button>
+      <button class="btn danger sm" id="cSubDel" title="Delete the selected sub-topic" hidden>Delete</button>
       <input id="cLink" class="input grow" placeholder="Source link…">
       <button class="chip" id="cLinkAdd">+ Link</button></div>
     ${sciOn()?`<div class="row"><div class="kinds grow" id="cKinds">
@@ -2033,12 +2290,13 @@ function detailHtml(t){
         <div class="dh-s">${n} point${n===1?"":"s"} · created ${fmt(t.created)}${t.closed?" · closed "+fmt(t.closed):""}</div></div>
       ${pill}
     </div>
-    <div class="card sub glass">
+    ${(t.subtopics||[]).length?`<div class="card sub glass">
       <div class="row">
-        <div class="chips grow">${subRow}<button class="chip accent" id="subAdd">+ add</button></div>
+        <span class="muted">Filter:</span>
+        <div class="chips grow">${subs}</div>
         ${filterSub?`<button class="btn ghost sm" id="subClear">Clear filter</button>`:""}
       </div>
-    </div>
+    </div>`:""}
     ${composer}
     <div class="entries">${list}</div>
     ${moreBtn}
@@ -2118,7 +2376,7 @@ function imgSrc(path){
 
 function bindDetail(t){
   $("#tDel").addEventListener("click",async()=>{
-    if(!confirm("Delete this topic and all its points permanently?"))return;
+    if(!await tmConfirm("All its points are deleted permanently.",{title:"Delete "+t.title+"?",okText:"Delete",danger:true}))return;
     const r=await api.delete_topic(t.id);
     if(r.error)return toast(r.error,"err");
     state=r;sel=null;render();toast("Topic deleted.");
@@ -2145,32 +2403,18 @@ function bindDetail(t){
     const sumClose=$("#sumClose");
     if(sumClose)sumClose.addEventListener("click",()=>{summaryDraft=null;render();});
   }
-  const subAdd=$("#subAdd");
-  if(subAdd)subAdd.addEventListener("click",async()=>{
-    const name=prompt("New sub-topic name:");
-    if(!name||!name.trim())return;
-    const r=await api.add_subtopic(t.id,name);
-    if(r.error)return toast(r.error,"err");
-    state=r;render();
-  });
   const sAdd=$("#subClear");
   if(sAdd)sAdd.addEventListener("click",()=>{filterSub=null;displayLimit=20;render();});
-  document.querySelectorAll("button[data-s]").forEach(b=>b.addEventListener("click",async()=>{
-    const s=b.dataset.s;
-    if(b.querySelector("span")){
-      if(!confirm("Delete sub-topic "+s+"?"))return;
-      const r=await api.delete_subtopic(t.id,s);
-      if(r.error)return toast(r.error,"err");
-      state=r;render();return;
-    }
-    filterSub=s;displayLimit=20;render();
+  // Filter chips: one job — narrow the entries below.
+  document.querySelectorAll("button[data-s]").forEach(b=>b.addEventListener("click",()=>{
+    filterSub=b.dataset.s;displayLimit=20;render();
   }));
   document.querySelectorAll("[data-url]").forEach(el=>el.addEventListener("click",()=>api.open_url(el.dataset.url)));
   document.querySelectorAll("[data-copy]").forEach(el=>el.addEventListener("click",()=>copyText(el.dataset.copy)));
   document.querySelectorAll(".thumb").forEach(el=>el.addEventListener("click",()=>api.open_path(el.dataset.path)));
   document.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>{editEntry=b.dataset.edit;render();}));
   document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",async()=>{
-    if(!confirm("Delete this point?"))return;
+    if(!await tmConfirm("The point and its sources are removed.",{title:"Delete this point?",okText:"Delete",danger:true}))return;
     const r=await api.delete_entry(t.id,b.dataset.del);
     if(r.error)return toast(r.error,"err");
     state=r;render();toast("Point deleted.");
@@ -2243,6 +2487,35 @@ function bindComposer(t){
   });
   const sub=$("#cSub");
   sub.innerHTML=[`<option value="">General</option>`].concat((t.subtopics||[]).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`)).join("");
+  // Sub-topic management lives here, next to the destination it acts on. The
+  // delete button only shows when a real sub-topic is selected, so General
+  // can never be "deleted". Typed text survives the re-render both actions end in.
+  const subDel=$("#cSubDel");
+  const syncSubDel=()=>{if(subDel)subDel.hidden=!sub.value;};
+  sub.addEventListener("change",syncSubDel);syncSubDel();
+  const keepComposer=()=>({text:$("#cText").value,link:$("#cLink").value,str:$("#cStr").value});
+  const restoreComposer=k=>{if($("#cText"))$("#cText").value=k.text;
+    if($("#cLink"))$("#cLink").value=k.link;if($("#cStr"))$("#cStr").value=k.str;};
+  $("#cSubAdd").addEventListener("click",async()=>{
+    const keep=keepComposer();
+    const name=await tmPrompt("New sub-topic",{hint:"Adds to "+t.title+".",placeholder:"Sub-topic name…",okText:"Add sub-topic"});
+    if(!name||!name.trim())return;
+    const r=await api.add_subtopic(t.id,name.trim());
+    if(r.error)return toast(r.error,"err");
+    state=r;render();restoreComposer(keep);
+    const sel2=$("#cSub");
+    if(sel2&&[...sel2.options].some(o=>o.value===name.trim())){sel2.value=name.trim();sel2.dispatchEvent(new Event("change"));}
+    toast("Sub-topic added.");
+  });
+  if(subDel)subDel.addEventListener("click",async()=>{
+    const name=sub.value;if(!name)return;
+    if(!await tmConfirm("Points filed under it move back to General.",{title:"Delete sub-topic "+name+"?",okText:"Delete",danger:true}))return;
+    const keep=keepComposer();
+    const r=await api.delete_subtopic(t.id,name);
+    if(r.error)return toast(r.error,"err");
+    if(filterSub===name)filterSub=null;
+    state=r;render();restoreComposer(keep);
+  });
   $("#cLinkAdd").addEventListener("click",()=>{
     const v=$("#cLink").value.trim();if(!v)return;
     try{new URL(v);}catch(e){toast("Not a valid URL.","err");return;}
@@ -2302,9 +2575,9 @@ async function logComposer(){
   $("#cText").value="";renderAtt();render();toast("Point logged — "+sources.length+" source(s).");
 }
 
-function closeAndExport(){
+async function closeAndExport(){
   const t=byId(sel); if(!t) return;
-  if(!confirm("Close this topic? It will be locked, then exported."))return;
+  if(!await tmConfirm("It will be locked, then exported.",{title:"Close this topic?",okText:"Close & export",danger:false}))return;
   openExportDialog(t, true);
 }
 function doExport(){
@@ -3167,7 +3440,7 @@ function bindSettings(){
   });
   const spkForget=$("#spkForget");
   if(spkForget) spkForget.addEventListener("click",async()=>{
-    if(!confirm("Forget your voiceprint? The check turns off, and every voice is transcribed again."))return;
+    if(!await tmConfirm("The check turns off, and every voice is transcribed again.",{title:"Forget your voiceprint?",okText:"Forget",danger:true}))return;
     let r;try{r=await api.speaker_save({forget:true});}catch(e){r={error:"Bridge not ready."};}
     if(!r||r.error)return toast((r&&r.error)||"Could not forget it.","err");
     spkNote="";state.speakerInfo=r;renderMain();toast("Voiceprint forgotten.");
@@ -3261,7 +3534,7 @@ function bindSettings(){
   });
   const tgUnpairBtn=$("#tgUnpair");
   if(tgUnpairBtn) tgUnpairBtn.addEventListener("click",async()=>{
-    if(!confirm("Unpair this Telegram account? You will need a new pairing code to reconnect."))return;
+    if(!await tmConfirm("You will need a new pairing code to reconnect.",{title:"Unpair this Telegram account?",okText:"Unpair",danger:true}))return;
     const r=await api.telegram_unpair();
     if(r&&r.error)return toast(r.error,"err");
     state=r;render();toast("Telegram account unpaired.");
@@ -3349,7 +3622,7 @@ function bindCategories(){
       state=r; renderMain(); toast("Category renamed.");
     });
     row.querySelector(".cat-delete").addEventListener("click",async()=>{
-      if(!confirm("Delete this category? Its templates keep working, but stop suggesting a default here.")) return;
+      if(!await tmConfirm("Its templates keep working, but stop suggesting a default here.",{title:"Delete this category?",okText:"Delete",danger:true})) return;
       const r=await api.delete_category(id);
       if(r.error) return toast(r.error,"err");
       state=r; renderMain(); toast("Category deleted.");
