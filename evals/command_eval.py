@@ -42,8 +42,8 @@ try:
 except Exception:
     pass
 
-import judge  # noqa: E402
-import voicecmd  # noqa: E402
+import trailmark.judge as judge
+import trailmark.voicecmd as voicecmd
 from judge_eval import find_key  # noqa: E402
 
 CASES = HERE / "command_cases.json"

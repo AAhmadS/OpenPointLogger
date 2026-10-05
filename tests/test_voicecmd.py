@@ -26,7 +26,7 @@ try:
 except Exception:
     pass
 
-import voicecmd  # noqa: E402
+import trailmark.voicecmd as voicecmd
 
 FAILS = []
 

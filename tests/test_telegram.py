@@ -29,7 +29,7 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-import telegram_bridge  # noqa: E402
+import trailmark.telegram_bridge as telegram_bridge
 
 FAILS = []
 
@@ -257,7 +257,7 @@ check("unknown command never reaches on_message", len(msgs6) == 0, msgs6)
 # docstring). Mirrors test_asr.py's temp-APPDATA Store isolation pattern.
 # ---------------------------------------------------------------------------
 
-import point_store as ps  # noqa: E402
+import trailmark.point_store as ps # noqa: E402
 
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="opl_test_tg_"))
 ps.BASE_DIR = tmp
@@ -266,7 +266,7 @@ ps.CONFIG_FILE = tmp / "config.json"
 ps.ATTACH_DIR = tmp / "attachments"
 ps.EXPORT_DIR = tmp / "exports"
 
-import point_logger  # noqa: E402
+import point_logger as point_logger
 
 c = point_logger.Controller()
 check("no topics exist yet", c.store.last_open_topic() is None)

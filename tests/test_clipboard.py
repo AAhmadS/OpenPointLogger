@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import clipboard  # noqa: E402
+import trailmark.clipboard as clipboard
 
 FAILS = []
 

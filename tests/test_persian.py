@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-import persian  # noqa: E402
+import trailmark.persian as persian
 
 FAILS = []
 

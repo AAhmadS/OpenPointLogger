@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import citation         # noqa: E402
-import pipeline         # noqa: E402
+import trailmark.citation as citation
+import trailmark.pipeline as pipeline
 
 FAILS = []
 

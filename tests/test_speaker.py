@@ -58,7 +58,7 @@ def _blocking_import(name, *args, **kwargs):
 
 builtins.__import__ = _blocking_import
 try:
-    import speaker  # noqa: E402
+    import trailmark.speaker as speaker
 
     check("import speaker succeeds without onnxruntime", True)
     ok, why = speaker.available()

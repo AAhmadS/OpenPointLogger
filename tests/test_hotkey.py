@@ -1,6 +1,6 @@
 import time
 
-from hotkey import HotkeyListener
+from trailmark.hotkey import HotkeyListener
 
 print("probe ctrl+alt+P:", HotkeyListener.probe(["ctrl", "alt"], "P"))
 print("label:", HotkeyListener(["ctrl", "alt"], "P", lambda: None).label)

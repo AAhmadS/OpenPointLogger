@@ -20,7 +20,7 @@ import pathlib
 import sys
 import tempfile
 
-import point_store as ps
+import trailmark.point_store as ps
 
 # Patch point_store's module globals to a temp dir BEFORE constructing
 # anything - point_logger imports Store from point_store but only
@@ -33,8 +33,8 @@ ps.CONFIG_FILE = tmp / "config.json"
 ps.ATTACH_DIR = tmp / "attachments"
 ps.EXPORT_DIR = tmp / "exports"
 
-import point_logger  # noqa: E402
-import clipboard  # noqa: E402
+import point_logger as point_logger
+import trailmark.clipboard as clipboard
 
 FAILS = []
 

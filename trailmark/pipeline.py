@@ -22,11 +22,11 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-import citation
-import mdlite
-import judge
-import persian
-import templates_registry as templates
+import trailmark.citation as citation
+import trailmark.mdlite as mdlite
+import trailmark.judge as judge
+import trailmark.persian as persian
+import trailmark.templates_registry as templates
 
 __all__ = ["export", "compose_markdown", "STAGES", "PipelineError",
            "NOTES_HEADING", "NOTE_PREFIX", "ground_science", "ordered_refs"]
@@ -663,7 +663,7 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
         done = False
         if manifest.get("has_tex") and "latex" in manifest.get("formats", []):
             try:
-                import pdf_render
+                import trailmark.pdf_render as pdf_render
                 tex_body, bib = _markdown_to_tex(markdown, refs, style)
                 tex_values = dict(values)
                 tex_values.update({"body": tex_body, "bibliography": bib,
@@ -685,7 +685,7 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
                     "report.tex is in the folder if you want to build it yourself." % e)
         if not done and html:
             try:
-                import pdf_render
+                import trailmark.pdf_render as pdf_render
                 info = pdf_render.render_html_to_pdf(html_path, pdf_path, prefer=prefer_engine)
                 result["files"]["pdf"] = info["path"]
                 result["pdf_engine"] = info["engine"]
@@ -702,7 +702,7 @@ def export(topic, entries, refs, cites, export_root, template_id="personal-repor
 
     if "docx" in formats:
         try:
-            import docx_writer
+            import trailmark.docx_writer as docx_writer
             docx_writer.write_docx(folder / "report.docx", {
                 "title": topic.get("title") or "Untitled",
                 "subtitle": meta.get("subtitle") or "",

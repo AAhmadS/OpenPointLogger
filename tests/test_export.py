@@ -15,9 +15,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import mdlite            # noqa: E402
-import pipeline          # noqa: E402
-import templates_registry as templates   # noqa: E402
+import trailmark.mdlite as mdlite
+import trailmark.pipeline as pipeline
+import trailmark.templates_registry as templates # noqa: E402
 
 FAILS = []
 
@@ -171,7 +171,7 @@ def main():
                   [l for l in html.splitlines() if "{{" in l][:2])
 
         print("\n== template_demo fixture, mirrored from point_logger.py ==")
-        import point_logger  # noqa: E402  (imports webview; already a project dependency)
+        import point_logger as point_logger
 
         _DEMO_TOPIC = {"id": "demo", "title": "Rust borrow checker", "status": "closed",
                        "created": "2026-08-02T09:15:00", "closed": "2026-09-01T17:40:00"}
@@ -232,8 +232,8 @@ def main():
               mf_files == {"pdf": "report.pdf"}, mf_files)
 
         print("\n== pdf-only export with pdf rendering failure preserves report.html ==")
-        with unittest.mock.patch("pdf_render.render_tex_to_pdf", side_effect=RuntimeError("LaTeX unavailable")), \
-             unittest.mock.patch("pdf_render.render_html_to_pdf", side_effect=RuntimeError("PDF engine unavailable")):
+        with unittest.mock.patch("trailmark.pdf_render.render_tex_to_pdf", side_effect=RuntimeError("LaTeX unavailable")), \
+             unittest.mock.patch("trailmark.pdf_render.render_html_to_pdf", side_effect=RuntimeError("PDF engine unavailable")):
             res = pipeline.export(TOPIC, ENTRIES, refs, cites, tmp / "pdf-fail",
                                   template_id="personal-report", formats=("pdf",),
                                   meta={"author": "A. Researcher", "org": "Trailmark",

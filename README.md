@@ -174,18 +174,21 @@ Both are one-click, review-the-result workflows: a draft never edits your data o
 ```
 Trailmark/
 ├── point_logger.py     entry point — windows, tray, hotkey, API bridge, single-instance guard
-├── point_store.py      data layer — %APPDATA% store, config, export index + legacy migration
-├── pipeline.py         export orchestrator — compose, ground, fill, render, verify, manifest
-├── templates_registry.py  template discovery (built-in + user) and shell filling
-├── mdlite.py           dependency-free Markdown → HTML (the only place Markdown is rendered)
-├── docx_writer.py      stdlib-only OOXML writer — no python-docx, no lxml
-├── pdf_render.py       PDF engine discovery (Edge/Chrome/WeasyPrint, LaTeX) + output verification
-├── ui.py               glass UI — quick capture panel + full window (Open app + live refresh)
-├── hotkey.py           global hotkey (RegisterHotKey, no admin needed)
-├── single.py           single-instance guard (Windows named event)
-├── llm.py              optional BYOK client (OpenRouter/OpenAI/Mistral/AvalAI)
-├── citation.py         source metadata, reference strings in five styles, DOI lookup
-├── brand.py            brand assets as data URIs
+├── trailmark/          the app package (point_logger is the only file outside it)
+│   ├── point_store.py      data layer — %APPDATA% store, config, export index + legacy migration
+│   ├── pipeline.py         export orchestrator — compose, ground, fill, render, verify, manifest
+│   ├── templates_registry.py  template discovery (built-in + user) and shell filling
+│   ├── mdlite.py           dependency-free Markdown → HTML (the only place Markdown is rendered)
+│   ├── docx_writer.py      stdlib-only OOXML writer — no python-docx, no lxml
+│   ├── pdf_render.py       PDF engine discovery (Edge/Chrome/WeasyPrint, LaTeX) + output verification
+│   ├── ui.py               glass UI — quick capture panel + full window (Open app + live refresh)
+│   ├── hotkey.py           global hotkey (RegisterHotKey, no admin needed)
+│   ├── single.py           single-instance guard (Windows named event)
+│   ├── llm.py              optional BYOK client (OpenRouter/OpenAI/Mistral/AvalAI)
+│   ├── citation.py         source metadata, reference strings in five styles, DOI lookup
+│   ├── brand.py            brand assets as data URIs
+│   └── …                   asr, speaker, voicecmd, clipboard, judge, persian,
+│                           telegram_bridge, traymenu (one module per concern)
 ├── templates/          the three shipped document templates
 ├── assets/             the mark (mark.svg) and every raster generated from it (make_icons.py)
 ├── tests/              headless unit tests (store, hotkey, llm, export pipeline)

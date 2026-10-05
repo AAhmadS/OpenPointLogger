@@ -94,7 +94,9 @@ def _env_search_dirs():
     except Exception:
         pass
     try:
-        dirs.append(Path(__file__).resolve().parent)
+        # This module lives in trailmark/; the project root one level up is
+        # where a source checkout keeps its .env.
+        dirs.append(Path(__file__).resolve().parent.parent)
     except Exception:
         pass
     appdata = os.environ.get("APPDATA")

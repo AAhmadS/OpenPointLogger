@@ -11,21 +11,21 @@ from urllib.parse import urlparse
 
 import webview
 
-from brand import ICON_DATA_URI, asset_path
-from hotkey import HotkeyListener
-from point_store import Store, data_dir, slugify
-from ui import MAIN_HTML, POPUP_HTML
+from trailmark.brand import ICON_DATA_URI, asset_path
+from trailmark.hotkey import HotkeyListener
+from trailmark.point_store import Store, data_dir, slugify
+from trailmark.ui import MAIN_HTML, POPUP_HTML
 
-import asr
-import speaker
-import voicecmd
-import clipboard
-import llm
-import single
-import telegram_bridge
-import templates_registry
-import judge
-import traymenu
+import trailmark.asr as asr
+import trailmark.speaker as speaker
+import trailmark.voicecmd as voicecmd
+import trailmark.clipboard as clipboard
+import trailmark.llm as llm
+import trailmark.single as single
+import trailmark.telegram_bridge as telegram_bridge
+import trailmark.templates_registry as templates_registry
+import trailmark.judge as judge
+import trailmark.traymenu as traymenu
 
 def _snip(text, limit=120):
     """One line of a transcript, short enough for a toast or a 396px bar."""
@@ -812,7 +812,7 @@ class Api:
         (module-level ``_DEMO_TOPIC``/``_DEMO_ENTRIES``) so the preview looks
         the same for every template and never touches real data."""
         try:
-            import pipeline
+            import trailmark.pipeline as pipeline
             manifest = templates_registry.load(template_id)
             refs, cites = Store._collect_refs(_DEMO_ENTRIES)
             markdown = pipeline.compose_markdown(_DEMO_TOPIC, _DEMO_ENTRIES, cites, refs=refs)
@@ -824,7 +824,7 @@ class Api:
 
     def pdf_engines(self):
         try:
-            import pdf_render
+            import trailmark.pdf_render as pdf_render
             found = pdf_render.available_engines()
             return {"engines": {k: bool(v) for k, v in found.items()}}
         except Exception as e:
@@ -928,12 +928,12 @@ class Api:
 
     def lookup_doi(self, doi):
         """Fill a source's metadata from doi.org. Online, optional, best effort."""
-        import citation
+        import trailmark.citation as citation
         return citation.lookup_doi(doi)
 
     def citation_styles(self):
         """The styles scientific mode can render, for the settings card."""
-        import citation
+        import trailmark.citation as citation
         return {"styles": [{"id": k, "label": v[0], "hint": v[1]}
                            for k, v in citation.STYLES.items()],
                 "fields": list(citation.META_FIELDS)}

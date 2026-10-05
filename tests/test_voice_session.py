@@ -43,7 +43,7 @@ def check(label, ok, detail=""):
 
 
 # Temp data dir before point_logger reads the store's module-level paths.
-import point_store as ps  # noqa: E402
+import trailmark.point_store as ps # noqa: E402
 
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="opl_voice_"))
 ps.BASE_DIR = tmp
@@ -52,9 +52,9 @@ ps.CONFIG_FILE = tmp / "config.json"
 ps.ATTACH_DIR = tmp / "attachments"
 ps.EXPORT_DIR = tmp / "exports"
 
-import point_logger  # noqa: E402
-import clipboard  # noqa: E402
-import voicecmd  # noqa: E402
+import point_logger as point_logger
+import trailmark.clipboard as clipboard
+import trailmark.voicecmd as voicecmd
 
 c = point_logger.Controller()
 api = point_logger.Api(c.store, c)
@@ -835,7 +835,7 @@ check("only Persian and English exist", tuple(point_logger.asr.ALLOWED_LANGUAGES
 print("\n-- python/js contract --")
 
 import re  # noqa: E402
-import ui  # noqa: E402
+import trailmark.ui as ui
 
 check("popup defines and exports voiceState",
       "function voiceState(" in ui.POPUP_HTML and "window.voiceState=voiceState" in ui.POPUP_HTML)
@@ -846,9 +846,16 @@ check("full defines and exports voiceState",
 check("full still exports asrState", "window.asrState=asrState" in ui.MAIN_HTML)
 
 for eid in ("voiceSec", "vState", "vCounts", "vTopic", "vHeard", "vWave", "vDraft",
-            "vLog", "vSave", "vTab", "vSess", "vFin", "miniBtn", "voiceBtn",
-            "ptText", "ptKinds", "tpSel", "attChips", "noTopic"):
+            "vLog", "miniBtn", "voiceBtn",
+            "ptText", "ptKinds", "tpSel", "attChips", "noTopic",
+            "unifiedSec", "topicSelWrap", "logPanel", "keyHints"):
     check("popup markup has #%s" % eid, ('id="%s"' % eid) in ui.POPUP_HTML)
+for gone_eid in ("vSave", "vTab", "vSess", "vFin"):
+    check("voice action button #%s is ripped off" % gone_eid, ('id="%s"' % gone_eid) not in ui.POPUP_HTML)
+for k in ("toggle", "attach", "log", "session", "tab", "finish", "hide"):
+    check("shortcut hint data-k=%s exists" % k, ('data-k="%s"' % k) in ui.POPUP_HTML)
+check("hint flash gamification wired", "function flashKey(" in ui.POPUP_HTML
+      and ".flash" in ui.POPUP_HTML)
 for eid in ("voiceChip", "vcSw", "vcCmdSw", "vcHkSw", "vcSave", "vcHkStatus",
             "mtBtn", "mtWave", "asrLang", "asrDevice", "asrSensitivity"):
     check("full markup has #%s" % eid, ('id="%s"' % eid) in ui.MAIN_HTML)
@@ -887,8 +894,9 @@ check("Settings has exactly one card titled Always-on voice",
 check("the master switch carries the feature name", 'aria-label="Always-on voice"' in ui.MAIN_HTML)
 check("the old label is gone", "Auto-log speech as notes" not in ui.MAIN_HTML)
 check("the popup can start it without Settings", "api.toggle_voice()" in ui.POPUP_HTML)
-check("the popup card shows while voice is off",
-      "voice.enabled||live||voice.mini||voice.configured" in ui.POPUP_HTML)
+check("the unified voice block is always visible",
+      "Unified card: the voice block is always visible" in ui.POPUP_HTML
+      or "sec.hidden=false" in ui.POPUP_HTML)
 check("the off state tells you how to start it", "Click the microphone above to start" in ui.POPUP_HTML)
 check("no copy still asks for the Trail- prefix to log",
       "Say &ldquo;Trail-Log" not in ui.POPUP_HTML + ui.MAIN_HTML

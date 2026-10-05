@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from xml.sax.saxutils import escape as _xesc
 
-import mdlite
+import trailmark.mdlite as mdlite
 
 __all__ = ["write_docx", "DocxError"]
 

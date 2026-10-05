@@ -100,7 +100,9 @@ class TemplateError(Exception):
 
 def builtin_dir():
     base = getattr(sys, "_MEIPASS", None)
-    root = Path(base) if base else Path(__file__).resolve().parent
+    # This module lives in trailmark/, one level below the project root that
+    # holds templates/ in a source checkout.
+    root = Path(base) if base else Path(__file__).resolve().parent.parent
     return root / "templates"
 
 

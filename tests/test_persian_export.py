@@ -24,9 +24,9 @@ try:
 except Exception:
     pass
 
-import persian          # noqa: E402
-import pipeline         # noqa: E402
-import templates_registry as templates  # noqa: E402
+import trailmark.persian as persian
+import trailmark.pipeline as pipeline
+import trailmark.templates_registry as templates # noqa: E402
 
 FAILS = []
 
@@ -102,7 +102,7 @@ def render(topic, entries, template_id):
 
 
 def _collect(entries):
-    import point_store
+    import trailmark.point_store as point_store
     return point_store.Store._collect_refs(entries)
 
 
@@ -287,7 +287,7 @@ import tempfile          # noqa: E402
 import xml.etree.ElementTree as ET  # noqa: E402
 import zipfile           # noqa: E402
 
-import docx_writer       # noqa: E402
+import trailmark.docx_writer as docx_writer
 
 DOC_FA = {
     "title": FA_TOPIC["title"], "kicker": "", "subtitle": "", "summary": "",

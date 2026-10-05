@@ -22,11 +22,11 @@ try:
 except Exception:
     pass
 
-import judge          # noqa: E402
-import pipeline       # noqa: E402
-import point_store    # noqa: E402
-import point_logger   # noqa: E402
-import ui             # noqa: E402
+import trailmark.judge as judge
+import trailmark.pipeline as pipeline
+import trailmark.point_store as point_store
+import point_logger as point_logger
+import trailmark.ui as ui
 
 FAILS = []
 
@@ -364,10 +364,11 @@ api.store.config["judge"] = {"enabled": True, "api_key": ""}
 r = api.test_judge()
 check("test_judge with no key says so without quoting anything",
       "error" in r and SECRET not in json.dumps(r), r)
+JUDGE_SRC = pathlib.Path(__file__).resolve().parent.parent / "trailmark" / "judge.py"
 check("judge.py never logs or prints",
-      "print(" not in pathlib.Path("judge.py").read_text(encoding="utf-8")
-      and "logging" not in pathlib.Path("judge.py").read_text(encoding="utf-8"))
-src = pathlib.Path("judge.py").read_text(encoding="utf-8")
+      "print(" not in JUDGE_SRC.read_text(encoding="utf-8")
+      and "logging" not in JUDGE_SRC.read_text(encoding="utf-8"))
+src = JUDGE_SRC.read_text(encoding="utf-8")
 key_lines = [ln.strip() for ln in src.splitlines() if "api_key" in ln]
 # Two uses, and each has to be one of exactly two safe shapes: a bool() test
 # that discards the value, or the Authorization header. Anything else - a
@@ -399,8 +400,8 @@ check("the card is reachable from Settings and names the feature",
       ui.MAIN_HTML.count(">Second opinion</div>") == 1,
       ui.MAIN_HTML.count(">Second opinion</div>"))
 check("the capture path refines kinds behind the save, not in front of it",
-      "self.refine_kind(" in pathlib.Path("point_logger.py").read_text(encoding="utf-8")
-      and "judge.in_background" in pathlib.Path("point_logger.py").read_text(encoding="utf-8"))
+      "self.refine_kind(" in (JUDGE_SRC.parent.parent / "point_logger.py").read_text(encoding="utf-8")
+      and "judge.in_background" in (JUDGE_SRC.parent.parent / "point_logger.py").read_text(encoding="utf-8"))
 
 # The eval that produced the thresholds has to still be here and still be
 # runnable, or the numbers above are folklore.

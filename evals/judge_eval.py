@@ -33,7 +33,7 @@ try:
 except Exception:
     pass
 
-import judge  # noqa: E402
+import trailmark.judge as judge
 
 CASES = pathlib.Path(__file__).resolve().parent / "judge_cases.json"
 

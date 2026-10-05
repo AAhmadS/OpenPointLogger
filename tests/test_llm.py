@@ -2,7 +2,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-import llm
+import trailmark.llm as llm
 
 captured = {}
 

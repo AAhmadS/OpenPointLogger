@@ -159,7 +159,9 @@ def data_dir():
     if getattr(sys, "frozen", False):
         base = Path(os.environ.get("APPDATA") or Path.home()) / "Trailmark"
     else:
-        base = Path(__file__).resolve().parent
+        # This module lives in trailmark/; dev data (points.json, config.json)
+        # has always sat at the project root, one level up.
+        base = Path(__file__).resolve().parent.parent
     return base
 
 
@@ -244,7 +246,7 @@ def _judge_info():
     second-opinion module that failed to load must not stop the app starting.
     """
     try:
-        import judge
+        import trailmark.judge as judge
         return {"model": judge.MODEL, "thresholds": dict(judge.THRESHOLDS)}
     except Exception:
         return {"model": "", "thresholds": {}}
@@ -281,7 +283,7 @@ def _clean_meta(meta):
     if not meta:
         return None
     try:
-        import citation
+        import trailmark.citation as citation
     except Exception:
         return None
     m = citation.normalise_meta(meta)
@@ -378,7 +380,7 @@ class Store:
 
     def list_templates(self):
         try:
-            import templates_registry
+            import trailmark.templates_registry as templates_registry
             return [{k: v for k, v in t.items() if k != "dir"} for t in templates_registry.available()]
         except Exception:
             return []
@@ -847,7 +849,7 @@ class Store:
     def export_topic(self, tid, options=None):
         """Export one topic. ``options`` may carry template, formats, subtitle,
         summary, and a polished Markdown body from the AI path."""
-        import pipeline
+        import trailmark.pipeline as pipeline
         options = dict(options or {})
         t = self.find_topic(tid)
         if not t:
@@ -885,7 +887,7 @@ class Store:
     def export_payload(self, tid, options=None):
         """The Markdown the AI polish pass rewrites - same text the deterministic
         export starts from, so the citation check can compare the two."""
-        import pipeline
+        import trailmark.pipeline as pipeline
         t = self.find_topic(tid)
         if not t:
             return None

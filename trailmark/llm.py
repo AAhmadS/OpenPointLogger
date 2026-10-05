@@ -1,7 +1,7 @@
 import json
 import urllib.request
 
-from point_store import PROVIDERS
+from trailmark.point_store import PROVIDERS
 
 
 def resolve_base_url(cfg):
@@ -135,7 +135,7 @@ def polish_report(cfg, topic_title, composed_markdown, science=None):
         # the same rule applies: say exactly what is checked. The gate rejects a
         # note that gained a citation, a note that vanished, and a quotation that
         # was reworded - so those three are the three rules, in those words.
-        import pipeline
+        import trailmark.pipeline as pipeline
         rules = [
             "",
             "This report is in scientific mode. Two kinds of text are mixed in it and they are",

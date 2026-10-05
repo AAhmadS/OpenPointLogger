@@ -2,7 +2,7 @@ import base64
 import pathlib
 import tempfile
 
-import point_store as ps
+import trailmark.point_store as ps
 
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="opl_test_"))
 ps.BASE_DIR = tmp
@@ -70,7 +70,7 @@ print("config defaults OK")
 # This test file only ever builds a bare Store(), so a minimal controller
 # stand-in is constructed inline here, just enough to satisfy Api's calls
 # into `self.controller.refresh_full()` without a real webview window.
-import point_logger  # noqa: E402
+import point_logger as point_logger
 
 
 class _StubController:

@@ -42,7 +42,7 @@ def check(name, cond, detail=""):
 # asr.py's Vad.feed docstring documents ~30ms frames at 16kHz mono int16 as
 # 480 samples / 960 bytes per call - used as-is here.
 
-import asr  # noqa: E402
+import trailmark.asr as asr
 
 SAMPLERATE = 16000
 FRAME_SAMPLES = 480
@@ -190,7 +190,7 @@ except Exception as e:
 # 3. Controller._log_asr_text wiring, against a temp-APPDATA Store
 # ---------------------------------------------------------------------------
 
-import point_store as ps  # noqa: E402
+import trailmark.point_store as ps # noqa: E402
 
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="opl_test_"))
 ps.BASE_DIR = tmp
@@ -199,7 +199,7 @@ ps.CONFIG_FILE = tmp / "config.json"
 ps.ATTACH_DIR = tmp / "attachments"
 ps.EXPORT_DIR = tmp / "exports"
 
-import point_logger  # noqa: E402
+import point_logger as point_logger
 
 c = point_logger.Controller()
 r = c.store.start_topic("Test topic")
