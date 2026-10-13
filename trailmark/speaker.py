@@ -395,3 +395,60 @@ def enroll(verifier, clips, samplerate=16000):
 def is_owner(score, threshold):
     """True if a cosine score clears the given threshold."""
     return score >= threshold
+
+
+# ---------------------------------------------------------------------------
+# Utterance-level multi-speaker attribution (non-overlap)
+# ---------------------------------------------------------------------------
+#
+# The verifier answers "is this the owner" per finished utterance. A room
+# with two colleagues needs the next question: "which non-owner is this,
+# and is it the same one as last time". That is greedy cosine clustering
+# over utterance embeddings - stable SPEAKER_00.. ids in order of first
+# appearance, None (too short to embed) mapping to "" (unknown).
+#
+# Honest scope: one label per utterance, no overlap handling. Overlapping
+# speech needs a target-speaker pass (DiCoW / NeMo multitalker, see
+# docs/voice-realtime.md) - clustering overlapping embeddings just picks
+# the louder voice. Pure functions, no model, no audio.
+
+
+def cluster_embeddings(embeddings, threshold=DEFAULT_THRESHOLD):
+    """[label_index] per embedding, in order. None stays None.
+
+    Greedy: each embedding joins the first cluster whose member scores
+    >= threshold against it, else starts a new cluster. Deterministic;
+    labels are dense (0..k-1) in order of first appearance.
+    """
+    labels, clusters = [], []
+    for emb in embeddings:
+        if emb is None:
+            labels.append(None)
+            continue
+        placed = None
+        for i, members in enumerate(clusters):
+            if any(cosine(emb, m) >= threshold for m in members):
+                placed = i
+                break
+        if placed is None:
+            clusters.append([emb])
+            placed = len(clusters) - 1
+        else:
+            clusters[placed].append(emb)
+        labels.append(placed)
+    return labels
+
+
+def label_utterances(keys, embeddings, threshold=DEFAULT_THRESHOLD):
+    """{key: "SPEAKER_%02d" | ""} for one session's utterances.
+
+    ``keys`` and ``embeddings`` run in parallel; a None embedding (too
+    short to check) labels "". The owner, when known, is SPEAKER_00 by
+    convention only when the caller lists the owner embedding first -
+    this function itself just numbers clusters of strangers.
+    """
+    out = {}
+    for key, label in zip(keys, cluster_embeddings(list(embeddings),
+                                                   threshold=threshold)):
+        out[key] = "" if label is None else ("SPEAKER_%02d" % label)
+    return out

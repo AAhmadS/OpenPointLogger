@@ -16,7 +16,10 @@ a = Analysis(
     # to run, which is what actually collects the bundled PortAudio binary.
     # 'onnxruntime' and 'numpy' for the same reason: speaker.py imports both
     # inside functions, behind speaker.available()'s try/except, and the
-    # contrib onnxruntime hook is what collects its provider DLLs.
+    # contrib onnxruntime hook is what collects its provider DLLs. Without
+    # them the packaged app downloads the voice model fine and then reports
+    # "onnxruntime is not installed" on every check - the speaker card never
+    # launches.
     hiddenimports=['webview.platforms.winforms', 'sounddevice', 'onnxruntime', 'numpy'],
     hookspath=[],
     hooksconfig={},

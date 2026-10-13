@@ -408,19 +408,23 @@ button.vpill{cursor:pointer}
    voice bar is removed from the flow rather than merely scrolled past.
    The unified card stays a single card - mini only hides the topic/point
    blocks and the shortcut hints, keeping voice bar + draft tail + Log. */
-body.mini .win{padding:8px;gap:5px}
+body.mini .win{padding:8px;gap:5px;overflow:hidden}
 body.mini header{padding:5px 8px;gap:7px}
 body.mini header img{height:18px}
 body.mini .app{font-size:12px}
 body.mini .hk,body.mini #openApp{display:none}
 body.mini #noTopic,body.mini #topicSelWrap,body.mini #logPanel,
 body.mini #keyHints,body.mini #recent,body.mini .udiv{display:none!important}
+body.mini #unifiedSec{overflow:hidden}
 body.mini .card.unified{padding:8px 10px;gap:5px}
 body.mini .vwave{height:22px}
 body.mini .vheard{display:none}
 body.mini .vdraft{display:block;font-size:11.5px;line-height:1.3;color:var(--content);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px}
 body.mini .vacts{display:flex}
+/* The 176px bar has no room for a full-height button: at control height the
+   Log button alone pushes the card past the window and earns a scrollbar. */
+body.mini .vacts .btn{min-height:28px;padding:4px 4px}
 body.mini .vtopic{display:none}
 </style></head><body>
 <div class="win">
@@ -1363,7 +1367,7 @@ main{overflow-y:auto;padding:22px}
   padding:26px;background:var(--scrim);animation:fade .16s ease}
 .modal{width:min(620px,100%);max-height:calc(100vh - 52px);display:flex;flex-direction:column;
   padding:0;border-radius:var(--r-xl);box-shadow:var(--shadow-3);transition:width var(--dur-mid) var(--ease-standard)}
-.modal.wide{width:min(860px,100%)}
+.modal.wide{width:min(1120px,100%)}
 .modal-h{display:flex;align-items:flex-start;gap:14px;padding:20px 24px 14px;
   border-bottom:1px solid var(--border)}
 .modal-h .card-t{word-break:break-word}
@@ -1383,21 +1387,37 @@ main{overflow-y:auto;padding:22px}
   margin-top:2px;flex:none}
 .sec-l:not(:first-child){margin-top:20px}
 
-.tpls{display:flex;flex-direction:column;gap:7px;max-height:250px;overflow-y:auto;
-  /* with five or six templates installed the Formats section fell below the
-     fold and the Export button looked like the whole dialog - the list gets
-     its own scroll so both halves of the decision stay visible */
-  padding-right:4px;margin-right:-4px}
-.tpl{display:flex;align-items:flex-start;gap:11px;padding:11px 13px;border-radius:var(--r-md);
-  border:1px solid var(--border);background:var(--surface-sunken);color:var(--content);
-  font-family:inherit;text-align:left;cursor:pointer;transition:.15s}
-.tpl:hover{border-color:var(--border-strong)}
-.tpl.on{border-color:var(--accent);background:var(--accent-tint);
-  box-shadow:0 0 0 3px var(--accent-tint)}
-.tpl-dot{flex:none;width:10px;height:10px;border-radius:3px;margin-top:4px}
-.tpl-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-.tpl-n{font-size:13.5px;font-weight:650;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.tpl-d{font-size:11.5px;color:var(--content-muted);line-height:1.45}
+.tpls{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px;
+  max-height:340px;overflow-y:auto;
+  /* the grid keeps its own scroll so the Formats section and the Export
+     button stay visible below it, however many templates are installed */
+  padding:2px;margin:0}
+.tpl{display:flex;flex-direction:column;gap:0;padding:0;border-radius:var(--r-lg);
+  border:1px solid var(--border);background:var(--surface-raised);color:var(--content);
+  font-family:inherit;text-align:left;cursor:pointer;transition:.16s;overflow:hidden}
+.tpl:hover{border-color:var(--border-strong);transform:translateY(-2px);box-shadow:var(--shadow-2)}
+.tpl.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-tint)}
+/* the gallery cover: a miniature page in the template's own accent, the way
+   Overleaf and Google Docs show a document rather than a list row */
+.tpl-cover{position:relative;height:104px;flex:none;overflow:hidden;
+  background:var(--surface-sunken);
+  background:linear-gradient(160deg,color-mix(in srgb,var(--tpl-accent,var(--accent)) 26%,transparent),transparent 70%),
+             var(--surface-sunken);
+  border-bottom:1px solid var(--border)}
+.tpl-cover::before{content:"";position:absolute;left:14px;right:14px;top:12px;bottom:12px;
+  background:var(--surface-raised);border:1px solid var(--border);border-radius:4px;
+  box-shadow:var(--shadow-1)}
+.tpl-cover::after{content:"";position:absolute;left:22px;right:30px;top:22px;height:52px;
+  background:repeating-linear-gradient(to bottom,
+    var(--content-muted) 0 2px,transparent 2px 7px);
+  opacity:.55;border-radius:2px}
+.tpl-cover .tpl-titlebar{position:absolute;left:22px;right:60px;top:14px;height:5px;border-radius:3px;
+  background:var(--tpl-accent,var(--accent))}
+.tpl-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;padding:10px 12px 11px}
+.tpl-dot{display:none}
+.tpl-n{font-size:13px;font-weight:650;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.tpl-d{font-size:11.5px;color:var(--content-muted);line-height:1.45;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:32px}
 .badge.accentish{background:var(--accent-tint);color:var(--accent)}
 
 /* --- categories: pill strip above the template grid --------------------- */
@@ -1432,21 +1452,53 @@ main{overflow-y:auto;padding:22px}
   text-underline-offset:2px}
 .tpl-set-default:hover,.tpl-preview-btn:hover{color:var(--accent-hover)}
 
+/* --- settings sub-tabs: one row of pills above the cards -----------------
+   Settings used to be a single 12-card scroll: every save rebuilt the whole
+   page, wiping focus and scroll. Now only the active panel renders, so a
+   save in AI touches AI, not the hotkey form. */
+.set-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 auto 14px;max-width:780px}
+.set-tab{padding:7px 14px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:var(--surface-sunken);color:var(--content-secondary);font-family:inherit;
+  font-size:12px;font-weight:650;cursor:pointer;transition:.15s;white-space:nowrap}
+.set-tab:hover{color:var(--content);border-color:var(--border-strong)}
+.set-tab.on{background:var(--accent-tint);border-color:var(--accent);color:var(--accent)}
+/* --- vertical rhythm: stacked rows inside settings cards and the export
+   dialog. .card itself is plain block flow, so sibling rows used to touch;
+   these two containers are flex columns and every field/button row gets the
+   same gap - field-button, button-button and field-field alike. */
+.set-panels>.card{display:flex;flex-direction:column;gap:12px}
+.set-panels>.card>p,.set-panels>.card>.row{margin:0}
+.modal-b{display:flex;flex-direction:column;gap:12px}
+.modal-b>.sec-l{margin:0}
+.modal-b>.sec-l:not(:first-child){margin-top:8px}
 /* --- template panel: pills+grid alongside an optional preview column ----- */
 .tpl-panel{display:flex;gap:16px;align-items:flex-start;min-width:0}
-.tpl-main{flex:1;min-width:0}
+.tpl-panel.has-preview{flex-direction:column}
+.tpl-main{flex:1;min-width:0;width:100%}
 /* sub-headings inside the template column ("Templates in X" / "Also
    available") - deliberately lighter than .sec-l so they read as nested
    under the "Template" section heading, not as a sibling of it */
 .tpl-sub-l{font-size:10.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;
   color:var(--content-muted);margin:0 0 7px}
 .tpl-sub-l.also{margin-top:14px}
-.preview-col{flex:0 0 268px;min-width:0;display:flex;flex-direction:column;gap:8px;
-  border-left:1px solid var(--border);padding-left:16px}
+.preview-col{flex:0 0 320px;min-width:0;display:flex;flex-direction:column;gap:8px;
+  border-left:1px solid var(--border);padding-left:16px;
+  position:sticky;top:0}
+.tpl-panel.has-preview .preview-col{flex:none;width:100%;border-left:0;padding-left:0;
+  border-top:1px solid var(--border);padding-top:14px;position:static}
 .preview-h{font-size:11.5px;font-weight:650;color:var(--content-secondary);line-height:1.4}
-.preview-frame-wrap{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;
-  background:var(--surface-raised);height:280px}
-.preview-frame-wrap iframe{width:100%;height:100%;border:0}
+.preview-frame-wrap{border:1px solid var(--border-strong);border-radius:var(--r-lg);overflow:hidden;
+  background:#fff;height:430px;box-shadow:var(--shadow-2)}
+.tpl-panel.has-preview .preview-frame-wrap{height:min(620px,calc(100vh - 320px));min-height:420px}
+.preview-frame-wrap iframe{width:100%;height:100%;border:0;background:#fff}
+.preview-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* Settings › Templates manager: full-width gallery + large preview below.
+   Same card markup as the export dialog, but the preview is the point here,
+   so it gets the full card width and a real reading height. */
+.tplmgr-preview-wrap{border:1px solid var(--border-strong);border-radius:var(--r-lg);
+  overflow:hidden;background:#fff;height:min(640px,calc(100vh - 300px));min-height:440px;
+  box-shadow:var(--shadow-2)}
+.tplmgr-preview-wrap iframe{width:100%;height:100%;border:0;background:#fff}
 .preview-empty{font-size:11.5px;color:var(--content-muted);padding:14px;text-align:center}
 
 .fmts{display:grid;grid-template-columns:1fr 1fr;gap:7px}
@@ -1519,7 +1571,45 @@ let displayLimit=20;
 // the first thing you see.
 let openGroups=null;
 let exportDialog=null;
-let catNewOpen=false; // Settings -> Exports -> Categories: "+ New category" popover open?
+let catNewOpen=false; // Settings -> Templates -> Categories: "+ New category" popover open?
+// Settings sub-tabs. One panel renders at a time so a save in one section
+// never rebuilds the form being edited in another.
+let settingsSub="shortcuts";
+const SETTINGS_TABS=[
+  ["shortcuts","Shortcuts"],
+  ["ai","AI & voice"],
+  ["integrations","Integrations"],
+  ["science","Science"],
+  ["templates","Templates"],
+  ["appearance","Appearance"],
+];
+// Keys that live only in the browser: fetched once via dedicated bridge calls
+// (list_categories, list_asr_devices, get_voice, telegram_status,
+// speaker_status) and never part of store.state(). Any wholesale `state=r`
+// assignment drops them and triggers a refetch cascade - one full rebuild per
+// missing key. applyState() merges instead; use it everywhere a bridge call
+// returns full state.
+const EPHEMERAL_KEYS=["categories","asrDevices","voiceGrammar","voiceHotkeys",
+  "voiceOpinion","telegramStatus","speakerInfo"];
+function applyState(r){
+  if(!r||r.error) return r;
+  for(const k of EPHEMERAL_KEYS){
+    if(!(k in r)&&state[k]!==undefined) r[k]=state[k];
+  }
+  state=r;
+  return r;
+}
+// Templates manager preview (Settings › Templates). Sample HTML from
+// api.template_demo(), shown full-width below the gallery.
+let tplMgrPreview=null, tplMgrHtml=null, tplMgrLoading=false, tplMgrError=null;
+// In-flight guards: bindSettings() runs after every render, and without these
+// each render would fire a duplicate fetch, each fetch would render, and each
+// render would fetch again - the "refreshes so much" storm.
+const _fetching={cats:false,asrDevs:false,voice:false,tg:false,spk:false};
+// Device poller generation + last select fingerprint. bindSettings() starts
+// one chain per render; only the newest chain survives, so re-renders never
+// stack up parallel pollers.
+let _devPollGen=0, _devPollFp=[];
 const api=new Proxy({},{get:(_,p)=>{const pv=window.pywebview&&window.pywebview.api;return pv?pv[p]:(()=>Promise.resolve({error:"bridge not ready"}));}});
 
 const $=(s,r=document)=>r.querySelector(s);
@@ -1639,7 +1729,11 @@ function renderTopbar(){
 
 function renderSide(){
   const list=$("#sideList");
-  if(tab==="settings"){list.innerHTML=emptyHtml("Settings","AI assist, hotkey and storage preferences are on the right.");return;}
+  if(tab==="settings"){
+    const cur=(SETTINGS_TABS.find(t=>t[0]===settingsSub)||[])[1]||"Settings";
+    list.innerHTML=emptyHtml("Settings",cur+" preferences are on the right. Pick a section above the cards to switch.");
+    return;
+  }
   if(tab==="exports"){
     const groups=(state.exports||[]);
     if(!groups.length){list.innerHTML=emptyHtml("No exports yet","Close a topic, and the cited report lands here.");return;}
@@ -1916,11 +2010,11 @@ function previewColHtml(opts){
   let body;
   if(opts.previewLoading) body=`<div class="preview-empty">Rendering sample…</div>`;
   else if(opts.previewError) body=`<div class="preview-empty">${esc(opts.previewError)}</div>`;
-  else body=`<div class="preview-frame-wrap"><iframe id="mPreviewFrame" sandbox></iframe></div>`;
+  else body=`<div class="preview-frame-wrap"><iframe id="mPreviewFrame" title="Template preview" sandbox="allow-same-origin"></iframe></div>`;
   return `<div class="preview-col">
-    <div class="preview-h">Preview &mdash; ${esc(title)} &middot; sample data</div>
+    <div class="preview-h">Preview &mdash; ${esc(title)} &middot; sample data &middot; full width below</div>
     ${body}
-    <div class="row" style="margin-top:2px">
+    <div class="preview-toolbar">
       <button type="button" class="btn primary sm" id="mUseTpl" ${opts.previewLoading?"disabled":""}>Use this template</button>
       <button type="button" class="btn ghost sm" id="mClosePreview">Close</button>
     </div>
@@ -1940,8 +2034,9 @@ function previewColHtml(opts){
 function tplCardHtml(tp, opts, defId){
   const on=opts.template===tp.id;
   const isDefault=tp.id===defId;
-  return `<div class="tpl ${on?"on":""}" data-tpl="${esc(tp.id)}" tabindex="0" role="button">
-      <span class="tpl-dot" style="background:${esc(tp.accent||"")||"var(--accent)"}"></span>
+  const accent=tp.accent||"";
+  return `<div class="tpl ${on?"on":""}" data-tpl="${esc(tp.id)}" tabindex="0" role="button"${accent?` style="--tpl-accent:${esc(accent)}"`:""}>
+      <span class="tpl-cover" aria-hidden="true"><span class="tpl-titlebar"></span></span>
       <span class="tpl-b">
         <span class="tpl-n">${esc(tp.name)}${isDefault?`<span class="badge accentish">Default</span>`:""}${tp.source==="user"?`<span class="badge">yours</span>`:""}</span>
         <span class="tpl-d">${esc(tp.description||"")}</span>
@@ -2003,7 +2098,7 @@ function exportDialogHtml(t, opts, closing){
       <div class="sec-l">Category</div>
       ${catStripHtml(opts)}
       <div class="sec-l">Template</div>
-      <div class="tpl-panel">
+      <div class="tpl-panel ${opts.previewTemplate?"has-preview":""}">
         <div class="tpl-main">${tplPanelBody}</div>
         ${previewColHtml(opts)}
       </div>
@@ -2042,6 +2137,17 @@ function renderStages(active, done){
     const cls=done.includes(k)?"done":(k===active?"active":"");
     return `<div class="stg ${cls}"><div class="dot2">${i+1}</div><span>${STAGE_LABEL[k]}</span></div>`;
   }).join("");
+  // The stages sit at the bottom of a scrolling dialog, below the fold on
+  // most window sizes. Without this the Export button's "Exporting..." state
+  // is the only thing that changes on screen, and the steps themselves are
+  // only found by scrolling down by hand. Bring them into view instead -
+  // the dialog body scrolls, the footer with the button stays put.
+  try{
+    const scroller=el.closest(".modal-b")||el.parentElement;
+    if(scroller&&typeof scroller.scrollTo==="function")
+      scroller.scrollTo({top:scroller.scrollHeight,behavior:"smooth"});
+    else if(el.scrollIntoView) el.scrollIntoView({block:"nearest",behavior:"smooth"});
+  }catch(e){}
 }
 
 async function openExportDialog(t, closing){
@@ -2052,7 +2158,7 @@ async function openExportDialog(t, closing){
   // appears - so there is no debounce/cache here; revisit if that changes.
   try{
     const r=await api.list_categories();
-    if(r&&!r.error) state=r;
+    if(r&&!r.error) applyState(r);
   }catch(e){ /* fall through on whatever state we already have */ }
 
   exportDialog=defaultExportOpts(t);
@@ -2072,7 +2178,7 @@ async function openExportDialog(t, closing){
     // on the very last export) the strip would go blank on the next re-render.
     // Same self-healing guard as bindSettings() uses for the same reason.
     if(!state.categories||!state.categories.length){
-      api.list_categories().then(r=>{if(r&&!r.error){state=r; renderBody();}}).catch(()=>{});
+      api.list_categories().then(r=>{if(r&&!r.error){applyState(r); renderBody();}}).catch(()=>{});
     }
     modalEl.classList.toggle("wide", !!exportDialog.previewTemplate);
     modalEl.innerHTML=exportDialogHtml(t, exportDialog, closing);
@@ -2146,8 +2252,8 @@ async function openExportDialog(t, closing){
       if(!defTpl) return toast("Pick a default template.","err");
       const beforeIds=new Set((state.categories||[]).map(c=>c.id));
       const r=await api.save_category({name, default_template:defTpl});
-      if(r.error) return toast(r.error,"err");
-      state=r;
+      if(r&&r.error) return toast(r.error,"err");
+      applyState(r);
       const created=(state.categories||[]).find(c=>!beforeIds.has(c.id));
       exportDialog.category=created?created.id:((state.categories||[])[0]||{}).id;
       exportDialog.template=created?created.default_template:exportDialog.template;
@@ -2162,8 +2268,8 @@ async function openExportDialog(t, closing){
       const tplId=b.dataset.setDefault;
       if(!exportDialog.category) return;
       const r=await api.set_category_default(exportDialog.category, tplId);
-      if(r.error) return toast(r.error,"err");
-      state=r;
+      if(r&&r.error) return toast(r.error,"err");
+      applyState(r);
       renderBody();
       toast("Default template updated.");
     }));
@@ -2220,8 +2326,8 @@ async function openExportDialog(t, closing){
       try{
         if(closing){
           const c=await api.close_topic(t.id);
-          if(c.error){clearInterval(tick); go.disabled=false; go.textContent="Export"; return toast(c.error,"err");}
-          state=c;
+          if(c&&c.error){clearInterval(tick); go.disabled=false; go.textContent="Export"; return toast(c.error,"err");}
+          applyState(c);
         }
         r=exportDialog.polish ? await api.export_topic_polished(t.id,opts)
                               : await api.export_topic(t.id,opts);
@@ -2233,7 +2339,7 @@ async function openExportDialog(t, closing){
       }
       renderStages(null, order);
       const wasPolish=exportDialog.polish;
-      state=await api.get_state();
+      applyState(await api.get_state());
       openGroups=groupSet(); if(r.topic_id) openGroups.add(r.topic_id);
       if(closing) tab="closed";
       close(); render();
@@ -2646,6 +2752,78 @@ function categoriesHtml(){
   </div>`;
 }
 
+function settingsTabsBar(){
+  return `<div class="set-tabs" role="tablist" aria-label="Settings sections">`+
+    SETTINGS_TABS.map(([id,label])=>
+      `<button type="button" role="tab" class="set-tab ${settingsSub===id?"on":""}" `+
+      `data-settingssub="${id}" aria-selected="${settingsSub===id?"true":"false"}">${label}</button>`
+    ).join("")+`</div>`;
+}
+// Settings › Templates manager gallery. Same template objects the export
+// dialog uses, but as a managing surface: every template visible at once with
+// its category, formats and a real preview - not a 320px column.
+function settingsTplGalleryHtml(){
+  const tpls=state.templates||[];
+  const cats=state.categories||[];
+  const catName=id=>(cats.find(c=>c.id===id)||{}).name||id||"—";
+  if(!tpls.length) return `<p class="muted">No templates found. Open the templates folder and drop one in.</p>`;
+  return `<div class="tpls" style="max-height:none">`+tpls.map(tp=>{
+    const on=tplMgrPreview===tp.id;
+    const accent=tp.accent||"";
+    return `<div class="tpl ${on?"on":""}" data-tplmgr="${esc(tp.id)}" tabindex="0" role="button" aria-pressed="${on}"${accent?` style="--tpl-accent:${esc(accent)}"`:""}>
+      <span class="tpl-cover" aria-hidden="true"><span class="tpl-titlebar"></span></span>
+      <span class="tpl-b">
+        <span class="tpl-n">${esc(tp.name)}${tp.source==="user"?`<span class="badge">yours</span>`:`<span class="badge">built-in</span>`}</span>
+        <span class="tpl-d">${esc(tp.description||"")}</span>
+        <span class="muted" style="font-size:11px">${esc(catName(tp.category))} &middot; ${esc((tp.formats||[]).join(", ").toUpperCase()||"—")}</span>
+        <span class="tpl-actions">
+          <button type="button" class="tpl-preview-btn" data-tplmgr-preview="${esc(tp.id)}">${on?"Hide preview":"Preview"}</button>
+          <button type="button" class="tpl-set-default" data-tplmgr-use="${esc(tp.id)}">Use for its category</button>
+        </span>
+      </span>
+    </div>`;
+  }).join("")+`</div>`;
+}
+function settingsTplPreviewHtml(){
+  if(!tplMgrPreview) return "";
+  const tp=(state.templates||[]).find(x=>x.id===tplMgrPreview);
+  const title=tp?tp.name:tplMgrPreview;
+  let body;
+  if(tplMgrLoading) body=`<div class="preview-empty">Rendering sample report…</div>`;
+  else if(tplMgrError) body=`<div class="preview-empty">${esc(tplMgrError)}</div>`;
+  else body=`<div class="tplmgr-preview-wrap"><iframe id="tplMgrFrame" title="Template preview" sandbox="allow-same-origin"></iframe></div>`;
+  return `<div style="margin-top:14px">
+    <div class="preview-h" style="margin-bottom:8px">Preview &mdash; ${esc(title)} &middot; sample data &middot; full width</div>
+    ${body}
+    <div class="preview-toolbar" style="margin-top:8px">
+      <button type="button" class="btn ghost sm" id="tplMgrClose">Close preview</button>
+    </div>
+  </div>`;
+}
+// Settings › microphone: one live line under the dropdown. The first paint
+// only knows the saved name and the last device list; the poller in
+// bindSettings() replaces this with what capture is actually using, in
+// place, without rebuilding the form.
+function devNoteText(){
+  try{
+    const devs=state.asrDevices||[];
+    const saved=String(((state.config||{}).asr||{}).device||"");
+    if(!saved||!devs.length) return "";
+    if(!devs.some(d=>String(d.id)===saved))
+      return "\u201c"+saved+"\u201d is not connected \u2014 capture uses the system default and switches back when it returns.";
+  }catch(e){}
+  return "";
+}
+// Bluetooth hands-free endpoints sleep aggressively and take the capture
+// stream down with them. The watcher follows them back automatically, but
+// saying so once, next to the dropdown, beats another mysterious silence.
+function handsFreeHint(name){
+  try{
+    if(/hands-?free|headset|\\bhfp\\b/i.test(String(name||"")))
+      return "This looks like a Bluetooth hands-free endpoint: those sleep aggressively and vanish mid-session. Trailmark switches back to it automatically when it returns; keeping the headset awake (or using the built-in microphone) drops out less.";
+  }catch(e){}
+  return "";
+}
 function settingsHtml(){
   const c=state.config||{};
   const hk=c.hotkey||{};
@@ -2661,11 +2839,12 @@ function settingsHtml(){
   const vcMods=(vc.modifiers||["ctrl","alt"]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+");
   const vcRows=(state.voiceGrammar||[]).map(g=>`<tr><td><b>${esc(g.say)}</b></td><td>${esc(g.summary)}</td><td dir="rtl" class="muted">${esc(g.persian||"")}</td></tr>`).join("");
   // "session <name>" is the one form code cannot settle - "session Rust" is a
-  // command, "session times were short" is a sentence - so it waits for a
-  // second opinion, and without one it stays text. Say so here, not only on
+  // command, "session times were short" is a sentence - so it asks the
+  // second opinion first, and a short verb-less name is also accepted by a
+  // small local check when no opinion is available. Say so here, not only on
   // the first failed attempt.
-  const vcOpinion=state.voiceOpinion?`<p class="muted">&ldquo;Session&rdquo; and &ldquo;tab&rdquo; with a name are checked by the second opinion (below), which tells a name from a sentence.</p>`
-    :`<p class="muted" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:10px 12px"><b>&ldquo;Session&rdquo; and &ldquo;tab&rdquo; with a name need the second opinion</b> (below) to tell a name from a sentence. Without it they are kept as text. To force the command, start with &ldquo;trail&rdquo;: &ldquo;trail session Rust&rdquo;.</p>`;
+  const vcOpinion=state.voiceOpinion?`<p class="muted">&ldquo;Session&rdquo; and &ldquo;tab&rdquo; with a name are told apart from sentences by the second opinion.</p>`
+    :`<p class="muted" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:10px 12px">Short names (up to three words, no verb) work alone; longer ones need the second opinion below. Force any of them with &ldquo;trail&rdquo;: &ldquo;trail session Rust&rdquo;.</p>`;
   const vcHot=(state.voiceHotkeys||[]);
   const vcKeyRow=(id,name,label)=>`<label>${label}<input id="${id}" class="input" maxlength="12" value="${esc(vcKeys[name]||"")}"></label>`;
   const tgStatus=state.telegramStatus||{state:"off",detail:"",username:"",pairing_code:tg.pairing_code||"",token_source:"none"};
@@ -2689,8 +2868,9 @@ function settingsHtml(){
   const xf=ex.formats||["html","pdf","markdown"];
   const fmtBoxes=[["html","HTML"],["pdf","PDF"],["docx","DOCX"],["markdown","Markdown"]].map(
     ([k,l])=>`<label class="fmt-opt ${xf.includes(k)?"on":""}"><input type="checkbox" data-xfmt="${k}" ${xf.includes(k)?"checked":""}><span><b>${l}</b></span></label>`).join("");
-  return `<div class="cards">
-    <div class="card glass fade">
+  const hid=name=>settingsSub===name?"":"hidden";
+  return settingsTabsBar()+`<div class="cards set-panels">
+    <div class="card glass fade" ${hid("shortcuts")}>
       <div class="card-h"><div class="card-t">Global hotkey</div></div>
       <p class="muted">Press this combination anywhere on Windows to show or hide the quick capture popup. It never steals focus until you ask for it.</p>
       <div class="row">
@@ -2700,17 +2880,17 @@ function settingsHtml(){
       </div>
       <p class="muted" id="hkInfo"></p>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("shortcuts")}>
       <div class="card-h"><div class="card-t">Log clipboard</div></div>
-      <p class="muted">Opens quick capture with the clipboard attached — an image, a link or text is detected and added as a source. You write the point and log it.</p>
+      <p class="muted">Opens quick capture with the clipboard attached as a source — detected as image, link or text.</p>
       <div class="row" style="align-items:center;gap:8px">
         <span class="key">Ctrl</span><span class="plus">+</span><span class="key">Alt</span><span class="plus">+</span><span class="key">V</span>
         <button class="sw ${cb.enabled?"on":""}" id="cbSw" type="button" role="switch" aria-checked="${cb.enabled?"true":"false"}" aria-label="Enable clipboard hotkey" style="margin-left:auto"><span class="kn"></span></button>
       </div>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("ai")}>
       <div class="card-h"><div class="card-t">AI assist</div></div>
-      <p class="muted">Optional and bring-your-own-key. Polish a point, summon a summary, or generate a polished report on export. Supports <b>OpenAI</b>, <b>OpenRouter</b>, <b>Mistral AI</b>, <b>Google AI Studio (Gemini)</b>, and <b>AvalAI</b>. Default: <b>OpenRouter</b> + <b>deepseek/deepseek-v4-flash</b>.</p>
+      <p class="muted">Optional, bring-your-own-key: polish points, summaries, and polished exports. Default: <b>OpenRouter</b> + <b>deepseek/deepseek-v4-flash</b>.</p>
       <div class="row"><label class="mod" style="flex-direction:row"><input type="checkbox" id="lEnabled" ${llm.enabled?"checked":""}> Enable AI assist</label></div>
       <div class="grid3">
         <label>Provider<select id="lProvider" class="input">${provOpts}</select></label>
@@ -2724,76 +2904,80 @@ function settingsHtml(){
       </div>
       <div class="row"><button class="btn ghost sm" id="lTest">Test connection</button><span class="muted" id="lTestOut"></span></div>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("ai")}>
       <div class="card-h"><div class="card-t">Always-on voice</div></div>
       <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Always-on voice</b>
-          <p class="muted" style="margin:3px 0 0">The master switch. Listens on your microphone only while this is on. What you say lands as text in the quick-capture box, beside anything you type &mdash; fix a misheard word there like a typo &mdash; and is filed when you say &ldquo;log&rdquo; or press Log. Also on the tray menu and the quick-capture popup.</p>
+          <p class="muted" style="margin:3px 0 0">The master switch. While on, speech lands as text in the quick-capture box and is filed when you say &ldquo;log&rdquo; or press Log.</p>
         </div>
         <button class="sw ${asr.enabled?"on":""}" id="asrSw" type="button" role="switch" aria-checked="${asr.enabled?"true":"false"}" aria-label="Always-on voice" style="flex:none"><span class="kn"></span></button>
       </div>
-      <div class="grid3" style="margin-top:12px">
+      <div class="grid3">
         <label>Endpoint<input id="asrEndpoint" class="input" placeholder="https://openrouter.ai/api/v1" value="${esc(asr.endpoint||"")}"></label>
         <label>Model<input id="asrModel" class="input" placeholder="whisper-1" value="${esc(asr.model||"whisper-1")}"></label>
         <label>Language<select id="asrLang" class="input">${asrLangOpts}</select></label>
       </div>
-      <p class="muted">Any OpenAI-compatible /audio/transcriptions endpoint &mdash; OpenAI, Groq&hellip; For Groq, use <b>https://api.groq.com/openai/v1</b> with model <b>whisper-large-v3-turbo</b>. Transcripts are <b>Persian or English only</b>: if the transcriber answers in a third language, the clip is decoded again as Persian or English.</p>
+      <p class="muted">Any OpenAI-compatible /audio/transcriptions endpoint. For Groq: <b>https://api.groq.com/openai/v1</b> with <b>whisper-large-v3-turbo</b>. Transcripts are <b>Persian or English only</b>.</p>
       <div class="row">
         <label class="grow" style="min-width:200px">API key<input id="asrKey" class="input" type="password" placeholder="sk-…" value="${esc(asr.api_key||"")}"></label>
         <button class="btn ghost" id="asrShow">Show</button>
         <button class="btn primary" id="asrSave">Save settings</button>
       </div>
-      <div class="row" style="margin-top:12px;align-items:flex-end">
-        <label class="grow" style="min-width:220px">Microphone<select id="asrDevice" class="input">${asrDeviceOpts}</select></label>
+      <div class="row" style="align-items:flex-end">
+        <label class="grow" style="min-width:220px">Microphone<select id="asrDevice" class="input" ${micTestOn?"disabled":""}>${asrDeviceOpts}</select></label>
         <button class="btn ghost" id="mtBtn" type="button">${micTestOn?"Stop test":"Test microphone"}</button>
+        <button class="btn ghost" id="mtRefresh" type="button" title="Re-check which microphones are connected" ${micTestOn?"disabled":""}>Refresh</button>
+        ${(!micTestOn&&micHadRecording)?'<button class="btn ghost" id="mtPlay" type="button" title="Hear what the last test recorded">Play recording</button>':""}
       </div>
+      <div class="muted" id="mtDevNote" style="min-height:16px">${esc(devNoteText())}</div>
+      <div class="muted" id="hfHint" style="min-height:16px">${handsFreeHint(asrDevSaved)||""}</div>
       <canvas class="mwave" id="mtWave" aria-label="Microphone level"></canvas>
       <div class="muted" id="mtOut" style="min-height:16px">${micTestOn?esc(micNote):esc(asrDevs.length+" microphone"+(asrDevs.length===1?"":"s")+" found. Speakers, loopback and duplicate driver entries are left out.")}</div>
-      <label style="display:block;margin-top:8px">Sensitivity
+      <label style="display:block">Sensitivity
         <input id="asrSensitivity" type="range" min="0" max="100" value="${asr.sensitivity!=null?asr.sensitivity:50}" style="width:100%;accent-color:var(--accent);margin-top:6px">
       </label>
-      <p class="muted" style="margin-top:2px">In the test wave, the bars that light up are loud enough to count as speech at this sensitivity. Speak at your normal distance: your voice should light up, the room should not.</p>
+      <p class="muted" style="margin-top:2px">Bars that light up count as speech. Your voice should light up; the room should not.</p>
       <div class="row"><button class="btn ghost sm" id="asrTest">Transcribe 5 seconds</button><span class="muted" id="asrTestOut"></span></div>
-      <div class="row" style="background:var(--accent-tint);border:1px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-top:12px;align-items:flex-start">
+      <div class="row" style="background:var(--accent-tint);border:1px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;align-items:flex-start">
         <div>
           <b style="display:block;font-size:12.5px;margin-bottom:4px">Voice is strictly opt-in.</b>
           <p class="muted" style="margin:0">Trailmark only listens to your own microphone while this switch is on &mdash; never system audio, other apps, or call/loopback audio. Turning it off immediately stops capture. Nothing is recorded to disk; only the transcribed text lands in your draft.</p>
         </div>
       </div>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("ai")}>
       <div class="card-h"><div class="card-t">Only my voice</div></div>
-      <p class="muted">For a room where other people talk. A small model on this machine compares every sentence with a voiceprint made from three sentences you read, <b>before</b> anything is sent to be transcribed. Other voices are held aside &mdash; not transcribed, not sent, not filed &mdash; and the last 12 stay listed below in case one was you. The exception is anything under a second, which is too short to check: see below. The voiceprint is 256 numbers in config.json; no audio is stored.</p>
+      <p class="muted">For rooms where others talk: each sentence is checked against your voiceprint <b>before</b> anything is transcribed. Other voices are held aside &mdash; the last ${((state.speakerInfo||{}).held_max||3)} stay listed below. The voiceprint is 256 numbers in config.json; no audio is stored.</p>
       ${speakerBody}
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("shortcuts")}>
       <div class="card-h"><div class="card-t">Commands &amp; hotkeys</div></div>
-      <p class="muted">How what you say becomes a point. These refine always-on voice above; none of them does anything while that switch is off.</p>
-      <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
+      <p class="muted">These refine always-on voice above; they do nothing while it is off.</p>
+      <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Compose, don&rsquo;t file each phrase</b>
-          <p class="muted" style="margin:3px 0 0">On: what you say joins the draft in quick capture, and you decide when it becomes a point. Off is the older behaviour: every transcribed phrase is filed the moment it is heard.</p>
+          <p class="muted" style="margin:3px 0 0">On: speech joins the draft; you decide when it becomes a point. Off: every phrase is filed at once.</p>
         </div>
         <button class="sw ${vc.always_on!==false?"on":""}" id="vcSw" type="button" role="switch" aria-checked="${vc.always_on!==false?"true":"false"}" aria-label="Compose what I say into a draft" style="flex:none"><span class="kn"></span></button>
       </div>
-      <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
+      <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Listen for spoken commands</b>
-          <p class="muted" style="margin:3px 0 0">Say a command <i>on its own</i>: &ldquo;log&rdquo;, &ldquo;save&rdquo;, &ldquo;finish&rdquo;. &ldquo;Session&rdquo; and &ldquo;tab&rdquo; take a name: &ldquo;session Rust borrow checker&rdquo;. A command at the end of a sentence stays dictation &mdash; pause, then say it.</p>
+          <p class="muted" style="margin:3px 0 0">Say a command <i>on its own</i>: &ldquo;log&rdquo;, &ldquo;save&rdquo;, &ldquo;finish&rdquo;. &ldquo;Session&rdquo; and &ldquo;tab&rdquo; take a name. A command at the end of a sentence stays dictation.</p>
         </div>
         <button class="sw ${vc.commands!==false?"on":""}" id="vcCmdSw" type="button" role="switch" aria-checked="${vc.commands!==false?"true":"false"}" aria-label="Listen for spoken commands" style="flex:none"><span class="kn"></span></button>
       </div>
-      <table class="tbl" style="margin-top:12px"><tbody>${vcRows||'<tr><td class="muted">No commands loaded.</td></tr>'}</tbody></table>
+      <table class="tbl"><tbody>${vcRows||'<tr><td class="muted">No commands loaded.</td></tr>'}</tbody></table>
       ${vcOpinion}
-      <div class="row" style="align-items:flex-start;gap:10px;margin-top:12px">
+      <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Global hotkeys (${esc(vcMods)}+&hellip;)</b>
-          <p class="muted" style="margin:3px 0 0">The same commands, without saying anything.</p>
+          <p class="muted" style="margin:3px 0 0">The same commands as global hotkeys.</p>
         </div>
         <button class="sw ${vc.hotkeys!==false?"on":""}" id="vcHkSw" type="button" role="switch" aria-checked="${vc.hotkeys!==false?"true":"false"}" aria-label="Enable voice hotkeys" style="flex:none"><span class="kn"></span></button>
       </div>
-      <div class="grid3" style="margin-top:10px">
+      <div class="grid3">
         ${vcKeyRow("vcKeyLog","log","Log")}
         ${vcKeyRow("vcKeyFinish","finish","Finish")}
         ${vcKeyRow("vcKeySession","session","New session")}
@@ -2801,57 +2985,57 @@ function settingsHtml(){
       </div>
       <div id="vcHkStatus" class="muted" style="margin-top:8px">${vcHot.length?vcHot.map(h=>esc(h.combo)+" &rarr; "+esc(h.command)+(h.registered?"":" <b class='taken'>(taken)</b>")).join(" &middot; "):"Not registered yet."}</div>
       <div class="row"><button class="btn primary" id="vcSave">Save settings</button></div>
-      <div class="row" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:12px 14px;margin-top:10px;align-items:flex-start">
+      <div class="row" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:12px 14px;align-items:flex-start">
         <p class="muted" style="margin:0">Removing words or a source is done by hand, in the quick-capture box &mdash; never by voice. A misheard delete has no undo.</p>
       </div>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("ai")}>
       <div class="card-h"><div class="card-t">Second opinion</div></div>
-      <p class="muted">Two things in Trailmark are judgements rather than calculations, and both are about protecting what <i>you</i> wrote. They can be sent to <b>TypeSafe System One</b>, a model that answers typed questions with a probability instead of prose. Bring your own key. With this off, both fall back to what the app did before: a substring test, and every captured line filed as a note.</p>
-      <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
+      <p class="muted">Two judgements, not calculations: whether the polished draft kept your notes, and what a captured line is. They go to <b>TypeSafe System One</b> (bring your own key); with it off, a substring test and file-as-note apply.</p>
+      <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Use a second opinion</b>
           <p class="muted" style="margin:3px 0 0">Nothing is sent unless this is on. What travels is one note and the one paragraph of the draft nearest it &mdash; never the whole report.</p>
         </div>
         <button class="sw ${jd.enabled?"on":""}" id="jdSw" type="button" role="switch" aria-checked="${jd.enabled?"true":"false"}" aria-label="Use a second opinion" style="flex:none"><span class="kn"></span></button>
       </div>
-      <div class="grid3" style="margin-top:12px">
+      <div class="grid3">
         <label>Model<input id="jdModel" class="input" placeholder="${esc(jdModel)}" value="${esc(jd.model||"")}"></label>
         <label>Endpoint<input id="jdBase" class="input" placeholder="auto" value="${esc(jd.base_url||"")}"></label>
         <label>API key<input id="jdKey" class="input" type="password" placeholder="ts-…" value="${esc(jd.api_key||"")}"></label>
       </div>
-      <div class="row" style="align-items:flex-start;gap:10px;margin-top:12px">
+      <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Check the polished draft against your notes</b>
-          <p class="muted" style="margin:3px 0 0">Scientific mode already refuses a draft that reworded a quotation. Your <i>notes</i> are allowed to be reworded, so a substring test cannot tell a rewrite from a rewriting-away. This asks, per note, whether the draft still says what you said &mdash; and only overturns the strict check at ${esc(jdTh.note_preserved_overturn)} confidence or better.</p>
+          <p class="muted" style="margin:3px 0 0">Asks, per note, whether the polished draft still says what you said &mdash; overturning only at ${esc(jdTh.note_preserved_overturn)} confidence or better.</p>
         </div>
         <button class="sw ${jd.notes!==false?"on":""}" id="jdNotesSw" type="button" role="switch" aria-checked="${jd.notes!==false?"true":"false"}" aria-label="Check notes against the polished draft" style="flex:none"><span class="kn"></span></button>
       </div>
-      <div class="row" style="align-items:flex-start;gap:10px;margin-top:10px">
+      <div class="row" style="align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Work out what a captured line is</b>
-          <p class="muted" style="margin:3px 0 0">Everything spoken or sent from Telegram is stored as your own note. A sentence read aloud from a paper is a quotation and a finding you repeat is a claim, and scientific mode treats all three differently. Runs after the point is saved, never before, and only changes the kind at ${esc(jdTh.capture_kind_min)} confidence or better.</p>
+          <p class="muted" style="margin:3px 0 0">Decides whether a captured line is a claim, note or quotation &mdash; changing it only at ${esc(jdTh.capture_kind_min)} confidence or better.</p>
         </div>
         <button class="sw ${jd.kinds!==false?"on":""}" id="jdKindsSw" type="button" role="switch" aria-checked="${jd.kinds!==false?"true":"false"}" aria-label="Work out what a captured line is" style="flex:none"><span class="kn"></span></button>
       </div>
       <div class="row"><button class="btn ghost sm" id="jdTest">Test connection</button><span class="muted" id="jdTestOut"></span><button class="btn primary" id="jdSave">Save settings</button></div>
-      <div class="row" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:12px 14px;margin-top:10px;align-items:flex-start">
-        <p class="muted" style="margin:0">It never rewrites your text. It answers one multiple-choice question at a time and the answer either raises a warning or changes one field. If it is unreachable, slow, or unsure, the older behaviour is what happens &mdash; an export is never blocked on it.</p>
+      <div class="row" style="background:var(--surface-sunken);border-radius:var(--r-lg);padding:12px 14px;align-items:flex-start">
+        <p class="muted" style="margin:0">It never rewrites text and never blocks an export.</p>
       </div>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("integrations")}>
       <div class="card-h"><div class="card-t">Telegram bridge</div></div>
-      <p class="muted">Accept points from Telegram via a private bot pairing. Messages arrive as quick captures with the sender as the source.</p>
+      <p class="muted">Take points from Telegram through a private bot pairing.</p>
       <div class="row" style="align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
           <b style="font-size:12.5px;font-weight:650;display:block">Accept points from Telegram</b>
         </div>
         <button class="sw ${tg.enabled?"on":""}" id="tgSw" type="button" role="switch" aria-checked="${tg.enabled?"true":"false"}" aria-label="Enable Telegram bridge" style="flex:none"><span class="kn"></span></button>
       </div>
-      <div style="margin-top:12px;padding:12px;border-radius:var(--r-md);background:var(--surface-sunken);">
+      <div style="padding:12px;border-radius:var(--r-md);background:var(--surface-sunken);">
         <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">Status: <span id="tgStatusRow">${tgStatus.state==="off"?"Off":tgStatus.state==="waiting"?"Waiting for pairing":tgStatus.state==="paired"?"Paired with @"+esc(tgStatus.username||tg.username||""):tgStatus.state==="error"?"Error: "+esc(tgStatus.detail||""):"Unknown"}</span></div>
       </div>
-      <div style="margin-top:12px;padding:14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-sunken);">
+      <div style="padding:14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-sunken);">
         <div style="font-size:11.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--content-muted);margin-bottom:8px">Pairing code</div>
         <div id="tgPairCode" style="font-size:18px;font-family:var(--font-mono);font-weight:700;letter-spacing:2px;text-align:center;padding:10px;background:var(--surface);border-radius:var(--r-sm);margin-bottom:10px;word-break:break-all">${esc(tg.pairing_code||"")}</div>
         <div style="display:flex;gap:8px;justify-content:center">
@@ -2860,31 +3044,26 @@ function settingsHtml(){
         </div>
         <div style="font-size:11px;color:var(--content-secondary);margin-top:10px;text-align:center;line-height:1.5">Open the Trailmark bot and send <b>/start ${esc(tg.pairing_code||"")}</b></div>
       </div>
-      <div style="margin-top:12px">
+      <div>
         <label style="display:flex;flex-direction:column;gap:6px">Bot token<input id="tgToken" class="input" type="password" placeholder="${tg.token_set||tgStatus.token_source==="env"?"Paste a new token to replace":"Paste a bot token from @BotFather"}"></label>
         ${tg.token_set||tgStatus.token_source==="env"?`<div class="muted" style="margin-top:2px">•••• token set (from ${tgStatus.token_source==="env"?"env":"config"})</div>`:""}
-        <div class="muted" style="margin-top:8px">Loaded from .env or entered here; never leaves this machine. The packaged app does not bundle .env — put it next to Trailmark.exe or in %APPDATA%\\Trailmark.</div>
+        <div class="muted" style="margin-top:8px">From .env or pasted here; never leaves this machine.</div>
       </div>
-      <div class="row" style="margin-top:12px">
+      <div class="row">
         <button class="btn primary" id="tgSave">Save</button>
         ${tgStatus.state==="paired"?'<button class="btn ghost" id="tgUnpair" style="background:var(--danger-tint);color:var(--danger);border-color:var(--danger)">Unpair</button>':""}
       </div>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("appearance")}>
       <div class="card-h"><div class="card-t">Appearance</div></div>
       <p class="muted">Trailmark follows your Windows light/dark setting by default. Override it here if you want one or the other regardless.</p>
       <div class="segmented" id="themeSeg">
         ${["system","light","dark"].map(k=>`<button class="seg ${(app.theme||"system")===k?"active":""}" data-theme="${k}">${k[0].toUpperCase()+k.slice(1)}</button>`).join("")}
       </div>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("science")}>
       <div class="card-h"><div class="card-t">Scientific mode</div></div>
-      <p class="muted">Off, a point is a point. On, Trailmark keeps three things apart in every
-      report: a <b>claim</b> you took from a source, a <b>quotation</b> reproduced word for word,
-      and a <b>note</b> of your own. Notes get their own section and are never given a citation;
-      quotations are never reworded. The AI polish pass is held to the same rules mechanically
-      &mdash; a draft that attaches a citation to your note, drops a note, or rewrites a quotation
-      is rejected and your own text is exported instead.</p>
+      <p class="muted">On: reports keep apart <b>claims</b> (from a source), <b>quotations</b> (verbatim) and your <b>notes</b> (never cited). The AI pass is held to the same rules.</p>
       <div class="row"><label class="mod" style="flex-direction:row"><input type="checkbox" id="sciOn" ${sci.enabled?"checked":""}> Enable scientific mode</label></div>
       <div class="grid3">
         <label>Citation style<select id="sciStyle" class="input">${styleOpts}</select></label>
@@ -2893,13 +3072,15 @@ function settingsHtml(){
       </div>
       <p class="muted" id="sciHint">${esc(styleHint)}</p>
       <div class="row"><button class="btn primary" id="sciSave">Save scientific mode</button></div>
-      <p class="muted">These styles are careful approximations, not a CSL processor &mdash; good
-      enough for a working document and honest about it. A source is described from the fields you
-      fill in on it, and a field you leave blank stays blank: Trailmark will print a reference with
-      no author rather than invent one. For submission-grade output, export the Markdown and run it
-      through Pandoc with a real <b>.csl</b> file.</p>
+      <p class="muted">Styles are approximations, not CSL &mdash; blank fields stay blank. For submission, export Markdown and run Pandoc with a <b>.csl</b> file.</p>
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("templates")}>
+      <div class="card-h"><div class="card-t">Templates</div><span class="badge count">${tpls.length}</span></div>
+      <p class="muted">Built-ins and your own, previewed against sample data. Yours appear here without a restart.</p>
+      ${settingsTplGalleryHtml()}
+      ${settingsTplPreviewHtml()}
+    </div>
+    <div class="card glass fade" ${hid("templates")}>
       <div class="card-h"><div class="card-t">Exports</div></div>
       <p class="muted">Defaults for the export dialog. Whatever you pick in the dialog itself wins for that one export.</p>
       <div class="grid3">
@@ -2907,22 +3088,18 @@ function settingsHtml(){
         <label>Your name <span class="muted" style="font-weight:400">(appears on reports)</span><input id="xAuthor" class="input" value="${esc(ex.author||"")}" placeholder="optional"></label>
         <label>Organisation<input id="xOrg" class="input" value="${esc(ex.org||"")}" placeholder="optional"></label>
       </div>
-      <div class="row" style="margin-top:10px">
+      <div class="row">
         <div class="fmts grow">${fmtBoxes}</div>
       </div>
-      <div class="row" style="margin-top:12px">
+      <div class="row">
         <button class="btn primary" id="xSave">Save export defaults</button>
         <button class="btn ghost" id="xFolder">Open my templates folder</button>
         <span class="muted" id="xEngines">Checking PDF engines…</span>
       </div>
-      <p class="muted" style="margin-top:10px">Trailmark ships ${builtinN} template${builtinN===1?"":"s"} and picks up any you add yourself.
-      A template is a folder with a <b>template.json</b> and a <b>template.html</b>; the HTML uses
-      <b>{{title}}</b>, <b>{{body}}</b>, <b>{{references}}</b> and friends, which Trailmark fills in.
-      Drop your folder next to the built-ins and it shows up in the dialog. The full field list and a
-      prompt you can hand to an AI assistant to write one for you are in <b>TEMPLATES.md</b> in the app folder.</p>
+      <p class="muted">A template is a folder with <b>template.json</b> + <b>template.html</b> using <b>{{title}}</b>, <b>{{body}}</b>, <b>{{references}}</b>. Full field list: <b>TEMPLATES.md</b>.</p>
       ${categoriesHtml()}
     </div>
-    <div class="card glass fade">
+    <div class="card glass fade" ${hid("appearance")}>
       <div class="card-h"><div class="card-t">Data &amp; privacy</div></div>
       <p class="muted">Everything is stored locally next to the app: <b>points.json</b> for your topics, <b>attachments/</b> for screenshots, <b>exports/</b> for closed reports. No cloud, no telemetry. The AI assist feature only sends a point’s text to the provider you chose, and only when you click <b>Polish</b> or <b>Export</b>.</p>
     </div>
@@ -2938,7 +3115,7 @@ const SPK_SENTENCES=[
   "The quick brown fox jumps over the lazy dog, and then it runs all the way back home.",
   "امروز چند منبع تازه پیدا کردم و می‌خواهم نکته‌های مهمش را یادداشت کنم."
 ];
-let micTestOn=false, micRec=null, micTimer=null, spkRedo=false, micNote="", spkNote="";
+let micTestOn=false, micRec=null, micTimer=null, spkRedo=false, micNote="", spkNote="", micHadRecording=false;
 
 function speakerHtml(sp){
   if(!sp)return `<p class="muted">Loading…</p>`;
@@ -2986,7 +3163,7 @@ function speakerHtml(sp){
       <label style="display:block;margin-top:10px">Match needed: <b id="spkThOut">${th.toFixed(2)}</b>
         <input id="spkTh" type="range" min="30" max="90" step="1" value="${Math.round(th*100)}" style="width:100%;accent-color:var(--accent);margin-top:6px">
       </label>
-      <p class="muted">${esc(sp.default_threshold)} is a starting point measured on three recorded speakers, not on you. Record a check: your own score should sit well above the line. If a colleague&rsquo;s score comes close to it, raise the line. Anything shorter than a second cannot be checked, so it <b>is</b> sent to be transcribed &mdash; that is what lets a quick &ldquo;log&rdquo; work &mdash; and is then used only if it is a command. Anything else that short is held with its words.</p>
+      <p class="muted">Yours should score well above the line; if a colleague comes close, raise it. Anything under a second cannot be checked, so it <b>is</b> sent to be transcribed &mdash; but only used if it is a command.</p>
       <canvas class="mwave" id="spkWave" aria-label="Microphone level"></canvas>
       <div class="row">
         <button class="btn ${rec?"danger":"ghost"}" id="spkChk">${rec?"Stop and score":"Record a check"}</button>
@@ -3039,10 +3216,30 @@ function stopMic(){
 }
 async function refreshSpeaker(){
   try{const r=await api.speaker_status();if(r&&!r.error)state.speakerInfo=r;}catch(e){}
-  if(tab==="settings")renderMain();
+  // Only the AI panel shows the voiceprint. Rebuilding any other panel would
+  // wipe its form for a card the user cannot even see - and rebuilding while
+  // typing wipes the keystrokes. Typing guard lives in refreshFromBridge;
+  // here the panel guard is enough (callers already avoid typing contexts).
+  if(tab==="settings"&&settingsSub==="ai"&&!isTypingInSettings())renderMain();
+}
+function isTypingInSettings(){
+  const ae=document.activeElement;
+  return !!(ae&&tab==="settings"&&
+    (ae.tagName==="INPUT"||ae.tagName==="TEXTAREA"||ae.tagName==="SELECT"));
 }
 
+// The device watcher pushes "switched" whenever capture moves microphones
+// on its own (unplug fall-back, replug return, system-default flip). It
+// renders amber with the message, and the same message lands on the live
+// line under Settings' microphone row when that panel is open - so the move
+// is visible where the microphone is chosen, not just as a chip flash.
+function devNoteFromSwitch(detail){
+  if(tab!=="settings"||settingsSub!=="ai")return;
+  const el=$("#mtDevNote");
+  if(el&&detail)el.textContent=detail;
+}
 function asrState(state,detail){
+  if(state==="switched")devNoteFromSwitch(detail);
   const chip=$("#asrChip");
   if(!chip)return;
   chip.classList.remove("show","listening","transcribing","logged","error");
@@ -3067,6 +3264,10 @@ function asrState(state,detail){
     chip.classList.add("error");
     chip.innerHTML='<span class="tx"></span>';
     chip.querySelector(".tx").textContent=detail||"Voice logging error";
+  }else if(state==="switched"){
+    chip.classList.add("transcribing");
+    chip.innerHTML='<span class="ring"></span><span class="tx"></span>';
+    chip.querySelector(".tx").textContent=detail||"Microphone changed";
   }else{
     chip.classList.remove("show");
     chip.innerHTML="";
@@ -3079,11 +3280,18 @@ window.asrState=asrState;
 // the voice check has held anything aside.
 let mainVoice={draft:{words:0,count_sources:0},always_on:true,listening:false,
                state:"off",detail:"",topic:"",held:0};
+let _lastHeldRefresh=0;
 function voiceState(payload){
   if(payload&&typeof payload==="object"&&!payload.error)
     mainVoice=Object.assign(mainVoice,payload);
   const sp=state.speakerInfo;
-  if(tab==="settings"&&sp&&(sp.held||[]).length!==(mainVoice.held||0))refreshSpeaker();
+  // Held-count changes used to rebuild the whole settings page on every push
+  // (several per utterance while voice is on). Now: AI panel only, not while
+  // typing, at most once per 2 s - the chip below already shows the count.
+  if(tab==="settings"&&settingsSub==="ai"&&sp&&(sp.held||[]).length!==(mainVoice.held||0)){
+    const now=Date.now();
+    if(now-_lastHeldRefresh>2000&&!isTypingInSettings()){_lastHeldRefresh=now;refreshSpeaker();}
+  }
   const chip=$("#voiceChip");
   if(!chip)return;
   chip.classList.remove("show","listening","logged","error");
@@ -3135,25 +3343,45 @@ function telegramState(st,detail){
 window.telegramState=telegramState;
 
 function bindSettings(){
-  // state.categories is only populated by list_categories() - get_state() never
-  // touches it, so on a fresh app load (Settings opened before any export dialog)
-  // the Categories list below would render empty forever without this.
-  if(!state.categories){
-    api.list_categories().then(r=>{if(r&&!r.error){state=r;render();}}).catch(()=>{});
+  // Sub-tab bar. Always present, so this binding is unconditional - everything
+  // below it guards on its own panel's elements existing.
+  document.querySelectorAll("[data-settingssub]").forEach(b=>b.addEventListener("click",()=>{
+    if(settingsSub===b.dataset.settingssub) return;
+    settingsSub=b.dataset.settingssub;
+    const main=$("#main");
+    if(main) main.scrollTop=0;
+    renderMain();
+  }));
+  // Lazy, guarded fetches: only the active panel's data is fetched, once, and
+  // each completion merges (applyState) and re-renders at most once. The old
+  // code fetched all five on every render and replaced state wholesale, which
+  // wiped the other four - five rebuilds per settings open, per save.
+  const needCats=settingsSub==="templates"&&!state.categories;
+  if(needCats&&!_fetching.cats){
+    _fetching.cats=true;
+    api.list_categories().then(r=>{
+      _fetching.cats=false;
+      if(r&&!r.error){applyState(r);if(tab==="settings"&&settingsSub==="templates")renderMain();}
+    }).catch(()=>{_fetching.cats=false;});
   }
   const hkInfo=$("#hkInfo");
-  api.get_config().then(c=>{
-    const hk=c.hotkey||{};
-    hkInfo.textContent="Current: "+(hk.modifiers||[]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+(hk.key||"P");
-  });
-  $("#hkSave").addEventListener("click",async()=>{
-    const mods=[];["ctrl","alt","shift","win"].forEach(m=>{if($("#m"+m[0].toUpperCase()+m.slice(1)).checked)mods.push(m);});
-    const key=$("#kKey").value.trim();
+  if(hkInfo){
+    api.get_config().then(c=>{
+      const el=$("#hkInfo"); if(!el) return;
+      const hk=(c||{}).hotkey||{};
+      el.textContent="Current: "+(hk.modifiers||[]).map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+(hk.key||"P");
+    }).catch(()=>{});
+  }
+  const hkSave=$("#hkSave");
+  if(hkSave) hkSave.addEventListener("click",async()=>{
+    const mods=[];["ctrl","alt","shift","win"].forEach(m=>{const cb=$("#m"+m[0].toUpperCase()+m.slice(1));if(cb&&cb.checked)mods.push(m);});
+    const keyEl=$("#kKey"); const key=(keyEl?keyEl.value:"").trim();
     if(!mods.length){toast("Pick at least one modifier.","err");return;}
     if(!key){toast("Enter a key letter.","err");return;}
     const r=await api.save_hotkey({modifiers:mods,key:key.toUpperCase()});
-    if(r.error)return toast(r.error,"err");
-    hkInfo.textContent="Current: "+mods.map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+key.toUpperCase();
+    if(r&&r.error)return toast(r.error,"err");
+    applyState(r);
+    if(hkInfo) hkInfo.textContent="Current: "+mods.map(m=>m[0].toUpperCase()+m.slice(1)).join("+")+"+"+key.toUpperCase();
     toast("Hotkey updated.");
   });
   const cbSw=$("#cbSw");
@@ -3166,79 +3394,160 @@ function bindSettings(){
       cbSw.classList.toggle("on",!next);cbSw.setAttribute("aria-checked",!next?"true":"false");
       return;
     }
-    state=r;
+    applyState(r);
     toast("Clipboard hotkey "+(next?"enabled.":"disabled."));
   });
   const show=$("#lShow");
-  show.addEventListener("click",()=>{const k=$("#lKey");k.type=k.type==="password"?"text":"password";show.textContent=k.type==="password"?"Show":"Hide";});
-  $("#lSave").addEventListener("click",async()=>{
+  if(show) show.addEventListener("click",()=>{const k=$("#lKey");if(!k)return;k.type=k.type==="password"?"text":"password";show.textContent=k.type==="password"?"Show":"Hide";});
+  const lSave=$("#lSave");
+  if(lSave) lSave.addEventListener("click",async()=>{
     const cfg={
       llm:{
-        enabled:$("#lEnabled").checked,
-        provider:$("#lProvider").value,
-        model:$("#lModel").value,
-        base_url:$("#lBase").value,
-        api_key:$("#lKey").value,
+        enabled:$("#lEnabled")?$("#lEnabled").checked:false,
+        provider:$("#lProvider")?$("#lProvider").value:"",
+        model:$("#lModel")?$("#lModel").value:"",
+        base_url:$("#lBase")?$("#lBase").value:"",
+        api_key:$("#lKey")?$("#lKey").value:"",
       }
     };
     const r=await api.save_llm(cfg.llm);
-    if(r.error)return toast(r.error,"err");
-    state=r;toast("AI settings saved.");
+    if(r&&r.error)return toast(r.error,"err");
+    applyState(r);toast("AI settings saved.");
   });
-  $("#lTest").addEventListener("click",async()=>{
-    const out=$("#lTestOut");out.textContent="Testing…";
+  const lTest=$("#lTest");
+  if(lTest) lTest.addEventListener("click",async()=>{
+    const out=$("#lTestOut");if(out)out.textContent="Testing…";
     const cfg={
       enabled:true,
-      provider:$("#lProvider").value,
-      model:$("#lModel").value,
-      base_url:$("#lBase").value,
-      api_key:$("#lKey").value,
+      provider:$("#lProvider")?$("#lProvider").value:"",
+      model:$("#lModel")?$("#lModel").value:"",
+      base_url:$("#lBase")?$("#lBase").value:"",
+      api_key:$("#lKey")?$("#lKey").value:"",
     };
     const r=await api.test_llm(cfg);
-    if(r.ok)out.textContent="OK — "+(r.reply||"connected");
-    else{out.textContent="";toast(r.error||"Connection failed.","err");}
+    if(r&&r.ok){if(out)out.textContent="OK — "+(r.reply||"connected");}
+    else{if(out)out.textContent="";toast((r&&r.error)||"Connection failed.","err");}
   });
-  $("#lProvider").addEventListener("change",()=>{
-    const k=$("#lProvider").value;
+  const lProv=$("#lProvider");
+  if(lProv) lProv.addEventListener("change",()=>{
+    const k=lProv.value;
     const p=(state.providers||{})[k];
-    if(p){if(!$("#lModel").value||p.model)$("#lModel").value=p.model||"";}
+    const mEl=$("#lModel");
+    if(p&&mEl){if(!mEl.value||p.model)mEl.value=p.model||"";}
   });
 
-  // --- voice logging (ASR) ---
-  if(!state.asrDevices){
-    api.list_asr_devices().then(r=>{state.asrDevices=Array.isArray(r)?r:[];render();}).catch(()=>{state.asrDevices=[];});
+  // --- voice logging (ASR): microphone list only matters on the AI panel ---
+  if(settingsSub==="ai"&&!state.asrDevices&&!_fetching.asrDevs){
+    _fetching.asrDevs=true;
+    api.list_asr_devices().then(r=>{
+      _fetching.asrDevs=false;
+      state.asrDevices=Array.isArray(r)?r:[];
+      if(tab==="settings"&&settingsSub==="ai")renderMain();
+    }).catch(()=>{_fetching.asrDevs=false;state.asrDevices=[];});
   }
 
   // --- always-on voice ---
   // The grammar and the live hotkey report are not part of get_state(): one
   // is a constant this window has no business hard-coding, the other is only
   // true after the listener threads have actually registered.
-  if(!state.voiceGrammar){
+  if((settingsSub==="ai"||settingsSub==="shortcuts")&&!state.voiceGrammar&&!_fetching.voice){
+    _fetching.voice=true;
     api.get_voice().then(v=>{
+      _fetching.voice=false;
       if(!v||v.error){state.voiceGrammar=[];return;}
       state.voiceGrammar=v.grammar||[];state.voiceHotkeys=v.hotkeys||[];
       state.voiceOpinion=!!v.second_opinion;
-      voiceState(v.draft||{});render();
-    }).catch(()=>{state.voiceGrammar=[];});
+      voiceState(v.draft||{});
+      if(tab==="settings"&&(settingsSub==="ai"||settingsSub==="shortcuts"))renderMain();
+    }).catch(()=>{_fetching.voice=false;state.voiceGrammar=[];});
   }
 
-  if(state.speakerInfo===undefined){state.speakerInfo=null;refreshSpeaker();}
+  if(settingsSub==="ai"&&state.speakerInfo===undefined&&!_fetching.spk){
+    _fetching.spk=true; state.speakerInfo=null;
+    refreshSpeaker().finally(()=>{_fetching.spk=false;});
+  }
   if(micTestOn||micRec)micLoop();
+  // Live microphone presence, without rebuilding the form. A handsfree that
+  // sleeps appears and disappears from PortAudio while this page sits open;
+  // the dropdown would otherwise offer a mic that is gone, and hide one that
+  // came back, until something else re-rendered. This chain only touches the
+  // <select> options and the two muted lines below it - never renderMain, so
+  // typing and focus survive - and it ends itself the moment the AI panel is
+  // left or the row is gone.
+  if(settingsSub==="ai"){const myGen=++_devPollGen;devPoll(myGen);}
 
-  // --- Telegram bridge ---
-  if(!state.telegramStatus){
-    api.telegram_status().then(r=>{state.telegramStatus=r;render();}).catch(()=>{});
+// Paint the microphone row in place: dropdown options, live note, hint.
+// Shared by the background poller and the manual Refresh button, so both
+// show the same truth. Never renderMain - typing and focus survive.
+function paintMicRow(list,st){
+  const sel=$("#asrDevice");
+  if(sel&&Array.isArray(list)){
+    // Element-wise compare, deliberately separator-free: joining ids needs
+    // no separator at all, and a stray control character here once blanked
+    // the whole window, so this stays plain on purpose.
+    const fp=list.map(d=>String(d.id));
+    const same=fp.length===_devPollFp.length&&fp.every((v,i)=>v===_devPollFp[i]);
+    if(!same){
+      _devPollFp=fp;
+      state.asrDevices=list;
+      const cur=sel.value;
+      const saved=String(((state.config||{}).asr||{}).device||"");
+      sel.innerHTML=`<option value="">System default</option>`+
+        list.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}${d.default?" (default)":""}</option>`).join("")+
+        ((saved&&!list.some(d=>String(d.id)===saved))?`<option value="${esc(saved)}" selected>${esc(saved)} (not connected)</option>`:"");
+      if([...sel.options].some(o=>o.value===cur))sel.value=cur;
+      else if([...sel.options].some(o=>o.value===saved))sel.value=saved;
+    }
+  }
+  if(st&&!st.error){
+    const note=$("#mtDevNote");
+    if(note){
+      if(st.missing)note.textContent="\u201c"+(st.wanted||"")+"\u201d is not connected \u2014 capture uses the system default and switches back when it returns.";
+      else if(st.fell_back&&st.active)note.textContent="Listening on \u201c"+st.active+"\u201d until \u201c"+(st.fallback_from||st.wanted)+"\u201d returns.";
+      else if(st.wanted&&st.active)note.textContent="Listening on \u201c"+st.active+"\u201d.";
+      else if(st.default)note.textContent="Listening on the system default (\u201c"+st.default+"\u201d).";
+      else note.textContent="";
+    }
+    const hint=$("#hfHint");
+    if(hint)hint.textContent=handsFreeHint(st.active||st.wanted||st.default)||handsFreeHint(String(((state.config||{}).asr||{}).device||""));
+  }
+}
+function refreshMicList(){
+  let st=null;
+  return Promise.resolve(api.asr_device_status()).then(s=>{st=s||{};return api.list_asr_devices();}).then(devs=>{
+    if(tab!=="settings"||settingsSub!=="ai"||!$("#asrDevice"))return null;
+    paintMicRow(Array.isArray(devs)?devs:[],st);
+    return Array.isArray(devs)?devs:[];
+  });
+}
+function devPoll(gen){
+  if(gen!==_devPollGen||tab!=="settings"||settingsSub!=="ai"||!$("#asrDevice"))return;
+  if(isTypingInSettings()&&document.activeElement&&document.activeElement.id==="asrDevice")return;
+  refreshMicList().catch(()=>{}).finally(()=>{
+    setTimeout(()=>{try{devPoll(gen);}catch(e){}},5000);
+  });
+}
+
+  // --- Telegram bridge: only the Integrations panel needs it ---
+  if(settingsSub==="integrations"&&!state.telegramStatus&&!_fetching.tg){
+    _fetching.tg=true;
+    api.telegram_status().then(r=>{
+      _fetching.tg=false;
+      state.telegramStatus=r;
+      if(tab==="settings"&&settingsSub==="integrations")renderMain();
+    }).catch(()=>{_fetching.tg=false;});
   }
   function asrCfgFromForm(){
     const devEl=$("#asrDevice");
     const devVal=devEl?devEl.value:"";
+    const val=id=>{const el=$(id);return el?el.value:"";};
     return{
-      endpoint:$("#asrEndpoint").value,
-      model:$("#asrModel").value,
-      api_key:$("#asrKey").value,
+      endpoint:val("#asrEndpoint"),
+      model:val("#asrModel")||"whisper-1",
+      api_key:val("#asrKey"),
       language:$("#asrLang")?$("#asrLang").value:"",
       device:devVal,
-      sensitivity:Number($("#asrSensitivity").value)||0,
+      sensitivity:Number(($("#asrSensitivity")||{}).value)||0,
     };
   }
   const asrSw=$("#asrSw");
@@ -3252,17 +3561,17 @@ function bindSettings(){
       asrSw.classList.toggle("on",!next);asrSw.setAttribute("aria-checked",!next?"true":"false");
       return;
     }
-    state=r;
+    applyState(r);
     toast("Voice logging "+(next?"enabled.":"disabled."));
   });
   const asrShow=$("#asrShow");
-  if(asrShow) asrShow.addEventListener("click",()=>{const k=$("#asrKey");k.type=k.type==="password"?"text":"password";asrShow.textContent=k.type==="password"?"Show":"Hide";});
+  if(asrShow) asrShow.addEventListener("click",()=>{const k=$("#asrKey");if(!k)return;k.type=k.type==="password"?"text":"password";asrShow.textContent=k.type==="password"?"Show":"Hide";});
   const asrSaveBtn=$("#asrSave");
   if(asrSaveBtn) asrSaveBtn.addEventListener("click",async()=>{
     const cfg=asrCfgFromForm();cfg.enabled=asrSw?asrSw.classList.contains("on"):false;
     const r=await api.save_asr(cfg);
     if(r&&r.error)return toast(r.error,"err");
-    state=r;toast("Voice logging settings saved.");
+    applyState(r);toast("Voice logging settings saved.");
   });
   // --- always-on voice ---
   function vcCfgFromForm(){
@@ -3341,24 +3650,24 @@ function bindSettings(){
   });
   const jdTestBtn=$("#jdTest");
   if(jdTestBtn) jdTestBtn.addEventListener("click",async()=>{
-    const out=$("#jdTestOut");out.textContent="Asking…";
+    const out=$("#jdTestOut");if(out)out.textContent="Asking…";
     await api.save_judge(jdCfgFromForm());
     let r;
     try{r=await api.test_judge();}catch(e){r={error:"Bridge not ready."};}
-    if(r&&r.error){out.textContent="";toast(r.error,"err");return;}
+    if(r&&r.error){if(out)out.textContent="";toast(r.error,"err");return;}
     // The probe asks whether "the audit has been completed" says what "the
     // audit is not finished yet" says. Anything but `altered` means the
     // service answered but not sensibly, and that is worth seeing.
-    out.textContent=r.model+" · "+r.choice+" @ "+r.confidence+
+    if(out)out.textContent=r.model+" · "+r.choice+" @ "+r.confidence+
       (r.choice==="altered"?" ✓":" (unexpected)");
   });
 
   const asrTestBtn=$("#asrTest");
   if(asrTestBtn) asrTestBtn.addEventListener("click",async()=>{
-    const out=$("#asrTestOut");out.textContent="Testing…";
+    const out=$("#asrTestOut");if(out)out.textContent="Testing…";
     const r=await api.test_asr(5);
-    if(r&&r.error){out.textContent="";toast(r.error,"err");}
-    else out.textContent=(r&&r.text)?r.text:"(no speech detected)";
+    if(r&&r.error){if(out)out.textContent="";toast(r.error,"err");}
+    else if(out)out.textContent=(r&&r.text)?r.text:"(no speech detected)";
   });
 
   // --- the microphone test ---
@@ -3370,10 +3679,10 @@ function bindSettings(){
     catch(e){r={error:"Bridge not ready."};}
     if(!r||r.error){micTestOn=false;micNote="";renderMain();
       const o2=$("#mtOut");if(o2)o2.textContent=(r&&r.error)||"Could not open the microphone.";return;}
-    micRec=null;micTestOn=true;
+    micRec=null;micTestOn=true;micHadRecording=!r.shared;
     const saved=String(((state.config||{}).asr||{}).device||"");
     micNote=r.shared?"Voice is on, so this is the live microphone at the saved sensitivity."
-      :(r.note||"Listening - speak, and watch the wave.")+
+      :(r.note||"Speak - up to 10 seconds are recorded, then press Play to hear it.")+
        (dev!==saved?" Press Save settings to use this microphone.":"");
     renderMain();micLoop();
   }
@@ -3382,9 +3691,37 @@ function bindSettings(){
     if(micTestOn){stopMic();micNote="";renderMain();return;}
     startMicTest();
   });
-  ["asrDevice","asrSensitivity"].forEach(id=>{
-    const el=$("#"+id);
-    if(el) el.addEventListener("change",()=>{if(micTestOn)startMicTest();});
+  // Manual re-check: deterministic answer to "I just plugged my headset in".
+  // Same painter as the background poller, plus a toast with the count.
+  const mtRefresh=$("#mtRefresh");
+  if(mtRefresh) mtRefresh.addEventListener("click",async()=>{
+    mtRefresh.disabled=true;
+    try{
+      const list=await refreshMicList();
+      if(list)toast(list.length+(list.length===1?" microphone":" microphones")+" found.");
+    }catch(e){toast("Could not re-check microphones.","err");}
+    mtRefresh.disabled=false;
+  });
+  // Sensitivity applies live to the running test - no restart, no lost wave.
+  const sensEl=$("#asrSensitivity");
+  if(sensEl){
+    let sensTimer=null;
+    const pushSens=()=>{if(!(micTestOn||micRec))return;
+      try{Promise.resolve(api.mic_test_sensitivity(Number(sensEl.value)||0)).catch(()=>{});}catch(e){}};
+    sensEl.addEventListener("input",()=>{clearTimeout(sensTimer);sensTimer=setTimeout(pushSens,150);});
+    sensEl.addEventListener("change",()=>{clearTimeout(sensTimer);pushSens();});
+  }
+  // The dropdown is disabled while a test runs; this restart is only a
+  // safety net for anything that changes it programmatically meanwhile.
+  const devSel=$("#asrDevice");
+  if(devSel) devSel.addEventListener("change",()=>{if(micTestOn)startMicTest();});
+  const mtPlay=$("#mtPlay");
+  if(mtPlay) mtPlay.addEventListener("click",async()=>{
+    mtPlay.disabled=true;
+    let r;try{r=await api.mic_test_play();}catch(e){r={error:"Bridge not ready."};}
+    if(!r||r.error){mtPlay.disabled=false;toast((r&&r.error)||"Could not play it.","err");return;}
+    setTimeout(()=>{const b=$("#mtPlay");if(b)b.disabled=false;},
+      Math.max(500,Number(r.seconds||0)*1000+300));
   });
 
   // --- only my voice ---
@@ -3507,17 +3844,19 @@ function bindSettings(){
       tgSw.classList.toggle("on",!next);tgSw.setAttribute("aria-checked",!next?"true":"false");
       return;
     }
-    state=r;
+    applyState(r);
     toast("Telegram bridge "+(next?"enabled.":"disabled."));
   });
   const tgSaveBtn=$("#tgSave");
   if(tgSaveBtn) tgSaveBtn.addEventListener("click",async()=>{
-    const cfg={enabled:$("#tgSw").classList.contains("on")};
-    const tokenVal=$("#tgToken").value.trim();
+    const sw=$("#tgSw");
+    const cfg={enabled:sw?sw.classList.contains("on"):false};
+    const tokenEl=$("#tgToken");
+    const tokenVal=tokenEl?tokenEl.value.trim():"";
     if(tokenVal!=="") cfg.token=tokenVal;
     const r=await api.save_telegram(cfg);
     if(r&&r.error)return toast(r.error,"err");
-    state=r;$("#tgToken").value="";render();toast("Telegram settings saved.");
+    applyState(r);if(tokenEl)tokenEl.value="";renderMain();toast("Telegram settings saved.");
   });
   const tgCopyCodeBtn=$("#tgCopyCode");
   if(tgCopyCodeBtn) tgCopyCodeBtn.addEventListener("click",()=>{
@@ -3530,14 +3869,14 @@ function bindSettings(){
   if(tgRegenCodeBtn) tgRegenCodeBtn.addEventListener("click",async()=>{
     const r=await api.telegram_regenerate_code();
     if(r&&r.error)return toast(r.error,"err");
-    state=r;render();toast("New pairing code generated.");
+    applyState(r);renderMain();toast("New pairing code generated.");
   });
   const tgUnpairBtn=$("#tgUnpair");
   if(tgUnpairBtn) tgUnpairBtn.addEventListener("click",async()=>{
     if(!await tmConfirm("You will need a new pairing code to reconnect.",{title:"Unpair this Telegram account?",okText:"Unpair",danger:true}))return;
     const r=await api.telegram_unpair();
     if(r&&r.error)return toast(r.error,"err");
-    state=r;render();toast("Telegram account unpaired.");
+    applyState(r);renderMain();toast("Telegram account unpaired.");
   });
 
   // --- scientific mode ---
@@ -3545,18 +3884,20 @@ function bindSettings(){
   if(sciStyle){
     sciStyle.addEventListener("change",()=>{
       const x=CITE_STYLES.find(y=>y.id===sciStyle.value);
-      $("#sciHint").textContent=x?x.hint:"";
+      const h=$("#sciHint");if(h)h.textContent=x?x.hint:"";
     });
-    $("#sciSave").addEventListener("click",async()=>{
+    const sciSave=$("#sciSave");
+    if(sciSave) sciSave.addEventListener("click",async()=>{
+      const onEl=$("#sciOn"),sepEl=$("#sciSep"),reqEl=$("#sciReq");
       const r=await api.save_science({
-        enabled:$("#sciOn").checked,
+        enabled:onEl?onEl.checked:false,
         style:sciStyle.value,
-        separate_notes:$("#sciSep").checked,
-        require_source_for_claims:$("#sciReq").checked,
+        separate_notes:sepEl?sepEl.checked:true,
+        require_source_for_claims:reqEl?reqEl.checked:false,
       });
-      if(r.error)return toast(r.error,"err");
-      state=r;render();
-      toast($("#sciOn").checked?"Scientific mode on.":"Scientific mode off.");
+      if(r&&r.error)return toast(r.error,"err");
+      applyState(r);renderMain();
+      toast(onEl&&onEl.checked?"Scientific mode on.":"Scientific mode off.");
     });
   }
 
@@ -3568,27 +3909,30 @@ function bindSettings(){
     applyTheme(theme);
     seg.querySelectorAll(".seg").forEach(x=>x.classList.toggle("active",x===b));
     const r=await api.save_appearance({theme});
-    if(r&&!r.error) state=r;
+    if(r&&!r.error) applyState(r);
   });
 
-  // --- export defaults ---
+  // --- export defaults (Templates panel) ---
   const xf=$("#xTpl");
   if(xf){
     document.querySelectorAll("[data-xfmt]").forEach(cb=>cb.addEventListener("change",()=>{
-      cb.closest(".fmt-opt").classList.toggle("on",cb.checked);
+      const box=cb.closest(".fmt-opt");if(box)box.classList.toggle("on",cb.checked);
     }));
-    $("#xSave").addEventListener("click",async()=>{
+    const xSave=$("#xSave");
+    if(xSave) xSave.addEventListener("click",async()=>{
       const formats=[...document.querySelectorAll("[data-xfmt]")].filter(c=>c.checked).map(c=>c.dataset.xfmt);
       if(!formats.length) return toast("Pick at least one default format.","err");
-      const r=await api.save_export({template:$("#xTpl").value,formats,
-        author:$("#xAuthor").value,org:$("#xOrg").value});
-      if(r.error)return toast(r.error,"err");
-      state=r; toast("Export defaults saved.");
+      const tplEl=$("#xTpl"),auEl=$("#xAuthor"),orgEl=$("#xOrg");
+      const r=await api.save_export({template:tplEl?tplEl.value:"",formats,
+        author:auEl?auEl.value:"",org:orgEl?orgEl.value:""});
+      if(r&&r.error)return toast(r.error,"err");
+      applyState(r); toast("Export defaults saved.");
     });
-    $("#xFolder").addEventListener("click",async()=>{
+    const xFolder=$("#xFolder");
+    if(xFolder) xFolder.addEventListener("click",async()=>{
       const r=await api.open_template_dir();
-      if(r.error)return toast(r.error,"err");
-      toast("Opened "+r.path);
+      if(r&&r.error)return toast(r.error,"err");
+      toast("Opened "+((r&&r.path)||"templates folder"));
     });
     api.pdf_engines().then(r=>{
       const out=$("#xEngines"); if(!out) return;
@@ -3601,6 +3945,52 @@ function bindSettings(){
 
   // --- categories ---
   bindCategories();
+
+  // --- templates manager: gallery preview + use-for-category ---
+  bindTplManager();
+}
+
+function bindTplManager(){
+  document.querySelectorAll("[data-tplmgr-preview]").forEach(b=>b.addEventListener("click",async e=>{
+    e.stopPropagation();
+    const id=b.dataset.tplmgrPreview;
+    if(tplMgrPreview===id){tplMgrPreview=null;tplMgrHtml=null;tplMgrError=null;renderMain();return;}
+    tplMgrPreview=id;tplMgrHtml=null;tplMgrError=null;tplMgrLoading=true;renderMain();
+    paintTplMgrFrame();
+    let r;
+    try{r=await api.template_demo(id);}catch(err){r={error:"Bridge not ready."};}
+    if(tplMgrPreview!==id) return;
+    tplMgrLoading=false;
+    if(r&&r.error)tplMgrError=r.error; else tplMgrHtml=(r&&r.html)||"";
+    if(tab==="settings"&&settingsSub==="templates")renderMain();
+    paintTplMgrFrame();
+  }));
+  document.querySelectorAll('[data-tplmgr]').forEach(card=>card.addEventListener("click",e=>{
+    if(e.target.closest("[data-tplmgr-preview],[data-tplmgr-use]"))return;
+    const id=card.dataset.tplmgr;
+    const btn=card.querySelector('[data-tplmgr-preview]');
+    if(btn)btn.click();
+  }));
+  document.querySelectorAll("[data-tplmgr-use]").forEach(b=>b.addEventListener("click",async e=>{
+    e.stopPropagation();
+    const tplId=b.dataset.tplmgrUse;
+    const tp=(state.templates||[]).find(x=>x.id===tplId);
+    if(!tp){toast("Template not found.","err");return;}
+    const catId=tp.category||((state.categories||[])[0]||{}).id;
+    if(!catId){toast("No category to attach it to.","err");return;}
+    const r=await api.set_category_default(catId,tplId);
+    if(r&&r.error)return toast(r.error,"err");
+    applyState(r);renderMain();toast("Default template updated.");
+  }));
+  const closeBtn=$("#tplMgrClose");
+  if(closeBtn)closeBtn.addEventListener("click",()=>{
+    tplMgrPreview=null;tplMgrHtml=null;tplMgrError=null;renderMain();
+  });
+  paintTplMgrFrame();
+}
+function paintTplMgrFrame(){
+  const f=$("#tplMgrFrame");
+  if(f&&tplMgrHtml) f.srcdoc=tplMgrHtml;
 }
 
 function bindCategories(){
@@ -3609,23 +3999,26 @@ function bindCategories(){
 
   mgr.querySelectorAll(".cat-row").forEach(row=>{
     const id=row.dataset.catRow;
-    row.querySelector(".cat-def-tpl").addEventListener("change",async e=>{
+    const defEl=row.querySelector(".cat-def-tpl");
+    if(defEl) defEl.addEventListener("change",async e=>{
       const r=await api.set_category_default(id, e.target.value);
-      if(r.error) return toast(r.error,"err");
-      state=r; renderMain(); toast("Default template updated.");
+      if(r&&r.error) return toast(r.error,"err");
+      applyState(r); renderMain(); toast("Default template updated.");
     });
-    row.querySelector(".cat-rename").addEventListener("click",async()=>{
+    const renBtn=row.querySelector(".cat-rename");
+    if(renBtn) renBtn.addEventListener("click",async()=>{
       const name=(row.querySelector(".cat-name").value||"").trim();
       if(!name) return toast("Name the category first.","err");
       const r=await api.save_category({id, name});
-      if(r.error) return toast(r.error,"err");
-      state=r; renderMain(); toast("Category renamed.");
+      if(r&&r.error) return toast(r.error,"err");
+      applyState(r); renderMain(); toast("Category renamed.");
     });
-    row.querySelector(".cat-delete").addEventListener("click",async()=>{
+    const delBtn=row.querySelector(".cat-delete");
+    if(delBtn) delBtn.addEventListener("click",async()=>{
       if(!await tmConfirm("Its templates keep working, but stop suggesting a default here.",{title:"Delete this category?",okText:"Delete",danger:true})) return;
       const r=await api.delete_category(id);
-      if(r.error) return toast(r.error,"err");
-      state=r; renderMain(); toast("Category deleted.");
+      if(r&&r.error) return toast(r.error,"err");
+      applyState(r); renderMain(); toast("Category deleted.");
     });
   });
 
@@ -3641,13 +4034,14 @@ function bindCategories(){
   });
   const createBtn=mgr.querySelector("#sCatCreate");
   if(createBtn) createBtn.addEventListener("click",async()=>{
-    const name=(mgr.querySelector("#sCatName").value||"").trim();
-    const defTpl=mgr.querySelector("#sCatDefTpl").value;
+    const nameEl=mgr.querySelector("#sCatName"),defEl=mgr.querySelector("#sCatDefTpl");
+    const name=((nameEl&&nameEl.value)||"").trim();
+    const defTpl=defEl?defEl.value:"";
     if(!name) return toast("Name the category first.","err");
     if(!defTpl) return toast("Pick a default template.","err");
     const r=await api.save_category({name, default_template:defTpl});
-    if(r.error) return toast(r.error,"err");
-    state=r; catNewOpen=false; renderMain();
+    if(r&&r.error) return toast(r.error,"err");
+    applyState(r); catNewOpen=false; renderMain();
     toast("Category created.");
   });
 }
@@ -3674,17 +4068,31 @@ document.getElementById("tbTheme").addEventListener("click",async()=>{
   const next=order[((state.config||{}).appearance||{}).theme||"system"];
   applyTheme(next);
   const r=await api.save_appearance({theme:next});
-  if(r&&!r.error)state=r;
+  if(r&&!r.error)applyState(r);
   render();
-  if(tab==="settings"){renderMain();}
 });
 
 function refreshFromBridge(){
-  api.get_state().then(r=>{if(r&&!r.error){state=r;render();}}).catch(()=>{});
+  api.get_state().then(r=>{
+    if(!r||r.error)return;
+    // Background pushes (voice log, telegram message, the save we just did
+    // ourselves via refresh_full) must never wipe a settings form mid-edit.
+    // While typing, merge state silently and refresh only chrome (topbar +
+    // sidebar); the form re-renders on the next save or panel switch.
+    if(tab==="settings"&&isTypingInSettings()){applyState(r);renderTopbar();renderSide();return;}
+    const main=$("#main");
+    const st=main?main.scrollTop:0;
+    const ae=document.activeElement, aid=ae&&ae.id?ae.id:null;
+    applyState(r);render();
+    try{
+      const m2=$("#main");if(m2&&typeof st==="number")m2.scrollTop=st;
+      if(aid){const el=document.getElementById(aid);if(el&&el.focus)el.focus({preventScroll:true});}
+    }catch(e){}
+  }).catch(()=>{});
 }
 
 async function init(){
-  state=await api.get_state();
+  applyState(await api.get_state());
   applyTheme(((state.config||{}).appearance||{}).theme||"system");
   // the list of citation styles lives in citation.py; the UI asks for it rather
   // than keeping a second copy that can drift

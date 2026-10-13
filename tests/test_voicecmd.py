@@ -128,9 +128,28 @@ for spoken, want, want_arg in [
     check("%r is in OPINION_FORMS" % spoken, form in voicecmd.OPINION_FORMS)
 
 p = voicecmd.parse("session Rust")
-d = voicecmd.decide(p)
-check("no second opinion -> the words are kept as text",
+d = voicecmd.decide(p, fallback=False)
+check("no second opinion and no fallback -> the words are kept as text",
       d["action"] == "text" and d["text"] == "session Rust" and d["reason"] == "no-opinion", d)
+d = voicecmd.decide(p)
+check("no second opinion, short name -> the local fallback files it",
+      d["action"] == "command" and d["command"] == "session" and d["argument"] == "Rust"
+      and d["reason"] == "local-fallback", d)
+d = voicecmd.decide(voicecmd.parse("session times were short today"))
+check("no second opinion, a sentence stays text",
+      d["action"] == "text" and d["reason"] == "no-opinion", d)
+d = voicecmd.decide(voicecmd.parse("tab open questions"))
+check("no second opinion, two-word name -> local fallback",
+      d["action"] == "command" and d["argument"] == "open questions"
+      and d["reason"] == "local-fallback", d)
+d = voicecmd.decide(voicecmd.parse("session is tricky"))
+check("a two-word rest with a verb stays text",
+      d["action"] == "text" and d["reason"] == "no-opinion", d)
+check("the fallback only covers three words",
+      voicecmd.local_fallback(voicecmd.parse("session interview with the design team")) is None)
+check("Jev still wins when it answers",
+      voicecmd.decide(voicecmd.parse("tab open questions"), "text")["action"] == "text"
+      and voicecmd.decide(voicecmd.parse("session times were short today"), "command")["action"] == "command")
 d = voicecmd.decide(p, "text")
 check("second opinion says sentence -> text", d["action"] == "text", d)
 d = voicecmd.decide(p, "command")

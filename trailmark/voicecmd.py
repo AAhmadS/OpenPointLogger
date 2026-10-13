@@ -66,7 +66,8 @@ import re
 import threading
 
 __all__ = ["parse", "decide", "normalise", "Draft", "COMMANDS", "WAKE_WORDS",
-           "CERTAIN_FORMS", "OPINION_FORMS", "describe_grammar"]
+           "CERTAIN_FORMS", "OPINION_FORMS", "describe_grammar",
+           "local_fallback", "FALLBACK_MAX_WORDS"]
 
 
 # --- normalisation ----------------------------------------------------------
@@ -388,12 +389,18 @@ def _argument(raw, verb, tail):
     return " ".join(parts).strip().rstrip(".،,!?؟؛;:").strip()
 
 
-def decide(parsed, verdict=None):
+def decide(parsed, verdict=None, fallback=True):
     """Turn a parse and a second opinion into one action.
 
     ``verdict`` is the second opinion's answer AFTER its threshold was
     applied: "command", "text", or None when there was no answer (no key, no
     network, timeout). Only the ``argument`` form ever reads it.
+
+    When ``verdict`` is None and ``fallback`` is true, the ``argument`` form
+    gets one more chance: :func:`local_fallback`, a small deterministic
+    name-vs-sentence guess for the common case (a short name with no verb).
+    Jev stays first - a real answer always wins - and the fallback only ever
+    fires on short verb-less rests, so a sentence still stays text.
 
     Returns ``{"action": "command"|"text", "command", "argument", "text",
     "reason"}``; for text, ``text`` is the whole transcript.
@@ -417,9 +424,63 @@ def decide(parsed, verdict=None):
         return {"action": "command", "command": name,
                 "argument": parsed.get("argument") or "", "text": "",
                 "reason": "second-opinion"}
-    reason = "second-opinion-text" if verdict == "text" else "no-opinion"
+    if verdict == "text":
+        return {"action": "text", "command": None, "argument": "",
+                "text": transcript, "reason": "second-opinion-text"}
+    if fallback and local_fallback(parsed) == "command":
+        return {"action": "command", "command": name,
+                "argument": parsed.get("argument") or "", "text": "",
+                "reason": "local-fallback"}
     return {"action": "text", "command": None, "argument": "",
-            "text": transcript, "reason": reason}
+            "text": transcript, "reason": "no-opinion"}
+
+
+#: A short rest with no verb is far more likely a name than a sentence.
+#: Measured against evals/command_cases.json: every labelled sentence is four
+#: or more words long except ones carrying a finite verb ("session is
+#: tricky"), and all but one labelled command are three or fewer words with
+#: no verb. The limit is deliberately tight - a name read as a sentence costs
+#: one edit, a sentence read as a name opens a topic called after itself.
+FALLBACK_MAX_WORDS = 3
+
+#: Finite verbs and auxiliaries that mark the rest as a sentence, not a name.
+#: English first (auxiliaries, modals, and the verbs from the labelled band),
+#: then the Persian copula and the می‌/نمی‌ progressive prefix every Persian
+#: sentence in the band carries. Anything not listed fails closed to text.
+_FALLBACK_VERBS = frozenset(
+    "is are was were be been being am has have had does did do will would "
+    "should could can may might must shall ought need dare "
+    "break breaks broke breaking record records recorded recording "
+    "help helps helped helping set sets average averages averaged".split())
+
+_FALLBACK_FA_EQUALS = frozenset(
+    ["است", "هست", "هستند", "شد", "شود", "شده", "شوند", "نیست",
+     "کن", "کنید", "نکن", "نکنید"])
+
+
+def local_fallback(parsed):
+    """A deterministic guess for the ``argument`` form when Jev is silent.
+
+    Returns "command" only when the rest is 1..FALLBACK_MAX_WORDS words with
+    no finite verb in either language; otherwise None (stay text). Pure, and
+    deliberately narrower than the Jev question - it rescues "tab open
+    questions" with no key configured without ever firing on the labelled
+    sentences.
+    """
+    if (parsed or {}).get("form") not in OPINION_FORMS:
+        return None
+    rest = (parsed or {}).get("argument") or ""
+    words = [w.strip(".,!?;:'\"()[]{}<>،؛؟۔«»–—") for w in str(rest).split()]
+    words = [w for w in words if w]
+    if not words or len(words) > FALLBACK_MAX_WORDS:
+        return None
+    for w in words:
+        lw = w.lower()
+        if lw in _FALLBACK_VERBS or w in _FALLBACK_FA_EQUALS:
+            return None
+        if w.startswith("می") or w.startswith("نمی"):
+            return None
+    return "command"
 
 
 def describe_grammar():

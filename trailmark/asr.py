@@ -14,6 +14,10 @@ Three independent pieces, deliberately decoupled so each is testable on its own:
 - ``LevelMeter`` / ``MicMonitor``: what the microphone is hearing right now,
   as a short rolling waveform, for the live wave in Settings and on the bar.
 - ``list_devices`` / ``resolve_device``: one entry per physical input.
+  ``resolve_device_name`` reports which present device a saved name maps to
+  ("" when none), and ``device_fingerprint`` summarises the present set plus
+  the system default so a caller can notice unplug/replug/default-flip
+  without reopening anything.
 
 ``sounddevice`` is imported lazily (function-local) everywhere it is needed,
 so ``import asr`` succeeds on a machine that never installs it, and so a
@@ -258,6 +262,7 @@ class MicMonitor:
         # microphone test, which keeps nothing.
         self.keep_audio = keep_audio
         self._audio = bytearray()
+        self._audio_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
         self._opened = threading.Event()
@@ -279,9 +284,27 @@ class MicMonitor:
         if t is not None:
             t.join(timeout=3)
 
+    def set_sensitivity(self, sensitivity):
+        """Retune the wave's speech line live, without reopening the stream.
+
+        Only moves the drawn threshold (what counts as speech on the wave);
+        capture behaviour itself changes when settings are saved. Clamped,
+        never raises - the settings slider drives this on every input tick.
+        """
+        try:
+            sensitivity = max(0, min(100, int(sensitivity)))
+        except (TypeError, ValueError):
+            return
+        self.sensitivity = sensitivity
+        try:
+            self.meter.threshold = Vad(sensitivity=sensitivity).threshold / 32768.0
+        except Exception:
+            pass
+
     def audio(self):
         """What was kept (16 kHz mono int16 PCM), after stop()."""
-        return bytes(self._audio)
+        with self._audio_lock:
+            return bytes(self._audio)
 
     def _run(self):
         try:
@@ -293,8 +316,18 @@ class MicMonitor:
         meter, stop = self.meter, self._stop
 
         def callback(indata, frames, time_info, status):
-            if not stop.is_set():
-                meter.feed(bytes(indata))
+            if stop.is_set():
+                return
+            data = bytes(indata)
+            meter.feed(data)
+            # Enrollment keeps the audio the wave is showing. Without this
+            # append the recording was always empty, so every enrollment
+            # sentence came back as "Only 0.0 s of speech was heard" no
+            # matter how clearly it was read - the model downloaded fine,
+            # but there was never anything to build a voiceprint from.
+            if self.keep_audio:
+                with self._audio_lock:
+                    self._audio.extend(data)
 
         try:
             kwargs, self.note = _stream_kwargs(sd, self.device)
@@ -354,6 +387,16 @@ class VoiceLogger:
         # finish in whatever order the network allows; the caller needs this
         # to put them back in the order they were said.
         self._seq = 0
+        self._seq_lock = threading.Lock()
+        # Liveness: when the audio callback last ran, and how many consecutive
+        # callbacks arrived with a PortAudio error status. An unplugged USB /
+        # Bluetooth microphone does not always kill the stream with an
+        # exception - sometimes the callback just stops, or limps on with
+        # error statuses - and without these the logger looks alive while
+        # hearing nothing. The controller's device watcher reads both.
+        self._last_cb = time.time()
+        self._bad_status = 0
+        self._status_warned = False
 
     def start(self):
         """Start the capture thread.
@@ -384,6 +427,18 @@ class VoiceLogger:
         with self._lock:
             self._thread = None
         self._emit_state("off", "")
+
+    def alive(self):
+        """Whether the capture thread is currently running."""
+        t = self._thread
+        return bool(t is not None and t.is_alive())
+
+    def callback_age(self):
+        """Seconds since the audio callback last ran (float)."""
+        try:
+            return max(0.0, time.time() - self._last_cb)
+        except Exception:
+            return 0.0
 
     def _emit_state(self, state, detail):
         try:
@@ -418,6 +473,21 @@ class VoiceLogger:
         def callback(indata, frames, time_info, status):
             if stop_event.is_set():
                 return
+            self._last_cb = time.time()
+            if status:
+                # PortAudio keeps calling with an error status when the device
+                # is going away (unplug, Bluetooth sleep). One is routine
+                # (an overflow under load); a solid run of them is a dying
+                # stream. Warn once so the controller - which also watches
+                # callback_age - can restart onto whatever is actually there.
+                self._bad_status += 1
+                if self._bad_status >= 60 and not self._status_warned:
+                    self._status_warned = True
+                    self._emit_state("error", "The microphone stopped responding - "
+                                              "reconnect it or pick another in Settings.")
+            else:
+                self._bad_status = 0
+                self._status_warned = False
             data = bytes(indata)
             try:
                 meter.feed(data)
@@ -432,10 +502,16 @@ class VoiceLogger:
                 # here, so a slow transcription cannot block/overflow the
                 # real-time audio stream and drop the next utterance's audio.
                 # The sequence number is taken HERE, on the one thread that
-                # sees utterances in the order they were said.
-                self._seq += 1
+                # sees utterances in the order they were said. Under a lock:
+                # PortAudio may invoke the callback on more than one thread
+                # across devices, and two utterances taking the same number
+                # would make _InOrder park one of them forever - the "second
+                # sentence while the first transcribes never comes back" hole.
+                with self._seq_lock:
+                    self._seq += 1
+                    seq = self._seq
                 threading.Thread(target=self._handle_utterance,
-                                 args=(utterance, self._seq), daemon=True).start()
+                                 args=(utterance, seq), daemon=True).start()
 
         try:
             stream_kwargs, note = _stream_kwargs(sd, self.cfg.get("device"))
@@ -550,6 +626,83 @@ def list_devices():
         return []
 
 
+def _norm_device_name(name):
+    """A reconnect-tolerant form of a device name: lowercase, punctuation and
+    extra whitespace folded away. A Bluetooth handsfree that comes back as
+    "WH-1000XM4  Hands-Free" after being saved as "WH-1000XM4 Hands-free"
+    still matches; two physically different devices never normalise equal
+    unless their words really are the same words."""
+    import re
+    return re.sub(r"\s+", " ", re.sub(r"[^0-9a-z\u00c0-\u06ff\u0900-\u0d7f]+", " ",
+                                      str(name or "").lower())).strip()
+
+
+def _match_device(wanted, candidates):
+    """Index into ``candidates`` ([(idx, name, api), ...]) for ``wanted``, or
+    None. Pure function, no audio access - the tests drive it directly.
+
+    Order is deliberately conservative: an exact (case-insensitive) hit wins
+    first, then the legacy MME-prefix rule, then a normalised equality, and
+    only then a token-containment fallback (every word of the shorter name
+    must appear in the longer one, at least two words). The last step is what
+    finds a headset that reconnected with an extra "(Hands-Free)" qualifier,
+    and its two-word minimum is what keeps "Microphone Array" from matching
+    "Headset Microphone".
+    """
+    low = str(wanted or "").strip().lower()
+    if not low:
+        return None
+    names = [(i, n) for i, (idx, n, api) in enumerate(candidates)]
+    for i, n in names:
+        if str(n).strip().lower() == low:
+            return i
+    for i, n in names:
+        # MME cuts names at 31 characters, so an old saved name may be a
+        # prefix of the full one.
+        if len(low) >= 20 and str(n).strip().lower().startswith(low):
+            return i
+    want_norm = _norm_device_name(wanted)
+    for i, n in names:
+        if _norm_device_name(n) == want_norm and want_norm:
+            return i
+    want_tokens = set(want_norm.split())
+    if len(want_tokens) >= 2:
+        for i, n in names:
+            cand_tokens = set(_norm_device_name(n).split())
+            if len(cand_tokens) >= 2 and (want_tokens <= cand_tokens
+                                          or cand_tokens <= want_tokens):
+                return i
+    return None
+
+
+def resolve_device_name(sd, wanted):
+    """The present device name ``wanted`` maps to, or "" when none matches.
+
+    ``wanted`` is a name from list_devices(), "" (the system default maps to
+    nothing - there is no name to report), or a legacy bare index, translated
+    exactly like resolve_device translates it. Never raises: audio-query
+    failures answer "".
+    """
+    try:
+        wanted = "" if wanted is None else str(wanted).strip()
+        if not wanted:
+            return ""
+        candidates = _input_devices(sd)
+        if wanted.isdigit():
+            devices = list(sd.query_devices())
+            i = int(wanted)
+            if 0 <= i < len(devices) and devices[i].get("max_input_channels", 0) > 0:
+                wanted = str(devices[i].get("name", "")).strip()
+            else:
+                return ""
+        pos = _match_device(wanted, candidates)
+        if pos is None:
+            return ""
+        return str(candidates[pos][1])
+    except Exception:
+        return ""
+
+
 def resolve_device(sd, wanted):
     """(device index or None, extra_settings or None, note) for ``wanted``.
 
@@ -560,34 +713,83 @@ def resolve_device(sd, wanted):
 
     A name that is no longer present (the headset was unplugged) falls back
     to the default microphone and says so in ``note``, rather than failing to
-    open: the user asked to be listened to.
+    open: the user asked to be listened to. The note names the microphone
+    actually opened, so a fallback is visible rather than silent.
     """
     wanted = "" if wanted is None else str(wanted).strip()
     if not wanted:
         return None, None, ""
-    devices = list(sd.query_devices())
+    try:
+        candidates = _input_devices(sd)
+    except Exception:
+        return None, None, ""
     if wanted.isdigit():
+        try:
+            devices = list(sd.query_devices())
+        except Exception:
+            return None, None, ""
         i = int(wanted)
         if 0 <= i < len(devices) and devices[i].get("max_input_channels", 0) > 0:
             wanted = str(devices[i].get("name", "")).strip()
         else:
             return None, None, "The saved microphone is gone - using the default."
-    low = wanted.lower()
-    for idx, name, api in _input_devices(sd):
-        # MME cuts names at 31 characters, so an old saved name may be a
-        # prefix of the full one.
-        if name.lower() == low or (len(low) >= 20 and name.lower().startswith(low)):
-            extra = None
-            if api is not None and api == _preferred_hostapi(sd):
-                # WASAPI in shared mode only opens at the device's own rate
-                # (48 kHz here) unless asked to convert. The VAD and every
-                # transcription endpoint want 16 kHz.
-                try:
-                    extra = sd.WasapiSettings(auto_convert=True)
-                except Exception:
-                    extra = None
-            return idx, extra, ""
+    pos = _match_device(wanted, candidates)
+    if pos is not None:
+        idx, name, api = candidates[pos]
+        extra = None
+        if api is not None and api == _preferred_hostapi(sd):
+            # WASAPI in shared mode only opens at the device's own rate
+            # (48 kHz here) unless asked to convert. The VAD and every
+            # transcription endpoint want 16 kHz.
+            try:
+                extra = sd.WasapiSettings(auto_convert=True)
+            except Exception:
+                extra = None
+        return idx, extra, ""
+    try:
+        default_name = _default_input_name(sd)
+    except Exception:
+        default_name = ""
+    if default_name:
+        return None, None, ("“%s” is not connected - using “%s” until it comes back."
+                            % (wanted, default_name))
     return None, None, "“%s” is not connected - using the default microphone." % wanted
+
+
+def _default_input_name(sd):
+    """The system default input's name on the preferred API, or ""."""
+    try:
+        api = _preferred_hostapi(sd)
+        rows = _input_devices(sd)
+        if api is not None:
+            try:
+                default_idx = sd.query_hostapis(api).get("default_input_device")
+            except Exception:
+                default_idx = None
+            for idx, name, _api in rows:
+                if idx == default_idx:
+                    return str(name)
+        if rows:
+            return str(rows[0][1])
+    except Exception:
+        pass
+    return ""
+
+
+def device_fingerprint(sd):
+    """(names_tuple, default_name): what is plugged in, and the default.
+
+    ``names_tuple`` is the sorted lowercased names of the real microphones;
+    ``default_name`` is the default input's name ("" when unknown). A caller
+    that polls this notices an unplug, a replug, and a Windows default-flip
+    without opening any stream. Never raises: query failures answer ((), "").
+    """
+    try:
+        rows = _input_devices(sd)
+        names = tuple(sorted(str(n).strip().lower() for _i, n, _a in rows))
+        return names, _default_input_name(sd)
+    except Exception:
+        return (), ""
 
 
 class _ComThread:
@@ -854,6 +1056,35 @@ def _transcribe_once(cfg, wav_bytes, language):
         return {"text": data["text"], "detected": str(data.get("language") or "")}
     except Exception as e:
         return {"error": "Unexpected provider response: %s" % e}
+
+
+def play_pcm(pcm_bytes, samplerate=16000):
+    """Play raw int16 mono PCM through the default output, blocking.
+
+    What the microphone test recorded, back through the speakers, so a level
+    can be judged by ear rather than by staring at a wave. Runs on the
+    caller's thread - the controller puts it on a daemon thread. Raises
+    RuntimeError (never the raw PortAudio error) when there is nothing to
+    play or no output device.
+    """
+    if not pcm_bytes:
+        raise RuntimeError("Nothing recorded.")
+    try:
+        import sounddevice as sd
+    except Exception as e:
+        raise RuntimeError("No audio output available: %s" % e)
+    try:
+        import numpy as np
+        data = np.frombuffer(bytes(pcm_bytes), dtype=np.int16)
+    except Exception as e:
+        raise RuntimeError("No audio output available: %s" % e)
+    try:
+        with _ComThread(), sd.OutputStream(samplerate=samplerate, channels=1,
+                                            dtype="int16") as stream:
+            stream.write(data)
+    except Exception as e:
+        raise RuntimeError("Playback failed: %s" % e)
+    return len(bytes(pcm_bytes)) / float(samplerate * 2)
 
 
 def test_capture(cfg, seconds=5):

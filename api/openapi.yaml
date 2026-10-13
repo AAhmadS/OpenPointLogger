@@ -1,0 +1,348 @@
+openapi: 3.1.0
+info:
+  title: Trailmark Stage-1 Sync API
+  version: 1.0.0
+  description: |
+    Stage-1 contract (PROJECT_STATE step 5): accounts/auth, device pairing,
+    the local-first op-log sync, attachments, and the dashboard read model.
+    This is what the Android app (T21), the website (T24) and the desktop
+    sync engine build against.
+
+    Out of scope on purpose: billing and hosted-key issuance (T19/T20 stay
+    blocked on business decisions), and server-side export (D-8, later).
+    Auth tokens are Supabase Auth JWTs; the backend verifies them and never
+    mints its own session scheme.
+servers:
+  - url: https://api.trailmark.chantex.ir/v1
+    description: production (region not established yet)
+  - url: http://localhost:8080/v1
+    description: local backend dev
+security:
+  - bearerAuth: []
+paths:
+  /auth/otp/request:
+    post:
+      operationId: authOtpRequest
+      summary: Email one-time code for sign-in (M1 magic link)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200':
+          description: Code sent (always 200 to avoid account probing)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+  /auth/otp/verify:
+    post:
+      operationId: authOtpVerify
+      summary: Exchange email + code for tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, minLength: 6, maxLength: 6 }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [access_token, refresh_token, user]
+                properties:
+                  access_token: { type: string }
+                  refresh_token: { type: string }
+                  user:
+                    type: object
+                    required: [id, email]
+                    properties:
+                      id: { type: string, format: uuid }
+                      email: { type: string, format: email }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /account:
+    get:
+      operationId: accountGet
+      summary: Account, plan and this user's devices (M5)
+      responses:
+        '200':
+          description: Account
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, email, plan, devices]
+                properties:
+                  id: { type: string, format: uuid }
+                  email: { type: string, format: email }
+                  plan: { type: string, enum: [free, pro] }
+                  devices:
+                    type: array
+                    items: { $ref: '#/components/schemas/Device' }
+  /devices/pair:
+    post:
+      operationId: devicesPair
+      summary: Pair this phone with the 6-char code shown on the desktop (M1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+                  description: Code from the desktop; single-use, short expiry
+                name:
+                  type: string
+                  maxLength: 80
+                  description: Human name for this phone, e.g. "Pixel 8"
+      responses:
+        '200':
+          description: Paired
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device_id, device_token, paired_at]
+                properties:
+                  device_id: { type: string, format: uuid }
+                  device_token:
+                    type: string
+                    description: Long-lived per-device secret; store in secure storage
+                  paired_at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '410':
+          description: Code unknown, expired or already used
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /devices:
+    get:
+      operationId: devicesList
+      summary: This account's devices (M5)
+      responses:
+        '200':
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items: { $ref: '#/components/schemas/Device' }
+  /devices/{device_id}:
+    delete:
+      operationId: devicesRevoke
+      summary: Revoke a device; its token stops working (M5)
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '404':
+          description: No such device on this account
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /sync/push:
+    post:
+      operationId: syncPush
+      summary: Append ops to the account log (M2/M3/M4, offline queue drains here)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ops]
+              properties:
+                ops:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { $ref: '#/components/schemas/Op' }
+      responses:
+        '200':
+          description: Per-op results, in request order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, rejected]
+                properties:
+                  accepted: { type: array, items: { type: string, format: uuid } }
+                  rejected:
+                    type: array
+                    items:
+                      type: object
+                      required: [op_id, error]
+                      properties:
+                        op_id: { type: string, format: uuid }
+                        error: { type: string }
+  /sync/pull:
+    get:
+      operationId: syncPull
+      summary: Ops after a cursor, server order (M3/M4 refresh)
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: Opaque cursor from the last pull; absent means from scratch
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        '200':
+          description: Page of ops plus the next cursor
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ops, cursor]
+                properties:
+                  ops:
+                    type: array
+                    items: { $ref: '#/components/schemas/StoredOp' }
+                  cursor: { type: string }
+  /attachments/upload-url:
+    post:
+      operationId: attachmentsUploadUrl
+      summary: Signed URL for one screenshot/photo (M2); client PUTs bytes there
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sha256, bytes, mime]
+              properties:
+                sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                bytes: { type: integer, minimum: 1, maximum: 8388608 }
+                mime: { type: string, enum: [image/png, image/jpeg, image/webp] }
+      responses:
+        '200':
+          description: Upload here, then reference attachment_id in an op
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attachment_id, url, expires_at]
+                properties:
+                  attachment_id: { type: string, format: uuid }
+                  url: { type: string, format: uri }
+                  expires_at: { type: string, format: date-time }
+  /topics/summary:
+    get:
+      operationId: topicsSummary
+      summary: Dashboard read model (website T24 reads this too)
+      responses:
+        '200':
+          description: One row per topic, newest activity first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [topics]
+                properties:
+                  topics:
+                    type: array
+                    items:
+                      type: object
+                      required: [topic_id, title, status, points, sources, first_at, last_at]
+                      properties:
+                        topic_id: { type: string }
+                        title: { type: string }
+                        status: { type: string, enum: [open, closed] }
+                        points: { type: integer, minimum: 0 }
+                        sources: { type: integer, minimum: 0 }
+                        first_at: { type: string, format: date-time }
+                        last_at: { type: string, format: date-time }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Device:
+      type: object
+      required: [id, name, paired_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        paired_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+    Op:
+      type: object
+      required: [op_id, device_id, seq, entity, entity_id, op, payload, client_at]
+      properties:
+        op_id: { type: string, format: uuid, description: Idempotency key }
+        device_id: { type: string, format: uuid }
+        seq:
+          type: integer
+          minimum: 1
+          description: Per-device monotonic counter; resend-safe ordering hint
+        entity: { type: string, enum: [topic, entry, source, subtopic] }
+        entity_id: { type: string, description: Client-generated stable id }
+        op: { type: string, enum: [upsert, delete] }
+        payload:
+          type: object
+          description: |
+            topic: {title, status}; entry: {topic_id, subtopic, text, kind};
+            source: {entry_id, type, value, note, attachment_id?};
+            subtopic: {topic_id, name}. Unknown fields are ignored.
+          additionalProperties: true
+        client_at: { type: string, format: date-time }
+    StoredOp:
+      allOf:
+        - $ref: '#/components/schemas/Op'
+        - type: object
+          required: [applied_at]
+          properties:
+            applied_at: { type: string, format: date-time }

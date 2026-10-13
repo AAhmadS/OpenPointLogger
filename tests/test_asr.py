@@ -27,6 +27,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+# Persian verdict labels print as-is; a cp1252 console would otherwise abort
+# the run with UnicodeEncodeError before the Persian cases are reached.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 FAILS = []
 
 
@@ -539,6 +546,172 @@ check("the silence around speech is dropped, a little padding kept",
 check("all-speech is kept whole (to the frame)", len(asr.speech_only(pcm(1.0, 8000))) >= 0.97 * 32000)
 check("higher sensitivity keeps quieter speech",
       len(asr.speech_only(pcm(1.0, 700), sensitivity=100)) > len(asr.speech_only(pcm(1.0, 700), sensitivity=0)))
+
+
+# ---------------------------------------------------------------------------
+# 9. Handsfree survival: tolerant matching, fingerprints, watcher decisions
+# ---------------------------------------------------------------------------
+print("\n-- handsfree survival --")
+
+check("normalisation folds case, punctuation and spacing",
+      asr._norm_device_name("WH-1000XM4  Hands-Free") == asr._norm_device_name("wh 1000xm4 hands free"),
+      (asr._norm_device_name("WH-1000XM4  Hands-Free"), asr._norm_device_name("wh 1000xm4 hands free")))
+
+HF = "WH-1000XM4 Hands-Free"
+HF2 = "Headset Microphone (Jabra Evolve2 65)"
+CANDS = [(0, HF, 2), (1, MIC, 2), (2, HF2, 2), (3, "Stereo Mix (Realtek(R) Audio)", 2)]
+M = asr._match_device
+check("exact name matches", M(HF, CANDS) == 0, M(HF, CANDS))
+check("case does not matter", M("wh-1000xm4 hands-free", CANDS) == 0)
+check("hyphens vs spaces do not matter", M("WH 1000XM4 Hands Free", CANDS) == 0)
+check("a reconnected qualifier still matches",
+      M("Headset (Jabra EVOLVE2 65)", CANDS) == 2, M("Headset (Jabra EVOLVE2 65)", CANDS))
+check("legacy MME truncation still matches", M(MIC[:31], [(0, MIC, 2)]) == 0)
+check("'Microphone Array' does not match 'Headset Microphone'",
+      M("Microphone Array", [(0, "Headset Microphone", 2)]) is None)
+check("a single shared word is not a match",
+      M("Microphone", [(0, "Headset Microphone", 2)]) is None)
+check("nothing matches an empty list", M(HF, []) is None)
+check("blank wanted matches nothing", M("  ", CANDS) is None)
+
+HF_RAW = [dev(HF, 2), dev(MIC, 2), dev(HF2, 2),
+          dev("Stereo Mix (Realtek(R) Audio)", 2)]
+HF_APIS = [{"name": "Windows WASAPI", "default_input_device": 0}]
+hf_sd = FakeSD(HF_APIS, HF_RAW)
+check("resolve_device_name reports the present device",
+      asr.resolve_device_name(hf_sd, "wh 1000xm4 hands-free") == HF,
+      asr.resolve_device_name(hf_sd, "wh 1000xm4 hands-free"))
+check("resolve_device_name is '' for a missing device",
+      asr.resolve_device_name(hf_sd, "USB Microphone (Blue Yeti)") == "")
+check("resolve_device_name is '' for the default", asr.resolve_device_name(hf_sd, "") == "")
+check("resolve_device_name never raises without audio",
+      asr.resolve_device_name(None, HF) == "")
+idx, _extra, note = asr.resolve_device(hf_sd, "USB Microphone (Blue Yeti)")
+check("fallback still opens the default", idx is None, (idx, note))
+check("fallback note names the microphone actually used",
+      "not connected" in note and HF in note, note)
+
+fp1 = asr.device_fingerprint(hf_sd)
+# Same default at index 0, the rest rotated: ordering must not matter, and
+# the default must still resolve to the same device.
+fp_reordered = asr.device_fingerprint(FakeSD(HF_APIS, [HF_RAW[0], HF_RAW[2], HF_RAW[1], HF_RAW[3]]))
+check("fingerprint ignores ordering", fp1 == fp_reordered, (fp1, fp_reordered))
+fp_new_default = asr.device_fingerprint(
+    FakeSD([{"name": "Windows WASAPI", "default_input_device": 1}], HF_RAW))
+check("a Windows default-flip changes the fingerprint", fp_new_default != fp1)
+fp_unplugged = asr.device_fingerprint(FakeSD(HF_APIS, [d for d in HF_RAW if HF not in d["name"]]))
+check("an unplug shrinks the fingerprint",
+      len(fp_unplugged[0]) == len(fp1[0]) - 1, (fp1[0], fp_unplugged[0]))
+check("query failure answers empty, not a crash", asr.device_fingerprint(None) == ((), ""))
+
+D = c._asr_watch_decide
+BASE = {"now": 1000.0, "wanted": HF, "wanted_present": HF, "fallback_from": None,
+        "default": HF, "prev_default": HF, "alive": True, "cb_age": 0.0, "cooldown": False}
+check("cooldown suppresses everything",
+      D(dict(BASE, cooldown=True, alive=False)) is None)
+check("steady state is quiet", D(dict(BASE)) is None)
+check("unplug falls back, naming both ends",
+      D(dict(BASE, wanted_present=""))[0] == "lost"
+      and HF in D(dict(BASE, wanted_present=""))[1]
+      and "until it comes back" in D(dict(BASE, wanted_present=""))[1])
+check("no repeat while already fallen back",
+      D(dict(BASE, wanted_present="", fallback_from=HF)) is None)
+check("replug returns to the headset",
+      D(dict(BASE, fallback_from=HF))[0] == "reconnected")
+check("unplug with no default waits instead",
+      D(dict(BASE, wanted_present="", default="")) == (
+          "lost", "“%s” disconnected - waiting for a microphone." % HF))
+check("default-flip restarts onto the new default",
+      D({"now": 1000.0, "wanted": "", "wanted_present": "", "fallback_from": None,
+         "default": MIC, "prev_default": HF, "alive": True,
+         "cb_age": 0.0, "cooldown": False})[0] == "default_changed")
+check("same default is quiet",
+      D(dict(BASE, wanted="", wanted_present="", prev_default=HF, default=HF)) is None)
+check("a dead thread restarts",
+      D(dict(BASE, wanted="", wanted_present="", prev_default="", default="",
+             alive=False))[0] == "died")
+check("a silent stream restarts",
+      D(dict(BASE, wanted="", wanted_present="", prev_default="", default="",
+             cb_age=99.0))[0] == "stalled")
+check("device news beats a dead thread",
+      D(dict(BASE, wanted_present="", alive=False))[0] == "lost")
+
+lg = asr.VoiceLogger({}, lambda w, s: None, lambda s, d: None)
+check("a fresh logger reports not alive", lg.alive() is False)
+check("callback age is a non-negative float",
+      isinstance(lg.callback_age(), float) and lg.callback_age() >= 0.0)
+
+import trailmark.ui as ui  # noqa: E402
+import re as _re  # noqa: E402
+# Served-page hygiene: a real NUL in the served HTML truncates the whole
+# window at the native WebView2 string boundary - blank window, zero errors.
+# Python interprets backslash escapes when ui.py is imported, so this asserts
+# on the RUNTIME strings exactly as pywebview serves them, not on file text.
+from trailmark.brand import ICON_DATA_URI as _ICON  # noqa: E402
+_served_main = ui.MAIN_HTML.replace("__ICON__", _ICON).replace("__BASE_CSS__", ui.BASE_CSS)
+_served_pop = ui.POPUP_HTML.replace("__ICON__", _ICON).replace("__BASE_CSS__", ui.BASE_CSS)
+for _name, _html in (("MAIN_HTML", _served_main), ("POPUP_HTML", _served_pop)):
+    _bad = [c for c in _html if ord(c) < 0x20 and c not in ("\t", "\n", "\r")]
+    check("served %s has no control chars" % _name, not _bad, list(map(hex, map(ord, _bad)))[:5])
+for eid in ("mtDevNote", "hfHint"):
+    check("settings markup has #%s" % eid, ('id="%s"' % eid) in ui.MAIN_HTML)
+check("asrState renders the watcher 'switched' state",
+      '"switched"' in ui.MAIN_HTML and "devNoteFromSwitch" in ui.MAIN_HTML)
+check("Api.asr_device_status exists", callable(getattr(point_logger.Api, "asr_device_status", None)))
+called = set(_re.findall(r"api\.([a-z_]+)\(", ui.POPUP_HTML + ui.MAIN_HTML))
+missing = sorted(m for m in called if not hasattr(point_logger.Api, m))
+check("no window calls a bridge method Api lacks", not missing, missing)
+
+
+# ---------------------------------------------------------------------------
+# 10. Test records, plays back, and retunes live; held buffer holds three
+# ---------------------------------------------------------------------------
+print("\n-- record, playback, live sensitivity, held cap --")
+
+mon = asr.MicMonitor(device="", sensitivity=50)
+t50 = asr.Vad(sensitivity=50).threshold / 32768.0
+check("monitor starts at the configured threshold", abs(mon.meter.threshold - t50) < 1e-6,
+      mon.meter.threshold)
+mon.set_sensitivity(100)
+t100 = asr.Vad(sensitivity=100).threshold / 32768.0
+check("retune moves the speech line without reopening", abs(mon.meter.threshold - t100) < 1e-6
+      and mon.running is False, mon.meter.threshold)
+before = mon.meter.threshold
+mon.set_sensitivity("junk")
+check("a junk value is ignored, not raised", mon.meter.threshold == before)
+mon.set_sensitivity(-5)
+check("out-of-range clamps",
+      abs(mon.meter.threshold - asr.Vad(sensitivity=0).threshold / 32768.0) < 1e-6)
+
+try:
+    asr.play_pcm(b"")
+    check("playing nothing is refused", False, "no raise")
+except RuntimeError as e:
+    check("playing nothing is refused", "Nothing recorded" in str(e), str(e))
+except Exception as e:
+    check("playing nothing is refused without audio access", False, repr(e))
+
+r = c.mic_test_play()
+check("play with no recording errors, not crashes",
+      isinstance(r, dict) and "error" in r and "test" in r["error"], r)
+check("bad sensitivity is an error, not a crash",
+      c.mic_test_sensitivity("junk").get("error") is not None)
+check("sensitivity with nothing running is a quiet ok",
+      c.mic_test_sensitivity(80).get("ok") is True)
+check("held buffer holds three", c.HELD_MAX == 3, c.HELD_MAX)
+try:
+    st = c.speaker_status()
+    check("speaker_status reports the held cap", st.get("held_max") == 3, st.get("held_max"))
+except Exception as e:
+    check("speaker_status reports the held cap", False, e)
+
+for meth in ("mic_test_play", "mic_test_sensitivity"):
+    check("Api.%s exists" % meth, callable(getattr(point_logger.Api, meth, None)))
+check("settings markup has #mtPlay", 'id="mtPlay"' in ui.MAIN_HTML)
+check("full wires #mtPlay at both ends",
+      ui.MAIN_HTML.count("mtPlay") >= 2, ui.MAIN_HTML.count("mtPlay"))
+check("mic dropdown locks during a test",
+      'id="asrDevice" class="input" ${micTestOn?"disabled":""}' in ui.MAIN_HTML)
 
 print()
 print("ALL CHECKS PASSED" if not FAILS else "FAILED: " + ", ".join(FAILS))

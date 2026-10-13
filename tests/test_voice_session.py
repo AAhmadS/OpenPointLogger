@@ -271,11 +271,21 @@ n = len(pushes)
 d = say("tab open questions")
 check("unconfigured: the question was still asked", len(VERDICT["calls"]) == 1, VERDICT["calls"])
 check("the bar said it was deciding", ("deciding", "tab open questions") in pushes[n:], pushes[n:])
-check("unconfigured: kept as text", d["action"] == "text" and d["reason"] == "no-opinion", d)
-check("the words are in the draft", draft()["text"] == "tab open questions", draft()["text"])
-check("no tab was made", "open questions" not in open_topic()["subtopics"])
+check("unconfigured, short name: the local fallback files it",
+      d["action"] == "command" and d["reason"] == "local-fallback", d)
+check("the tab was made without a key", "open questions" in open_topic()["subtopics"])
+check("nothing went into the draft", c.draft.is_empty(), draft())
+check("the push names the tab", pushes[-1] == ("tab", "open questions"), pushes[-1])
+
+n = len(pushes)
+d = say("session times were short today")
+check("unconfigured, a sentence stays text",
+      d["action"] == "text" and d["reason"] == "no-opinion", d)
+check("the sentence is in the draft", draft()["text"] == "session times were short today", draft()["text"])
+check("no topic 'times were short today'",
+      all("times were short today" not in (t.get("title") or "") for t in c.store._topics))
 check("the push says why, and how to force it",
-      pushes[-1][0] == "heard" and 'trail tab' in pushes[-1][1], pushes[-1])
+      pushes[-1][0] == "heard" and 'trail session' in pushes[-1][1], pushes[-1])
 api.draft_clear()
 
 VERDICT["v"] = "command"
@@ -857,12 +867,12 @@ for k in ("toggle", "attach", "log", "session", "tab", "finish", "hide"):
 check("hint flash gamification wired", "function flashKey(" in ui.POPUP_HTML
       and ".flash" in ui.POPUP_HTML)
 for eid in ("voiceChip", "vcSw", "vcCmdSw", "vcHkSw", "vcSave", "vcHkStatus",
-            "mtBtn", "mtWave", "asrLang", "asrDevice", "asrSensitivity"):
+            "mtBtn", "mtRefresh", "mtWave", "mtDevNote", "asrLang", "asrDevice", "asrSensitivity"):
     check("full markup has #%s" % eid, ('id="%s"' % eid) in ui.MAIN_HTML)
 # Generated in a template and read back by a binder: two mentions at least,
 # one means a half-wired control.
 for eid in ("vcKeyLog", "vcKeyFinish", "vcKeySession", "vcKeyTab", "spkRec", "spkSave",
-            "spkSw", "spkTh", "spkChk", "spkForget", "spkDl", "heldDropAll"):
+            "spkSw", "spkTh", "spkChk", "spkForget", "spkDl", "heldDropAll", "mtRefresh"):
     check("full wires #%s at both ends" % eid, ui.MAIN_HTML.count(eid) >= 2, ui.MAIN_HTML.count(eid))
 check("the Persian option is offered", 'value="fa"' in ui.MAIN_HTML or "'fa'" in ui.MAIN_HTML
       or '"fa"' in ui.MAIN_HTML)
@@ -876,7 +886,11 @@ for gone in ("voice_buffer", "voice_drop_comment", "voice_drop_source", "voice_c
     check("the old bridge call %s is gone from the windows" % gone, gone not in called)
 
 check("the Settings copy names the real held cap",
-      ("the last %d stay listed" % point_logger.Controller.HELD_MAX) in ui.MAIN_HTML)
+      ("the last %d stay listed" % point_logger.Controller.HELD_MAX) in ui.MAIN_HTML
+      or ("stay listed below" in ui.MAIN_HTML
+          and "held_max" in ui.MAIN_HTML
+          and point_logger.Controller().speaker_status().get("held_max")
+          == point_logger.Controller.HELD_MAX))
 check("Settings discloses that sub-second clips ARE sent to be transcribed",
       "<b>is</b> sent to be transcribed" in ui.MAIN_HTML)
 check("mini is narrower and much shorter than the popup",

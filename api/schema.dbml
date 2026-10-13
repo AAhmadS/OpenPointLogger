@@ -1,0 +1,66 @@
+// Trailmark stage-1 schema (Supabase Postgres). Matches api/openapi.yaml v1.0.0.
+// Auth itself lives in Supabase Auth (auth.users); everything below keys off
+// it. Billing/hosted-keys tables are deliberately absent (T19/T20 blocked).
+
+Table users {
+  id uuid [pk, note: 'mirrors auth.users.id']
+  email text [not null, unique]
+  plan text [not null, default: 'free', note: "'free' | 'pro'"]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table devices {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  name text [not null, note: 'human name, e.g. Pixel 8']
+  token_hash text [not null, unique, note: 'sha256 of the device_token; the token itself is never stored']
+  paired_at timestamptz [not null, default: `now()`]
+  last_seen_at timestamptz
+  revoked_at timestamptz [note: 'set by DELETE /devices/{id}; revoked tokens are rejected']
+
+  indexes {
+    user_id
+  }
+}
+
+Table pairing_codes {
+  code varchar(6) [pk, note: 'Crockford-style alphabet, no 0/O/1/I']
+  user_id uuid [not null, ref: > users.id, note: 'desktop account the code was issued for']
+  expires_at timestamptz [not null]
+  consumed_at timestamptz [note: 'single-use']
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// The op log. op_id is the idempotency key: a retried push with the same
+// (user_id, op_id) is a no-op returning the original acceptance.
+Table ops {
+  op_id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  device_id uuid [not null, ref: > devices.id]
+  seq bigint [not null, note: 'per-device monotonic counter']
+  entity text [not null, note: "'topic' | 'entry' | 'source' | 'subtopic'"]
+  entity_id text [not null, note: 'client-generated stable id']
+  op text [not null, note: "'upsert' | 'delete'"]
+  payload jsonb [not null]
+  client_at timestamptz [not null]
+  applied_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (user_id, applied_at) [name: 'ops_pull_order', note: 'pull pagination order']
+    (user_id, entity, entity_id) [name: 'ops_entity_lookup']
+  }
+}
+
+Table attachments {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  sha256 char(64) [not null]
+  bytes integer [not null]
+  mime text [not null]
+  storage_path text [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (user_id, sha256) [unique, name: 'attachments_dedup']
+  }
+}

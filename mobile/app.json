@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Trailmark Capture",
+    "slug": "trailmark-capture",
+    "version": "0.1.0",
+    "scheme": "trailmark",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "ir.chantex.trailmark",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0b0f16"
+      },
+      "intentFilters": [
+        {
+          "action": "SEND",
+          "data": [{ "mimeType": "text/plain" }],
+          "category": ["DEFAULT"]
+        },
+        {
+          "action": "SEND",
+          "data": [{ "mimeType": "image/*" }],
+          "category": ["DEFAULT"]
+        }
+      ]
+    },
+    "plugins": ["expo-secure-store"],
+    "extra": {
+      "apiBaseUrl": "https://api.trailmark.chantex.ir/v1",
+      "eas": { "projectId": "SET-ME-IN-EAS-DASHBOARD" }
+    }
+  }
+}

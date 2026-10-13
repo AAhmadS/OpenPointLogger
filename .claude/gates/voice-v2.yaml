@@ -260,3 +260,46 @@ test_run: |
   0  pass=101 fail=0  tests/test_voicecmd.py
   node --check OK POPUP_HTML_0.js
   node --check OK MAIN_HTML_0.js
+
+# ---------------------------------------------------------------------------
+# Amendment 2026-10-09: four owner-reported issues, fixed on this branch.
+# ---------------------------------------------------------------------------
+#
+# A1. Talking over a transcription lost the second utterance. Two causes, both
+#     fixed: the Jev second opinion ran on the single _InOrder drain thread, so
+#     one 6 s round trip held every sentence said after it; and the stall that
+#     skips a dead sequence number was 90 s, so one hung transcription parked
+#     the microphone for a minute and a half. Now hear() asks Jev on the
+#     utterance's own thread, in parallel with everyone else's transcription,
+#     and the verdict travels in the ordered item (apply_heard only reads it);
+#     the stall is 15 s. PortAudio seq numbers are taken under a lock.
+#     Evidence: tests/test_voice_session.py sections 7 (rewritten) + 15 pass;
+#     hear() on "tab open questions" stores verdict command and apply_heard
+#     makes zero further judge calls (checked live, no key).
+#
+# A2. "session/tab + words" with no TypeSafe key stayed text (this file's V3).
+#     V3 is superseded, deliberately: Jev stays first when it answers, and a
+#     deterministic local fallback (voicecmd.local_fallback, 1-3 words, no
+#     finite verb in either language) files short names without a key. Longer
+#     rests still stay text with the "say trail ..." hint. Evidence: 16/17
+#     argument-form cases in evals/command_cases.json decide correctly with no
+#     network (the one miss is the 5-word "session interview with the design
+#     team", which needs Jev or the trail prefix); all garbled/hostile cases
+#     stay text. tests/test_voicecmd.py + test_voice_session.py section 7
+#     updated to the new contract.
+#
+# A3. The speaker model downloaded but enrollment always failed with "Only 0.0
+#     s of speech was heard". Cause: MicMonitor(keep_audio=True) never appended
+#     to _audio - audio() always returned b"". Fixed (locked append in the
+#     callback), verified with a fake sounddevice (3 blocks in, 1440/1440 bytes
+#     kept; keep_audio=False keeps 0). Separately, Trailmark.spec had dropped
+#     the sounddevice/onnxruntime/numpy hiddenimports, so the packaged exe
+#     reported "onnxruntime is not installed" after a good download - restored.
+#
+# A4. Export dialog: the pipeline stages rendered below the fold with no
+#     scroll (renderStages now scrolls .modal-b to the bottom on every update),
+#     and template picking was a flat list (now an Overleaf/Docs-style gallery:
+#     grid of cover cards with a page miniature in the template's accent, wider
+#     sticky preview column, wider dialog). Evidence: node --check exit 0 on
+#     both script blocks. Not verified: no human has looked at the gallery in
+#     the real window yet.

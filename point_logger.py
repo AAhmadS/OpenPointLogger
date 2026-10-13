@@ -18,6 +18,7 @@ from trailmark.ui import MAIN_HTML, POPUP_HTML
 
 import trailmark.asr as asr
 import trailmark.speaker as speaker
+import trailmark.turn as turn
 import trailmark.voicecmd as voicecmd
 import trailmark.clipboard as clipboard
 import trailmark.llm as llm
@@ -180,9 +181,16 @@ class _InOrder:
     Every caller delivers in a ``finally``, so this only fires for a thread
     that died outright - and a thought applied late is better than a
     microphone that silently stops working.
+
+    ``stall`` is 15 s: long enough that a slow transcription (a 60 s network
+    timeout, a Jev round trip) still holds its place, short enough that one
+    dead thread cannot park the microphone for a minute and a half. The old
+    90 s value did exactly that - talk while one utterance was still in
+    flight and the next one sat behind it, looking for all the world like
+    the microphone had stopped hearing.
     """
 
-    def __init__(self, apply, stall=90.0):
+    def __init__(self, apply, stall=15.0):
         self._apply = apply
         self._stall = stall
         self._lock = threading.Lock()
@@ -561,6 +569,16 @@ class Api:
     def mic_test_stop(self):
         return self.controller.mic_test_stop()
 
+    def mic_test_play(self):
+        return self.controller.mic_test_play()
+
+    def mic_test_sensitivity(self, sensitivity):
+        try:
+            sensitivity = int(sensitivity)
+        except (TypeError, ValueError):
+            return {"error": "Sensitivity must be 0-100."}
+        return self.controller.mic_test_sensitivity(sensitivity)
+
     def speaker_status(self):
         return self.controller.speaker_status()
 
@@ -612,6 +630,32 @@ class Api:
 
     def list_asr_devices(self):
         return asr.list_devices()
+
+    def asr_device_status(self):
+        """Which microphone capture is actually using right now, for the live
+        line under Settings' microphone row. Never raises - audio-query
+        failures answer "unknown" rather than breaking the settings page."""
+        try:
+            cfg = self.store.config.get("asr") or {}
+            wanted = str(cfg.get("device") or "")
+            active = str(getattr(self.controller, "_asr_active", "") or "")
+            fallback_from = getattr(self.controller, "_asr_fallback_from", None)
+            missing, present = False, ""
+            try:
+                import sounddevice as sd
+                present = asr.resolve_device_name(sd, wanted) if wanted else ""
+                missing = bool(wanted and not present)
+            except Exception:
+                pass
+            return {"wanted": wanted, "active": active,
+                    "present": present, "missing": bool(missing),
+                    "fell_back": bool(fallback_from),
+                    "fallback_from": fallback_from or "",
+                    "default": str(getattr(self.controller, "_asr_last_default", "") or "")}
+        except Exception:
+            return {"wanted": "", "active": "", "present": "",
+                    "missing": False, "fell_back": False,
+                    "fallback_from": "", "default": ""}
 
     def save_telegram(self, cfg):
         """Mirrors save_asr's shape, not _save_section: enabling this starts
@@ -893,13 +937,42 @@ class Api:
 
     def rename_subtopic(self, tid, old, new):
         r = self.store.rename_subtopic(tid, old, new)
+        if not r.get("error"):
+            self._retarget_draft_subtopic(tid, old, str(new or "").strip())
         self.controller.refresh_full()
         return r
 
     def delete_subtopic(self, tid, name):
         r = self.store.delete_subtopic(tid, name)
+        if not r.get("error"):
+            self._retarget_draft_subtopic(tid, name, "")
         self.controller.refresh_full()
         return r
+
+    def _retarget_draft_subtopic(self, tid, old, new):
+        """Keep the draft addressed at a tab that still exists.
+
+        Deleting or renaming a tab leaves the draft pointing at the old
+        name, and the next logged point re-creates it through add_entry's
+        auto-append - the tab comes back from the dead and cannot be
+        removed. Move the draft along instead (to General on delete, to
+        the new name on rename); drafts addressed elsewhere are untouched.
+        The "edited" push refreshes both windows' tab displays.
+        """
+        try:
+            meta = self.controller.draft.meta()
+        except Exception:
+            return
+        if meta.get("topic_id") != tid or meta.get("subtopic") != old:
+            return
+        try:
+            self.controller.draft.set_meta({"topic_id": tid, "subtopic": new})
+        except Exception:
+            return
+        try:
+            self.controller.push_voice_state("edited", "")
+        except Exception:
+            pass
 
     def add_entry(self, tid, subtopic, text, source_link="", source_string="", image_data=None, sources=None, kind="claim"):
         r = self.store.add_entry(tid, subtopic, text, source_link, source_string, image_data, sources, kind)
@@ -1025,8 +1098,17 @@ class Api:
         return {}
 
 
+#: Marker for "no precomputed verdict" - distinct from None ("asked, no
+#: opinion"). hear() always stores a verdict key (possibly None) in the item;
+#: direct callers of on_voice_transcript (tests, say()) never went through
+#: hear(), so the default tells the ordered half to ask Jev itself.
+_NO_VERDICT = object()
+
+
 class Controller:
     _serializable = False
+
+    _NO_VERDICT = _NO_VERDICT
 
     def __init__(self):
         self.store = Store()
@@ -1065,6 +1147,10 @@ class Controller:
         # at a time, and never alongside a second copy of itself.
         self.mic_test = None
         self._mic_test_lock = threading.Lock()
+        # The last microphone-test recording, for the Play button. Stashed on
+        # stop() (or left in a finished monitor) and cleared when a new test
+        # starts - playing hears exactly what the last test heard.
+        self._last_test_audio = b""
         self._enroll_clips = []
         # Set while a sentence is being recorded for the voiceprint. The live
         # microphone hears it too, and a sentence read aloud for enrollment is
@@ -1081,6 +1167,19 @@ class Controller:
         # to stop it), leaving the microphone open after the user believes
         # voice logging is off.
         self._asr_lock = threading.Lock()
+        # Device watch: a Bluetooth handsfree that sleeps mid-session must not
+        # leave capture silently dead (or silently on the wrong mic) until the
+        # user toggles something. The watcher thread polls the device
+        # fingerprint and the logger's liveness and restarts onto whatever is
+        # actually there. All mutable watcher state below is only touched on
+        # the watcher thread or under _asr_lock in apply_asr.
+        self._asr_watch_thread = None
+        self._asr_watch_stop = None
+        self._asr_wanted = ""       # configured device name ("" = default)
+        self._asr_active = ""       # device name actually opened ("" = default/unknown)
+        self._asr_last_default = ""  # default input name at the last check
+        self._asr_fallback_from = None  # wanted name we fell back from, while it is gone
+        self._asr_last_restart = 0.0
         self.telegram_bridge = None
         self.telegram_state = "off"
         self.telegram_detail = ""
@@ -1236,7 +1335,11 @@ class Controller:
                 except Exception:
                     traceback.print_exc()
                 self.asr_logger = None
+            self._stop_asr_watch()
             if not cfg.get("enabled"):
+                self._asr_wanted = ""
+                self._asr_active = ""
+                self._asr_fallback_from = None
                 self.push_asr_state("off", "")
                 return
             # A fresh logger counts from 1 again, so it gets a fresh order.
@@ -1244,11 +1347,174 @@ class Controller:
             self.asr_logger = asr.VoiceLogger(
                 cfg, lambda wav, seq: self.on_asr_utterance(wav, seq, order),
                 self.push_asr_state)
+            # Remember what was asked for and what actually opened, so the
+            # watcher can tell "fell back" from "still on the right mic".
+            # Best effort: without sounddevice there is nothing to resolve.
+            self._asr_wanted = str(cfg.get("device") or "")
+            self._asr_active = self._resolve_active_name(self._asr_wanted)
+            try:
+                _names, default = asr.device_fingerprint(__import__("sounddevice"))
+                self._asr_last_default = default or ""
+            except Exception:
+                pass
             try:
                 self.asr_logger.start()
             except Exception:
                 traceback.print_exc()
                 self.push_asr_state("error", "Could not start voice logging.")
+            self._start_asr_watch()
+
+    #: How often the device watcher looks, and the minimum gap between two
+    #: automatic restarts. A flapping Bluetooth device must not spin stop() /
+    #: start() faster than PortAudio can take.
+    _ASR_WATCH_SECONDS = 5.0
+    _ASR_RESTART_COOLDOWN = 8.0
+    #: No audio callback for this long while the thread is alive means the
+    #: stream is silently dead (unplug does not always raise) - restart it.
+    _ASR_CB_STALL_SECONDS = 10.0
+
+    def _resolve_active_name(self, wanted):
+        """Which present device ``wanted`` opens right now ("" = the system
+        default, or unknown when audio cannot even be queried)."""
+        try:
+            import sounddevice as sd
+            return asr.resolve_device_name(sd, wanted)
+        except Exception:
+            return ""
+
+    def _start_asr_watch(self):
+        t = self._asr_watch_thread
+        if t is not None and t.is_alive():
+            return
+        stop = threading.Event()
+        self._asr_watch_stop = stop
+        t = threading.Thread(target=self._asr_watch_loop, args=(stop,), daemon=True)
+        self._asr_watch_thread = t
+        t.start()
+
+    def _stop_asr_watch(self):
+        # The watcher calls apply_asr itself when it restarts capture; joining
+        # our own thread there would deadlock, so from inside the loop the
+        # existing thread is simply left running - it picks up the new logger
+        # on its next tick.
+        t = self._asr_watch_thread
+        if t is not None and threading.current_thread() is t:
+            return
+        stop = self._asr_watch_stop
+        self._asr_watch_stop = None
+        self._asr_watch_thread = None
+        if stop is not None:
+            stop.set()
+        if t is not None:
+            t.join(timeout=8)
+
+    def _asr_watch_loop(self, stop):
+        while not stop.is_set():
+            time.sleep(self._ASR_WATCH_SECONDS)
+            if stop.is_set():
+                break
+            try:
+                self._asr_watch_tick()
+            except Exception:
+                traceback.print_exc()
+
+    def _asr_watch_tick(self):
+        """One poll: notice unplug / replug / default-flip / silent death."""
+        cfg = self.store.config.get("asr") or {}
+        if not cfg.get("enabled"):
+            return
+        try:
+            import sounddevice as sd
+        except Exception:
+            return
+        try:
+            names, default = asr.device_fingerprint(sd)
+        except Exception:
+            return
+        wanted = str(cfg.get("device") or "")
+        try:
+            matched = asr.resolve_device_name(sd, wanted) if wanted else ""
+        except Exception:
+            matched = ""
+        lg = self.asr_logger
+        try:
+            alive = bool(lg is not None and lg.alive())
+        except Exception:
+            alive = False
+        try:
+            age = float(lg.callback_age()) if lg is not None else 0.0
+        except Exception:
+            age = 0.0
+        now = time.time()
+        snap = {
+            "now": now,
+            "wanted": wanted,
+            "wanted_present": matched,
+            "fallback_from": self._asr_fallback_from,
+            "default": default or "",
+            "prev_default": self._asr_last_default or "",
+            "alive": alive,
+            "cb_age": age,
+            "cooldown": (now - (self._asr_last_restart or 0.0)) < self._ASR_RESTART_COOLDOWN,
+        }
+        self._asr_last_default = default or ""
+        action = self._asr_watch_decide(snap)
+        if action is None:
+            return
+        kind, msg = action
+        self._asr_last_restart = now
+        if kind == "lost":
+            self._asr_fallback_from = wanted
+        elif kind == "reconnected":
+            self._asr_fallback_from = None
+        try:
+            self.apply_asr()
+        except Exception:
+            traceback.print_exc()
+            return
+        try:
+            self.push_asr_state("switched", msg)
+        except Exception:
+            pass
+
+    def _asr_watch_decide(self, snap):
+        """(kind, message) or None for one watcher snapshot. No side effects -
+        the tests drive this directly with fake snapshots, no audio needed.
+
+        Priority is information, not severity: a device event ("your headset
+        disconnected, now on the laptop mic") explains more than "capture
+        stopped", so it wins when both are true at once.
+        """
+        if snap.get("cooldown"):
+            return None
+        wanted = snap.get("wanted") or ""
+        present = snap.get("wanted_present") or ""
+        fallback_from = snap.get("fallback_from")
+        if wanted:
+            if present and fallback_from == wanted:
+                return ("reconnected",
+                        "“%s” is back - listening on it again." % present)
+            if not present and not fallback_from:
+                default = snap.get("default") or ""
+                if default:
+                    return ("lost", "“%s” disconnected - using “%s” until it comes back."
+                            % (wanted, default))
+                return ("lost", "“%s” disconnected - waiting for a microphone." % wanted)
+        else:
+            default = snap.get("default") or ""
+            prev = snap.get("prev_default") or ""
+            if default and prev and default != prev:
+                return ("default_changed",
+                        "The system microphone is now “%s” - listening on it." % default)
+        if not snap.get("alive"):
+            return ("died", "Capture stopped on its own - restarted.")
+        try:
+            stalled = float(snap.get("cb_age") or 0.0) > self._ASR_CB_STALL_SECONDS
+        except (TypeError, ValueError):
+            stalled = False
+        if stalled:
+            return ("stalled", "The microphone stopped responding - restarted.")
+        return None
 
     def on_asr_utterance(self, wav_bytes, seq=None, order=None):
         """The slow half of one utterance, on the utterance's own thread.
@@ -1278,11 +1544,28 @@ class Controller:
             self.apply_heard(item)
 
     def hear(self, wav_bytes):
-        """Speaker check, then transcription - in that order, so a voice that
-        is not the owner's is never sent anywhere."""
+        """Speaker check, noise skip, transcription, second opinion - in order.
+
+        A voice that is not the owner's is never sent anywhere (the gate
+        runs first). Steady noise that passed the energy VAD is not sent
+        anywhere either (turn.is_noise_utterance) - it carries no words,
+        so the round trip would only add latency and a hallucination.
+
+        The second opinion (Jev, for "session/tab + words") runs HERE, on
+        the utterance's own thread, while other utterances transcribe on
+        theirs. It used to run in apply_heard, on the one _InOrder drain
+        thread - so one 6 s round trip held every sentence said after it,
+        which is what talking-over-a-transcription looked like from the
+        chair: the microphone had heard, but nothing came back. The verdict
+        travels in the item; apply_heard only reads it, never waits for it.
+        """
         gate = self.speaker_gate(wav_bytes)
         if gate.get("hold"):
-            return {"held": True, "score": gate.get("score"), "why": gate.get("why") or ""}
+            return {"held": True, "score": gate.get("score"),
+                    "why": gate.get("why") or "",
+                    "embedding": gate.get("embedding")}
+        if self._is_noise(wav_bytes):
+            return {"noise": True}
         cfg = self.store.config.get("asr") or {}
         self.push_asr_state("transcribing", "")
         result = asr.transcribe(cfg, wav_bytes)
@@ -1293,7 +1576,41 @@ class Controller:
             out["short"] = True
         if gate.get("score") is not None:
             out["score"] = gate["score"]
+        # Second opinion, in parallel with every other utterance's own work.
+        # Fail-closed: anything but a confident "command" is None, and the
+        # ordered half treats None as "no opinion" (local fallback, else text).
+        try:
+            vcfg = self.store.config.get("voice") or {}
+            if vcfg.get("commands", True):
+                parsed = voicecmd.parse((out.get("text") or "").strip())
+                if parsed.get("command") and parsed.get("form") in voicecmd.OPINION_FORMS:
+                    out["parsed"] = parsed
+                    try:
+                        self.push_voice_state("deciding", _snip(out.get("text") or ""))
+                    except Exception:
+                        pass
+                    out["verdict"] = judge.command_intents(
+                        self.store.config.get("judge") or {}, [parsed]).get(0)
+        except Exception:
+            pass
         return out
+
+    def _is_noise(self, wav_bytes):
+        """True when the clip is steady noise with no speech modulation.
+
+        Fail-open everywhere: an unreadable clip or any error means "not
+        noise", i.e. today's behaviour - transcribe it."""
+        try:
+            pcm, sr = speaker.wav_to_pcm(wav_bytes)
+        except Exception:
+            return False
+        try:
+            sensitivity = (self.store.config.get("asr") or {}).get("sensitivity", 50)
+            noisy, _why = turn.is_noise_utterance(pcm, samplerate=sr,
+                                                  sensitivity=sensitivity)
+        except Exception:
+            return False
+        return noisy
 
     def apply_heard(self, item):
         """The ordered half: one utterance's result, applied. Runs on whichever
@@ -1303,15 +1620,22 @@ class Controller:
         if item.get("error"):
             self.push_asr_state("error", item["error"])
             return
+        if item.get("noise"):
+            # Steady noise the VAD let through: nothing to file, nothing to
+            # hold, and no transcription was spent on it. Back to listening.
+            self.push_asr_state("listening", "")
+            return
         if item.get("held"):
             why = item.get("why") or ""
             score = item.get("score")
-            self._hold(item.get("wav"), score, "", why or "another voice")
+            spk = self._hold(item.get("wav"), score, "", why or "another voice",
+                             embedding=item.get("embedding"))
             if why:
                 self.push_voice_state("held", "Held aside - the voice check could not run: " + why)
             else:
-                self.push_voice_state("held", "Another voice - held aside%s."
-                                      % ((" (match %.2f)" % score) if score is not None else ""))
+                self.push_voice_state("held", "Another voice%s - held aside%s."
+                                      % ((" (%s)" % spk) if spk else "",
+                                         (" (match %.2f)" % score) if score is not None else ""))
             return
         text = (item.get("text") or "").strip()
         if item.get("short") and text:
@@ -1324,9 +1648,10 @@ class Controller:
                 self._hold(item.get("wav"), None, text, "too short to check the voice")
                 self.push_voice_state("held", "Too short to check the voice - held aside.")
                 return
-        self.on_voice_transcript(text)
+        self.on_voice_transcript(text, _verdict=item.get("verdict", self._NO_VERDICT),
+                                 _parsed=item.get("parsed"))
 
-    def on_voice_transcript(self, text):
+    def on_voice_transcript(self, text, _verdict=_NO_VERDICT, _parsed=None):
         """One transcript in: a command, or words for the draft.
 
         Split out from the audio path so the whole decision is testable
@@ -1347,12 +1672,21 @@ class Controller:
         decision = {"action": "text", "text": text, "reason": "commands-off"}
         parsed = None
         if cfg.get("commands", True):
-            parsed = voicecmd.parse(text)
-            verdict = None
-            if parsed["command"] and parsed["form"] in voicecmd.OPINION_FORMS:
-                self.push_voice_state("deciding", _snip(text))
-                verdict = judge.command_intents(self.store.config.get("judge") or {},
-                                                [parsed]).get(0)
+            # The audio path (hear) already parsed and asked Jev on the
+            # utterance's own thread, in parallel with everyone else's work.
+            # Direct callers (tests, say()) never went through hear(), so for
+            # them _verdict is the _NO_VERDICT marker and the question is asked
+            # here, on the calling thread, exactly as before.
+            if _parsed is not None or _verdict is not self._NO_VERDICT:
+                parsed = _parsed if _parsed is not None else voicecmd.parse(text)
+                verdict = None if _verdict is self._NO_VERDICT else _verdict
+            else:
+                parsed = voicecmd.parse(text)
+                verdict = None
+                if parsed["command"] and parsed["form"] in voicecmd.OPINION_FORMS:
+                    self.push_voice_state("deciding", _snip(text))
+                    verdict = judge.command_intents(self.store.config.get("judge") or {},
+                                                    [parsed]).get(0)
             decision = voicecmd.decide(parsed, verdict)
         self.voice_heard = text
         if decision["action"] == "command":
@@ -1363,9 +1697,11 @@ class Controller:
             return decision
         detail = _snip(text)
         if parsed and parsed["form"] in voicecmd.OPINION_FORMS and decision["reason"] == "no-opinion":
-            # "session Rust" with no second opinion available stays text -
-            # say so, or the user waits for a topic that is never coming.
-            detail = ('Kept as text - no second opinion to tell a name from a sentence. '
+            # A longer rest with no second opinion available stays text - the
+            # local fallback only covers short verb-less names. Say so, or
+            # the user waits for a topic that is never coming.
+            detail = ('Kept as text - too long to tell a name from a sentence '
+                      'without the second opinion. '
                       'Say "trail %s ..." to make it a command.' % parsed["command"])
         self.push_voice_state("heard", detail)
         return decision
@@ -1599,23 +1935,53 @@ class Controller:
     # --- held clips (the speaker gate) --------------------------------------
 
     #: Clips the speaker check held aside, newest last. Kept in memory only -
-    #: other people's voices are not written to disk - and capped, because a
-    #: busy room would otherwise grow this without end.
-    HELD_MAX = 12
+    #: other people's voices are not written to disk - and capped at three,
+    #: because a busy room would otherwise grow this without end, and three
+    #: is enough to rescue a misheard sentence of your own.
+    HELD_MAX = 3
 
-    def _hold(self, wav, score, text, reason):
+    def _hold(self, wav, score, text, reason, embedding=None):
+        """Hold one clip aside, labelled by voice. Returns the speaker label.
+
+        The embedding (when the gate produced one) is kept alongside the
+        clip for clustering only - memory-only like the audio itself, and
+        stripped from the bridge payload with it. Labels are sticky within
+        the session: the first distinct non-owner voice is Speaker B (the
+        owner is A), the next Speaker C, and so on; dropping a clip never
+        renames the rest. Clips too short to check carry no label."""
         with self._held_lock:
             self._held_seq += 1
             self.held.append({"id": self._held_seq, "wav": wav or b"",
+                              "emb": list(embedding) if embedding is not None else None,
                               "score": None if score is None else round(float(score), 3),
                               "text": text or "", "reason": reason,
+                              "speaker": self._speaker_for_locked(embedding),
                               "at": datetime.now().strftime("%H:%M:%S"),
                               "seconds": round(max(0, len(wav or b"") - 44) / 32000.0, 1)})
             del self.held[:-self.HELD_MAX]
+            return self.held[-1]["speaker"]
+
+    def _speaker_for_locked(self, embedding):
+        """Sticky voice label for one new embedding. Caller holds _held_lock."""
+        if embedding is None:
+            return ""
+        try:
+            threshold = self._threshold(self.store.config.get("speaker"))
+        except Exception:
+            threshold = speaker.DEFAULT_THRESHOLD
+        embs = [h.get("emb") for h in self.held] + [embedding]
+        labels = speaker.cluster_embeddings(embs, threshold=threshold)
+        mine = labels[-1]
+        for h, lab in zip(self.held, labels[:-1]):
+            if lab == mine and h.get("speaker"):
+                return h["speaker"]
+        nxt = len({h.get("speaker") for h in self.held if h.get("speaker")})
+        # Speaker B is the first non-owner voice (the owner is A).
+        return "Speaker " + chr(ord("B") + nxt) if nxt < 25 else "Speaker %d" % (nxt + 2)
 
     def held_list(self):
         with self._held_lock:
-            return [{k: v for k, v in h.items() if k != "wav"} for h in self.held]
+            return [{k: v for k, v in h.items() if k not in ("wav", "emb")} for h in self.held]
 
     def use_held(self, hid):
         """Put a held clip into the draft after all - the owner's call, by hand.
@@ -1712,7 +2078,7 @@ class Controller:
         score = speaker.cosine(emb, enrolled)
         threshold = self._threshold(cfg)
         if not speaker.is_owner(score, threshold):
-            return {"hold": True, "score": score}
+            return {"hold": True, "score": score, "embedding": emb}
         return {"score": score}
 
     def speaker_status(self):
@@ -1732,6 +2098,7 @@ class Controller:
             "enrolled_at": cfg.get("enrolled_at") or "",
             "recorded": len(self._enroll_clips),
             "held": self.held_list(),
+            "held_max": self.HELD_MAX,
         }
 
     def speaker_download(self):
@@ -1742,12 +2109,26 @@ class Controller:
 
     # --- the microphone test, and recording for enrollment -------------------
 
-    def mic_test_start(self, device=None, keep_audio=False, max_seconds=30, sensitivity=None):
-        """Open the chosen microphone just to watch it.
+    def _live_holds(self, device):
+        """Whether the live capture thread is up and on ``device`` - the one
+        case where opening a second stream is likely refused by WASAPI."""
+        try:
+            lg = self.asr_logger
+            if lg is None or not lg.alive():
+                return False
+            cfg = self.store.config.get("asr") or {}
+            return (device or "") == (cfg.get("device") or "")
+        except Exception:
+            return False
 
-        While voice is listening, the live logger already has the microphone
-        and its own meter - the test shows that instead of opening a second
-        stream on the same device, which WASAPI may refuse.
+    def mic_test_start(self, device=None, sensitivity=None, keep_audio=True, max_seconds=10):
+        """Open the chosen microphone to watch it - and record it, at most
+        ten seconds, so the Play button can play it back afterwards.
+
+        While voice is listening on the same microphone, the live logger
+        already holds it and WASAPI may refuse a second stream - then the
+        test shows the live meter instead of failing. (Shared view has no
+        recording behind it; Play then says so.)
         """
         cfg = self.store.config.get("asr") or {}
         device = (cfg.get("device") or "") if device is None else str(device)
@@ -1755,9 +2136,7 @@ class Controller:
             if self.mic_test is not None:
                 self.mic_test.stop()
                 self.mic_test = None
-            if not keep_audio and self.asr_logger is not None \
-                    and device == (cfg.get("device") or ""):
-                return {"ok": True, "shared": True, "note": "Showing the live microphone."}
+            self._last_test_audio = b""
             if sensitivity is None:
                 sensitivity = cfg.get("sensitivity", 50)
             try:
@@ -1768,9 +2147,71 @@ class Controller:
                                max_seconds=max_seconds, keep_audio=keep_audio)
             r = m.start()
             if r.get("error"):
+                if self._live_holds(device):
+                    return {"ok": True, "shared": True,
+                            "note": "Showing the live microphone."}
                 return {"error": r["error"]}
             self.mic_test = m
             return {"ok": True, "shared": False, "note": r.get("note") or ""}
+
+    def mic_test_sensitivity(self, sensitivity):
+        """Retune the running test's wave to a dragged slider, live.
+
+        Display-only: it moves the speech line on the wave being watched, so
+        tuning is immediate. Capture behaviour itself still changes on Save,
+        which restarts the logger. Never raises, never starts anything.
+        """
+        try:
+            sensitivity = max(0, min(100, int(sensitivity)))
+        except (TypeError, ValueError):
+            return {"error": "Sensitivity must be 0-100."}
+        with self._mic_test_lock:
+            m = self.mic_test
+        if m is not None:
+            m.set_sensitivity(sensitivity)
+            return {"ok": True}
+        try:
+            lg = self.asr_logger
+            if lg is not None:
+                lg.meter.threshold = asr.Vad(sensitivity=sensitivity).threshold / 32768.0
+                return {"ok": True}
+        except Exception:
+            pass
+        return {"ok": True}
+
+    def mic_test_play(self):
+        """Play back what the last microphone test recorded, once.
+
+        Runs on a daemon thread so the bridge call returns at once; the page
+        re-enables its button from the returned seconds. Empty when the test
+        showed the shared live meter (nothing was recorded) or when nothing
+        has been tested yet this session.
+        """
+        with self._mic_test_lock:
+            m = self.mic_test
+            try:
+                audio = bytes(m.audio()) if m is not None else b""
+            except Exception:
+                audio = b""
+            if not audio:
+                audio = bytes(self._last_test_audio or b"")
+        if not audio:
+            return {"error": "Nothing recorded - run the microphone test first."}
+        try:
+            seconds = float(len(audio)) / 32000.0
+        except Exception:
+            return {"error": "Nothing recorded - run the microphone test first."}
+        if seconds <= 0:
+            return {"error": "Nothing recorded - run the microphone test first."}
+
+        def _play():
+            try:
+                asr.play_pcm(audio)
+            except Exception:
+                traceback.print_exc()
+
+        threading.Thread(target=_play, daemon=True).start()
+        return {"ok": True, "seconds": round(seconds, 1)}
 
     def mic_levels(self, last=300):
         """The newest wave buckets: the test monitor's if one is open, else the
@@ -1801,10 +2242,18 @@ class Controller:
             threading.Timer(1.5, self._enrolling.clear).start()
         if m is not None:
             m.stop()
+            try:
+                kept = bytes(m.audio())
+            except Exception:
+                kept = b""
+            if kept:
+                self._last_test_audio = kept
         return {"ok": True}
 
     def enroll_record_start(self):
         """Start recording one enrollment sentence, with the wave showing."""
+        if self._live_holds((self.store.config.get("asr") or {}).get("device") or ""):
+            return {"error": "Pause Always-on voice first - it is holding the microphone."}
         r = self.mic_test_start(keep_audio=True, max_seconds=20)
         if r.get("ok"):
             self._enrolling.set()
@@ -2292,6 +2741,10 @@ class Controller:
 
     def quit(self):
         self.quitting = True
+        try:
+            self._stop_asr_watch()
+        except Exception:
+            pass
         try:
             if self.tray:
                 self.tray.stop()
