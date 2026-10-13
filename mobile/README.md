@@ -45,6 +45,15 @@ the Windows exe. `tsc`, `expo prebuild` and the manifest (package
 `ir.chantex.trailmark`, share-target intents, photo permission) are already
 verified; nothing else stands between this tree and the APK but the login.
 
+## Install the APK (sideload)
+
+On the phone: allow the browser to "Install unknown apps", then open the
+APK. Google Play Protect will warn ("Unknown app") because the seed builds
+are signed with the project's own EAS key, not a Play Store identity — tap
+**More details → Install anyway**. The APK on the `seed-1` release is
+verified bit-identical to the EAS build output (SHA-256 `486ffa42…4573229b`,
+59,327,207 bytes), v2-signed, `ir.chantex.trailmark` versionCode 1.
+
 Share-sheet target (M6) is declared in `app.json` intent filters;
 `src/share.ts` reads the launch intent into Capture. Photo attach uses
 `expo-image-picker` (base64, 8 MB server cap enforced in the contract).
