@@ -28,3 +28,6 @@ Trailmark.exe
 tests/_browser/
 tests/*.log
 .playwright-mcp/
+
+# installer output (attached to the GitHub release, never committed)
+installer/Output/

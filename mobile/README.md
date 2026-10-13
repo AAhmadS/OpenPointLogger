@@ -24,10 +24,26 @@ flip `App.tsx` to `HttpTransport` once the backend answers.
 
 ```sh
 cd mobile
-npm install          # needs network + the versions in package.json
+npm install          # done once; pinned in package-lock.json
 npx expo start       # scan with Expo Go, or press a for a local emulator
 npm run typecheck
 ```
+
+## Ship the APK (one interactive login, then cloud build)
+
+```sh
+cd mobile
+eas login            # Expo account, browser SSO - interactive, once per machine
+eas build --platform android --profile preview
+```
+
+The first build links `extra.eas.projectId` (currently a placeholder) and
+creates the Android keystore on EAS (kept server-side; back it up from the
+Expo dashboard). It uploads the APK to an EAS build page and prints a
+download URL — attach that APK to the matching GitHub seed release next to
+the Windows exe. `tsc`, `expo prebuild` and the manifest (package
+`ir.chantex.trailmark`, share-target intents, photo permission) are already
+verified; nothing else stands between this tree and the APK but the login.
 
 Share-sheet target (M6) is declared in `app.json` intent filters;
 `src/share.ts` reads the launch intent into Capture. Photo attach uses

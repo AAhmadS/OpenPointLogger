@@ -1,0 +1,7 @@
+# Managed Expo workflow: native projects regenerate from app.json.
+node_modules/
+.expo/
+android/
+ios/
+dist/
+*.log

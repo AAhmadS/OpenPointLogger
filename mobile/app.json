@@ -17,20 +17,43 @@
       "intentFilters": [
         {
           "action": "SEND",
-          "data": [{ "mimeType": "text/plain" }],
-          "category": ["DEFAULT"]
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ],
+          "category": [
+            "DEFAULT"
+          ]
         },
         {
           "action": "SEND",
-          "data": [{ "mimeType": "image/*" }],
-          "category": ["DEFAULT"]
+          "data": [
+            {
+              "mimeType": "image/*"
+            }
+          ],
+          "category": [
+            "DEFAULT"
+          ]
         }
       ]
     },
-    "plugins": ["expo-secure-store"],
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access photos so screenshots can be attached to points."
+        }
+      ]
+    ],
     "extra": {
       "apiBaseUrl": "https://api.trailmark.chantex.ir/v1",
-      "eas": { "projectId": "SET-ME-IN-EAS-DASHBOARD" }
-    }
+      "eas": {
+        "projectId": "c326f542-ddbc-4f81-8985-4d544343c521"
+      }
+    },
+    "owner": "chantex"
   }
 }

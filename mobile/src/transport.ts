@@ -7,7 +7,7 @@ import { TrailmarkApi } from './api';
 
 export interface SyncTransport {
   push(ops: Op[]): Promise<{ accepted: string[]; rejected: { op_id: string; error: string }[] }>;
-  pull(cursor?: string): Promise<{ ops: StoredOp[]; cursor: string }>;
+  pull(cursor?: string, limit?: number): Promise<{ ops: StoredOp[]; cursor: string }>;
   topics(): Promise<TopicSummary[]>;
   devices(): Promise<Device[]>;
   revokeDevice(deviceId: string): Promise<void>;
@@ -20,8 +20,8 @@ export class HttpTransport implements SyncTransport {
     return this.api.push(ops);
   }
 
-  pull(cursor?: string) {
-    return this.api.pull(cursor);
+  pull(cursor?: string, limit?: number) {
+    return this.api.pull(cursor, limit);
   }
 
   async topics(): Promise<TopicSummary[]> {
@@ -59,10 +59,11 @@ export class MockTransport implements SyncTransport {
     return { accepted, rejected: [] };
   }
 
-  async pull(cursor?: string) {
+  async pull(cursor?: string, limit?: number) {
     const from = cursor ? parseInt(cursor, 10) || 0 : 0;
-    const ops = this.log.slice(from);
-    return { ops, cursor: String(this.log.length) };
+    const ops =
+      limit && limit > 0 ? this.log.slice(from, from + limit) : this.log.slice(from);
+    return { ops, cursor: String(from + ops.length) };
   }
 
   async topics(): Promise<TopicSummary[]> {

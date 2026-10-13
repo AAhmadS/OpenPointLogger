@@ -7,7 +7,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "typecheck": "tsc --noEmit",
-    "build:apk": "eas build --platform android --profile preview"
+    "build:apk": "eas build --platform android --profile preview",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "expo": "~53.0.0",
@@ -21,6 +22,6 @@
   },
   "devDependencies": {
     "@types/react": "~19.0.0",
-    "typescript": "~5.3.0"
+    "typescript": "~5.8.0"
   }
 }
