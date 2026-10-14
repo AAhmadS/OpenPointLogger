@@ -14,6 +14,7 @@ import { syncNow } from './src/sync';
 import { peekQueue, queueLength } from './src/queue';
 import type { StoredOp, TopicSummary } from './src/types';
 import { readShareIntent } from './src/share';
+import { CrashBoundary, CrashScreen, clearFatal, installGlobalHandler, loadFatal } from './src/crashlog';
 import PairScreen from './screens/PairScreen';
 import CaptureScreen from './screens/CaptureScreen';
 import TopicsScreen from './screens/TopicsScreen';
@@ -26,6 +27,10 @@ const DEVICE_KEY = 'trailmark.session.device';
 const URL_KEY = 'trailmark.api.url';
 const CURSOR_KEY = 'trailmark.sync.cursor';
 const DEFAULT_URL = 'https://api.trailmark.chantex.ir/v1';
+
+// Registered once at module load: persists any fatal JS error so the next
+// launch can show it instead of dying silently again.
+installGlobalHandler();
 
 type Tab = 'capture' | 'topics' | 'settings';
 
@@ -45,6 +50,7 @@ export default function App() {
   const [scienceOn] = useState(false);
   const [prefill, setPrefill] = useState<{ text?: string; url?: string } | null>(null);
   const [booted, setBooted] = useState(false);
+  const [fatal, setFatal] = useState<{ message: string; at: string } | null>(null);
 
   const getToken = useCallback(async () => token, [token]);
 
@@ -76,6 +82,7 @@ export default function App() {
         }
       }
       setPrefill(await readShareIntent());
+      setFatal(await loadFatal());
       setBooted(true);
     })();
   }, [getToken]);
@@ -127,10 +134,25 @@ export default function App() {
     );
   }
 
+  if (fatal) {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="auto" />
+        <CrashScreen
+          message={`Last launch died at ${fatal.at}:\n${fatal.message}`}
+          onDismiss={() => {
+            void clearFatal().then(() => setFatal(null));
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
+
   if (!token) {
     return (
       <SafeAreaView style={styles.root}>
         <StatusBar style="auto" />
+        <CrashBoundary>
         <PairScreen
           api={api}
           onPaired={async (s) => {
@@ -145,6 +167,7 @@ export default function App() {
             setTransport(new MockTransport());
           }}
         />
+        </CrashBoundary>
       </SafeAreaView>
     );
   }
@@ -154,6 +177,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style="auto" />
+      <CrashBoundary>
       <View style={styles.body}>
         {detailTopic ? (
           <TopicDetailScreen
@@ -220,6 +244,7 @@ export default function App() {
           <Button title="Sync" onPress={() => void refresh()} />
         </View>
       )}
+      </CrashBoundary>
     </SafeAreaView>
   );
 }
