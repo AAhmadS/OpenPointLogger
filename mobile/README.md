@@ -51,8 +51,8 @@ On the phone: allow the browser to "Install unknown apps", then open the
 APK. Google Play Protect will warn ("Unknown app") because the seed builds
 are signed with the project's own EAS key, not a Play Store identity — tap
 **More details → Install anyway**. The APK on the `seed-1` release is
-verified bit-identical to the EAS build output (SHA-256 `486ffa42…4573229b`,
-59,327,207 bytes), v2-signed, `ir.chantex.trailmark` versionCode 1.
+verified bit-identical to the EAS build output (SHA-256 `2d84b1ab…7bc437`,
+59,330,783 bytes), v2-signed, `ir.chantex.trailmark` versionCode 2.
 
 Share-sheet target (M6) is declared in `app.json` intent filters;
 `src/share.ts` reads the launch intent into Capture. Photo attach uses
